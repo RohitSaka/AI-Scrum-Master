@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import os, requests, json, time, re
+import os, requests, json, time
 import google.generativeai as genai
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
@@ -27,34 +27,39 @@ STORY_POINTS_FIELD = "customfield_10016"
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🔄 MODEL ROTATION SYSTEM ---
-# We prioritize 1.5-flash (High Limits) -> 1.5-flash-8b (High Limits) -> 2.0-flash (New)
-MODEL_POOL = [
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b", 
-    "gemini-2.0-flash-exp",
-    "gemini-1.5-pro"
-]
+# --- 🔍 AUTO-DISCOVERY MODEL LOADER ---
+# This runs ONCE when server starts to find the correct model name
+def get_best_model():
+    print("\n🔍 Scanning for available Gemini models...")
+    try:
+        # Get all valid models
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 1. Look for Flash (Fastest/Cheapest)
+        for m in all_models:
+            if "flash" in m and "1.5" in m:
+                print(f"✅ Auto-Selected FLASH Model: {m}")
+                return genai.GenerativeModel(m)
+        
+        # 2. Look for Pro (Smarter)
+        for m in all_models:
+            if "pro" in m and "1.5" in m:
+                print(f"✅ Auto-Selected PRO Model: {m}")
+                return genai.GenerativeModel(m)
 
-def generate_with_fallback(prompt):
-    """Tries generation with multiple models if quota is hit."""
-    for model_name in MODEL_POOL:
-        try:
-            print(f"   👉 Trying model: {model_name}...")
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            error_msg = str(e)
-            if "429" in error_msg or "quota" in error_msg.lower():
-                print(f"   ⚠️ Quota hit on {model_name}. Switching...")
-                continue # Try next model
-            else:
-                # If it's not a quota error (e.g., network), raise it
-                print(f"   ❌ Error on {model_name}: {e}")
-                raise e
-    
-    raise Exception("All models exhausted for the day.")
+        # 3. Fallback to anything that works
+        if all_models:
+            print(f"⚠️ Using Fallback Model: {all_models[0]}")
+            return genai.GenerativeModel(all_models[0])
+            
+    except Exception as e:
+        print(f"❌ Critical Error Listing Models: {e}")
+        
+    print("❌ No models found. Defaulting to 'gemini-pro'")
+    return genai.GenerativeModel("gemini-pro")
+
+# Initialize the model GLOBAL variable
+active_model = get_best_model()
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, data=None):
@@ -79,11 +84,11 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master (Multi-Model) is Online 🤖"}
+    return {"message": "AI Scrum Master is Online 🤖"}
 
 @app.get("/analytics")
 def get_sprint_analytics():
-    """Fetches data and generates an AI executive summary."""
+    """Generates the Sprint Summary."""
     res = jira_request("POST", "search/jql", {
         "jql": f"project = {PROJECT_KEY} AND statusCategory != Done",
         "fields": ["summary", "status", "assignee"]
@@ -93,33 +98,33 @@ def get_sprint_analytics():
     if not issues:
         return {"sprint_summary": "Backlog is empty.", "assignee_performance": []}
 
-    # Structure data
-    performance_data = {}
+    # Data Prep
+    perf_data = {}
     for issue in issues:
-        fields = issue['fields']
-        name = fields['assignee']['displayName'] if fields['assignee'] else "Unassigned"
-        status = fields['status']['name']
-        performance_data[name] = performance_data.get(name, []) + [f"{fields['summary']} ({status})"]
+        f = issue['fields']
+        name = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
+        status = f['status']['name']
+        perf_data[name] = perf_data.get(name, []) + [f"{f['summary']} ({status})"]
 
     prompt = f"""
-    Analyze this Sprint data for Project {PROJECT_KEY}:
-    {json.dumps(performance_data)}
+    Analyze Sprint for {PROJECT_KEY}:
+    {json.dumps(perf_data)}
     Return ONLY JSON: {{'sprint_summary': '...', 'assignee_performance': [{{'name': '...', 'analysis': '...'}}]}}
     """
     
     try:
-        raw_res = generate_with_fallback(prompt)
-        clean_json = raw_res.replace('```json', '').replace('```', '').strip()
+        # Generate with the auto-discovered model
+        raw = active_model.generate_content(prompt).text
+        clean_json = raw.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
     except Exception as e:
         return {"error": f"Analysis failed: {str(e)}"}
 
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
-    """Handles real-time ticket creation with Model Rotation."""
+    """Handles Ticket Updates."""
     issue = payload.get('issue')
-    if not issue or not issue.get('fields'):
-        return {"status": "ignored"}
+    if not issue or not issue.get('fields'): return {"status": "ignored"}
 
     key = issue['key']
     fields = issue['fields']
@@ -129,51 +134,45 @@ async def jira_webhook_listener(payload: dict):
     assignee = fields.get('assignee')
     current_points = fields.get(STORY_POINTS_FIELD)
 
-    # SKIP if already processed
-    if current_points and assignee:
-        return {"status": "already_processed"}
+    # Skip if done
+    if current_points and assignee: return {"status": "already_processed"}
 
     print(f"\n🧠 AI ANALYZING {key}...")
-
+    
     prompt = f"""
-    Analyze Task: '{summary}'
+    Task: {summary}
     Context: {desc}
     
-    1. Estimate story points (1, 2, 3, 5, 8).
-    2. Pick owner: rohitsakabackend, rohitsakafrontend, or rohitsakadevops.
+    1. Estimate Points (1, 2, 3, 5, 8).
+    2. Pick Owner (rohitsakabackend, rohitsakafrontend, rohitsakadevops).
     
-    Return ONLY JSON:
-    {{
-      "points": <int>,
-      "owner": "name",
-      "reason": "1-sentence justification"
-    }}
+    Return ONLY JSON: {{ "points": int, "owner": "str", "reason": "str" }}
     """
 
     try:
-        # 1. GENERATE (With Rotation)
-        raw_res = generate_with_fallback(prompt)
-        data = json.loads(raw_res.replace('```json', '').replace('```', '').strip())
+        # Rate Limit Protection
+        time.sleep(2) 
+        
+        # Use the auto-discovered model
+        raw = active_model.generate_content(prompt).text
+        data = json.loads(raw.replace('```json', '').replace('```', '').strip())
 
-        # 2. UPDATE JIRA
-        update_payload = {}
-        if not current_points: update_payload[STORY_POINTS_FIELD] = data['points']
+        # Update Jira
+        payload = {}
+        if not current_points: payload[STORY_POINTS_FIELD] = data['points']
         if not assignee and priority in ['Highest', 'High', 'Critical']:
             uid = find_user(data['owner'])
-            if uid: update_payload["assignee"] = {"accountId": uid}
+            if uid: payload["assignee"] = {"accountId": uid}
 
-        if update_payload:
-            jira_request("PUT", f"issue/{key}", update_payload)
-            comment = f"🤖 AI ({data['points']} pts): Assigned to {data['owner']}. {data['reason']}"
+        if payload:
+            jira_request("PUT", f"issue/{key}", payload)
+            comment = f"🤖 AI: {data['points']} pts. Assigned to {data['owner']}. {data['reason']}"
             jira_request("POST", f"issue/{key}/comment", {
-                "body": {
-                    "type": "doc", "version": 1, 
-                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]
-                }
+                "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}
             })
             print(f"✅ {key} Updated Successfully.")
 
     except Exception as e:
-        print(f"❌ Webhook Failed: {e}")
+        print(f"❌ Error: {e}")
 
     return {"status": "processed"}
