@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Scrum Master Dashboard</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function Dashboard() {
+            const [data, setData] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const API_URL = "https://ai-scrum-master-cm2c.onrender.com/analytics";
+
+            useEffect(() => {
+                fetch(API_URL)
+                    .then(res => res.json())
+                    .then(json => {
+                        setData(json);
+                        setLoading(false);
+                    })
+                    .catch(err => console.error("Error fetching data:", err));
+            }, []);
+
+            if (loading) return (
+                <div class="flex h-screen items-center justify-center">
+                    <div class="text-2xl animate-pulse">🤖 AI is analyzing the Sprint...</div>
+                </div>
+            );
+
+            return (
+                <div class="p-8 max-w-6xl mx-auto">
+                    <header class="mb-12 border-b border-gray-700 pb-6 flex justify-between items-end">
+                        <div>
+                            <h1 class="text-4xl font-bold text-blue-400 mb-2">AI Scrum Master</h1>
+                            <p class="text-gray-400">Project: <span class="text-white font-semibold">SCRUM</span></p>
+                        </div>
+                        <div class="text-sm text-gray-500 italic">Last Analysis: Feb 14, 2026</div>
+                    </header>
+
+                    {/* Sprint Summary Card */}
+                    <section class="bg-gray-800 border-l-4 border-yellow-500 p-6 rounded-lg shadow-xl mb-12">
+                        <h2 class="text-xl font-bold mb-4 flex items-center">
+                            🚀 Sprint Summary
+                        </h2>
+                        <p class="text-lg leading-relaxed text-gray-300 italic">
+                            "{data.sprint_summary}"
+                        </p>
+                    </section>
+
+                    {/* Individual Performance Table */}
+                    <section>
+                        <h2 class="text-2xl font-bold mb-6">Individual Assignee Track</h2>
+                        <div class="bg-gray-800 rounded-xl overflow-hidden shadow-lg border border-gray-700">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-700 text-gray-300 uppercase text-sm">
+                                    <tr>
+                                        <th class="p-4">Team Member</th>
+                                        <th class="p-4 text-blue-400">AI Performance Analysis</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {data.assignee_performance.map((person, i) => (
+                                        <tr key={i} class="border-t border-gray-700 hover:bg-gray-750 transition">
+                                            <td class="p-4 font-bold text-gray-100">{person.name}</td>
+                                            <td class="p-4 text-gray-400 italic text-sm">{person.analysis}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Dashboard />);
+    </script>
+</body>
+</html>
