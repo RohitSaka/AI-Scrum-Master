@@ -6,6 +6,7 @@ import requests
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 import json
+import time
 import google.generativeai as genai 
 
 # 1. Load Environment Variables
@@ -27,7 +28,7 @@ API_TOKEN = os.getenv("JIRA_API_TOKEN")
 PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# --- THE EFFICIENCY UPGRADE CONFIG ---
+# --- CUSTOM FIELD CONFIG ---
 STORY_POINTS_FIELD = "customfield_10016" 
 
 # Configure Gemini
@@ -69,7 +70,7 @@ def get_jira_tickets():
         return []
 
 def update_jira_issue(issue_key, fields_dict):
-    """Updates fields (like Assignee or Story Points) on a Jira issue."""
+    """Updates fields on a Jira issue."""
     url = f"https://{JIRA_DOMAIN}/rest/api/3/issue/{issue_key}"
     payload = {"fields": fields_dict}
     response = requests.put(url, json=payload, auth=HTTPBasicAuth(EMAIL, API_TOKEN))
@@ -92,6 +93,7 @@ def add_jira_comment(issue_key, comment_text):
     return response.status_code == 201
 
 def find_user(name):
+    """Searches for a Jira user accountId by display name or query."""
     url = f"https://{JIRA_DOMAIN}/rest/api/3/user/search"
     response = requests.get(url, params={"query": name}, auth=HTTPBasicAuth(EMAIL, API_TOKEN))
     if response.status_code == 200 and response.json():
@@ -134,52 +136,76 @@ def get_sprint_analytics():
     except Exception as e:
         return {"error": str(e)}
 
-# --- WEBHOOK: THE BRAIN & THE HANDS ---
+# --- RESILIENT WEBHOOK ---
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
     issue = payload.get('issue')
     if not issue or not issue.get('fields'): return {"status": "ignored"}
 
     key = issue['key']
-    summary = issue['fields'].get('summary', '')
-    desc = str(issue['fields'].get('description', ''))
-    priority = issue['fields'].get('priority', {}).get('name')
-    assignee = issue['fields'].get('assignee')
-    current_points = issue['fields'].get(STORY_POINTS_FIELD)
+    fields = issue['fields']
+    summary = fields.get('summary', '')
+    desc = str(fields.get('description', ''))
+    priority = fields.get('priority', {}).get('name')
+    assignee = fields.get('assignee')
+    current_points = fields.get(STORY_POINTS_FIELD)
 
-    print(f"\n⚡️ EVENT RECEIVED: {key}")
+    # 1. OPTIMIZATION: Skip if ticket is already fully processed
+    if current_points and assignee:
+        return {"status": "already_processed"}
 
-    # 1. AUTO-ASSIGNMENT LOGIC (For Critical/Unassigned)
-    if priority in ['Highest', 'High', 'Critical'] and not assignee:
-        assign_prompt = f"Task: '{summary}'. Pick ONE: rohitsakabackend, rohitsakafrontend, rohitsakadevops. Reply ONLY with name."
-        try:
-            suggested = model.generate_content(assign_prompt).text.strip()
-            uid = find_user(suggested)
-            if uid and update_jira_issue(key, {"assignee": {"accountId": uid}}):
-                print(f"   ✅ Auto-assigned {key} to {suggested}")
-        except: pass
+    print(f"\n🧠 AI ANALYZING: {key}")
 
-    # 2. STORY POINT ESTIMATION LOGIC (If points are missing)
-    if current_points is None or current_points == 0:
-        print(f"   🧠 AI Estimating Complexity for {key}...")
-        est_prompt = f"""
-        Analyze this task for a Senior Developer:
-        Summary: {summary}
-        Description: {desc}
+    # 2. COMBINED PROMPT: Minimizes quota usage by doing assignment + points in 1 call
+    prompt = f"""
+    Analyze this technical task for a Senior Developer:
+    Summary: {summary}
+    Description: {desc}
+    
+    Task 1: Estimate story points (Fibonacci: 1, 2, 3, 5, 8). 
+    Task 2: If unassigned, pick the best owner from: rohitsakabackend, rohitsakafrontend, rohitsakadevops.
+    
+    Return ONLY JSON:
+    {{
+      "points": <int>,
+      "difficulty": "Easy/Medium/Hard",
+      "owner": "name",
+      "reason": "1-sentence justification"
+    }}
+    """
+
+    try:
+        # Prevent rapid-fire requests that trigger 429 errors
+        time.sleep(2) 
         
-        Estimate story points (Fibonacci: 1, 2, 3, 5, 8). 
-        Return ONLY JSON: {{"points": <int>, "difficulty": "Easy/Medium/Hard", "reason": "1-sentence justification"}}
-        """
-        try:
-            raw_est = model.generate_content(est_prompt).text
-            est_data = json.loads(raw_est.replace('```json', '').replace('```', '').strip())
-            
-            # Write Points and Comment to Jira
-            update_jira_issue(key, {STORY_POINTS_FIELD: est_data['points']})
-            comment = f"🤖 AI Estimation: {est_data['points']} points. Difficulty: {est_data['difficulty']}. {est_data['reason']}"
-            add_jira_comment(key, comment)
-            print(f"   ✅ Set {key} to {est_data['points']} points with justification.")
-        except Exception as e:
-            print(f"   ❌ Estimation failed: {e}")
+        raw_res = model.generate_content(prompt).text
+        data = json.loads(raw_res.replace('```json', '').replace('```', '').strip())
+        
+        update_payload = {}
+        
+        # Determine if points need updating
+        if not current_points:
+            update_payload[STORY_POINTS_FIELD] = data['points']
+        
+        # Determine if assignment is needed for critical unassigned issues
+        if not assignee and priority in ['Highest', 'High', 'Critical']:
+            uid = find_user(data['owner'])
+            if uid:
+                update_payload["assignee"] = {"accountId": uid}
+
+        # 3. APPLY CHANGES TO JIRA
+        if update_payload:
+            if update_jira_issue(key, update_payload):
+                comment = f"🤖 AI Estimation: {data['points']} pts. Assigned to {data['owner']}. Reason: {data['reason']}"
+                add_jira_comment(key, comment)
+                print(f"   ✅ {key} updated: {data['points']} pts and assigned to {data['owner']}.")
+            else:
+                print(f"   ❌ Jira update failed for {key}.")
+
+    except Exception as e:
+        if "429" in str(e):
+            print(f"⚠️ Rate limit hit. Skipping AI analysis for {key} for 60 seconds.")
+        else:
+            print(f"❌ Webhook Error: {e}")
 
     return {"status": "processed"}
