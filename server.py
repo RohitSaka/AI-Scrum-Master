@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import os, requests, json, time, google.generativeai as genai
+import os, requests, json, time
+import google.generativeai as genai
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 
@@ -8,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-# Enable CORS - Essential for your GitHub Pages Dashboard to communicate with Render
+# Enable CORS for the Dashboard
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,11 +22,41 @@ JIRA_DOMAIN = os.getenv("JIRA_DOMAIN")
 EMAIL = os.getenv("JIRA_EMAIL")
 API_TOKEN = os.getenv("JIRA_API_TOKEN")
 PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
-STORY_POINTS_FIELD = "customfield_10016"  # Confirmed field ID
+STORY_POINTS_FIELD = "customfield_10016" 
 
-# Configure Gemini - Defaulting to 'flash' for higher rate limits on free tier
+# Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-1.5-flash')
+
+# --- 🛠️ THE FIX: SMART MODEL SELECTOR ---
+def get_working_model():
+    print("🔍 Scanning for available models...")
+    try:
+        # Get all models that support content generation
+        valid_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Priority List: Try Flash -> Pro -> Standard
+        priorities = ["flash", "gemini-1.5-pro", "gemini-pro"]
+        
+        for p in priorities:
+            for m in valid_models:
+                if p in m:
+                    print(f"✅ Auto-Selected Model: {m}")
+                    return genai.GenerativeModel(m)
+        
+        # Fallback: Just take the first valid one
+        if valid_models:
+            print(f"⚠️ Using fallback model: {valid_models[0]}")
+            return genai.GenerativeModel(valid_models[0])
+            
+    except Exception as e:
+        print(f"❌ Model Scan Error: {e}")
+
+    # Absolute Last Resort
+    print("⚠️ Hard fallback to 'gemini-pro'")
+    return genai.GenerativeModel('gemini-pro')
+
+# Initialize the best available model
+model = get_working_model()
 
 # --- JIRA UTILITIES ---
 
@@ -88,6 +119,7 @@ def get_sprint_analytics():
     
     for attempt in range(3):
         try:
+            time.sleep(2) # Brief pause before request
             raw_res = model.generate_content(prompt).text
             clean_json = raw_res.replace('```json', '').replace('```', '').strip()
             return json.loads(clean_json)
@@ -95,7 +127,7 @@ def get_sprint_analytics():
             print(f"Analytics AI Retry {attempt+1}: {e}")
             time.sleep(5)
             
-    return {"error": "AI Rate Limit hit. Please refresh the dashboard in 60 seconds."}
+    return {"error": "AI unavailable. Please refresh in 1 minute."}
 
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
@@ -112,13 +144,13 @@ async def jira_webhook_listener(payload: dict):
     assignee = fields.get('assignee')
     current_points = fields.get(STORY_POINTS_FIELD)
 
-    # 1. OPTIMIZATION: Skip if already processed to save AI quota
+    # 1. OPTIMIZATION: Skip if already processed
     if current_points and assignee:
         return {"status": "already_processed"}
 
     print(f"\n🧠 AI ANALYZING {key}...")
 
-    # 2. COMBINED PROMPT: Assignment + Points in ONE call (Saves 50% quota)
+    # 2. COMBINED PROMPT: Assignment + Points in ONE call
     prompt = f"""
     Analyze this task: '{summary}'
     Context: {desc}
@@ -130,14 +162,13 @@ async def jira_webhook_listener(payload: dict):
     {{
       "points": <int>,
       "owner": "name",
-      "difficulty": "Easy|Medium|Hard",
       "reason": "1-sentence justification"
     }}
     """
 
     try:
-        # Mandatory 5-second breath between requests for the Free Tier
-        time.sleep(5) 
+        # Mandatory breath between requests for the Free Tier
+        time.sleep(4) 
         
         raw_res = model.generate_content(prompt).text
         data = json.loads(raw_res.replace('```json', '').replace('```', '').strip())
@@ -170,7 +201,7 @@ async def jira_webhook_listener(payload: dict):
 
     except Exception as e:
         if "429" in str(e):
-            print(f"⚠️ Quota Exhausted. Skipping {key} (Retry in 60s).")
+            print(f"⚠️ Quota Exhausted. Skipping {key}.")
         else:
             print(f"❌ Webhook Error: {e}")
 
