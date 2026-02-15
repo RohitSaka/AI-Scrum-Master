@@ -26,20 +26,23 @@ STORY_POINTS_FIELD = "customfield_10016"
 # --- MULTI-BOARD CONFIG ---
 SUPPORTED_PROJECTS = {
     "SCRUM": {"name": "Provider Services", "platform": "jira"},
-    "OT":    {"name": "Ops Team (Kanban)", "platform": "jira"},
-    "KANBAN": {"name": "Kanban Board", "platform": "jira"}
+    "OT":    {"name": "Ops Team (Kanban)", "platform": "jira"}
 }
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- CACHE & MODELS ---
+# --- CACHE ---
 PROCESSED_CACHE = set()
+
+# --- MODEL POOL (High-Quota First) ---
+# Once you update requirements.txt, 'gemini-1.5-flash' will work.
+# It has 1,500 free requests/day vs. 50 for the others.
 MODEL_POOL = [
-    "gemini-flash-latest",    
-    "gemini-1.5-flash",       
-    "gemini-2.0-flash",       
-    "gemini-1.5-flash-8b"
+    "gemini-1.5-flash",       # PRIMARY: High Quota (1500/day)
+    "gemini-1.5-flash-8b",    # BACKUP 1: High Quota
+    "gemini-flash-latest",    # BACKUP 2: Low Quota (Emergency only)
+    "gemini-2.0-flash"        # BACKUP 3: Low Quota
 ]
 
 def generate_with_retry(prompt):
@@ -59,7 +62,7 @@ def generate_with_retry(prompt):
                 time.sleep(1)
                 continue
             elif "not found" in error_msg:
-                print(f"   ⚠️ Model {model_name} not found. Switching...")
+                print(f"   ⚠️ Model {model_name} not recognized by SDK. Switching...")
                 continue
             else:
                 print(f"   ❌ Error on {model_name}: {e}")
@@ -89,10 +92,7 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {
-        "message": "AI Scrum Master Online 🤖", 
-        "boards": SUPPORTED_PROJECTS
-    }
+    return {"message": "AI Scrum Master Online 🤖", "boards": SUPPORTED_PROJECTS}
 
 @app.get("/analytics/{project_key}")
 def get_sprint_analytics(project_key: str):
@@ -105,7 +105,6 @@ def get_sprint_analytics(project_key: str):
     print(f"📊 Analyzing {config['name']} ({project_key})...")
     
     # 1. Fetch Issues
-    # We fetch ALL issues in the active sprint (or recent backlog)
     jql_query = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", {
         "jql": jql_query,
@@ -113,7 +112,6 @@ def get_sprint_analytics(project_key: str):
     })
     issues = res.json().get('issues', []) if res else []
     
-    # Fallback for Kanban (no sprints)
     if not issues:
         print(f"   ⚠️ No active sprint. Checking recent active tickets...")
         jql_query = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
@@ -127,7 +125,7 @@ def get_sprint_analytics(project_key: str):
     if not issues:
         return {"sprint_summary": "No active tasks found.", "metrics": {}, "assignee_performance": []}
 
-    # 2. Calculate Hard Metrics (The "Dashboards" Data)
+    # 2. Calculate Hard Metrics
     stats = {
         "total_tickets": len(issues),
         "total_points": 0,
@@ -141,14 +139,11 @@ def get_sprint_analytics(project_key: str):
 
     for issue in issues:
         f = issue['fields']
-        
-        # Extract fields
         name = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
         status = f['status']['name']
         priority = f['priority']['name'] if f['priority'] else "Medium"
         points = f.get(STORY_POINTS_FIELD) or 0
         
-        # Aggregate Global Stats
         stats["total_points"] += points
         stats["status_breakdown"][status] = stats["status_breakdown"].get(status, 0) + 1
         if status.lower() in ["done", "completed", "closed"]:
@@ -156,7 +151,6 @@ def get_sprint_analytics(project_key: str):
         if priority in ["Highest", "High", "Critical"] and status.lower() != "done":
             stats["blockers"] += 1
             
-        # Aggregate Per-User Stats
         if name not in stats["assignees"]:
             stats["assignees"][name] = {"count": 0, "points": 0, "active_tickets": []}
         
@@ -164,7 +158,6 @@ def get_sprint_analytics(project_key: str):
         stats["assignees"][name]["points"] += points
         stats["assignees"][name]["active_tickets"].append(f"{f['summary']} ({status})")
 
-        # Prep for AI
         perf_data_for_ai[name] = perf_data_for_ai.get(name, []) + [f"{f['summary']} ({status}, {points}pts)"]
 
     # 3. AI Analysis
@@ -187,9 +180,9 @@ def get_sprint_analytics(project_key: str):
         clean_json = raw.replace('```json', '').replace('```', '').strip()
         ai_response = json.loads(clean_json)
     except Exception as e:
-        ai_response = {"sprint_summary": "AI Analysis Unavailable", "assignee_performance": []}
+        # Fallback if AI fails (keeps dashboard alive)
+        ai_response = {"sprint_summary": "AI Limit Reached. Showing raw metrics only.", "assignee_performance": []}
 
-    # 4. Merge Data & Return
     return {
         "metrics": stats, 
         "ai_insights": ai_response
