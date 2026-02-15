@@ -33,8 +33,7 @@ SUPPORTED_PROJECTS = {
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🧠 DYNAMIC MODEL DISCOVERY ---
-# This runs once at startup to find EVERY model your key can access.
+# --- 🧠 DYNAMIC MODEL DISCOVERY (UNCHANGED - DO NOT TOUCH) ---
 def discover_available_models():
     print("\n🔍 SYSTEM DIAGNOSTIC: Discovering available models...")
     valid_models = []
@@ -43,8 +42,6 @@ def discover_available_models():
             if "generateContent" in m.supported_generation_methods:
                 valid_models.append(m.name)
         
-        # Sort them to prioritize Flash (faster) over Pro
-        # We prefer 'flash', then 'lite', then everything else.
         valid_models.sort(key=lambda x: (
             0 if "1.5-flash" in x else 
             1 if "flash-latest" in x else 
@@ -57,7 +54,6 @@ def discover_available_models():
         return valid_models
     except Exception as e:
         print(f"❌ Error listing models: {e}")
-        # Fallback list if discovery fails
         return ["models/gemini-1.5-flash", "models/gemini-flash-latest", "models/gemini-pro"]
 
 # Initialize the pool
@@ -69,11 +65,8 @@ PROCESSED_CACHE = set()
 def generate_with_survival_mode(prompt):
     """Iterates through EVERY available model until one works."""
     last_error = None
-    
-    # Try the first 10 models found (to avoid waiting forever)
     for model_name in MODEL_POOL[:10]:
         try:
-            # print(f"   👉 Trying: {model_name}...")
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             return response.text
@@ -124,7 +117,7 @@ def home():
 
 @app.get("/analytics/{project_key}")
 def get_sprint_analytics(project_key: str):
-    """Generates Rich Data + AI Insights."""
+    """Generates Rich Data + Timeline Info + AI Insights."""
     project_key = project_key.upper()
     if project_key not in SUPPORTED_PROJECTS:
         return {"error": f"Project {project_key} not found."}
@@ -132,10 +125,13 @@ def get_sprint_analytics(project_key: str):
     config = SUPPORTED_PROJECTS[project_key]
     print(f"📊 Analyzing {config['name']} ({project_key})...")
     
+    # 🛠️ UPGRADE: Added 'duedate' and 'created' to fields
+    fields_to_fetch = ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD, "duedate", "created"]
+
     jql_query = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", {
         "jql": jql_query,
-        "fields": ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD]
+        "fields": fields_to_fetch
     })
     issues = res.json().get('issues', []) if res else []
     
@@ -145,7 +141,7 @@ def get_sprint_analytics(project_key: str):
         res = jira_request("POST", "search/jql", {
             "jql": jql_query,
             "maxResults": 30,
-            "fields": ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD]
+            "fields": fields_to_fetch
         })
         issues = res.json().get('issues', []) if res else []
 
@@ -167,10 +163,17 @@ def get_sprint_analytics(project_key: str):
     for issue in issues:
         f = issue['fields']
         name = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
+        # 🛠️ UPGRADE: Get Avatar
+        avatar = f['assignee']['avatarUrls']['48x48'] if f['assignee'] else ""
+        
         status = f['status']['name']
         priority = f['priority']['name'] if f['priority'] else "Medium"
         points = f.get(STORY_POINTS_FIELD) or 0
         
+        # 🛠️ UPGRADE: Get Dates
+        due_date = f.get('duedate') 
+        created_date = f.get('created')
+
         stats["total_points"] += points
         stats["status_breakdown"][status] = stats["status_breakdown"].get(status, 0) + 1
         if status.lower() in ["done", "completed", "closed"]:
@@ -179,12 +182,27 @@ def get_sprint_analytics(project_key: str):
             stats["blockers"] += 1
             
         if name not in stats["assignees"]:
-            stats["assignees"][name] = {"count": 0, "points": 0, "active_tickets": []}
+            stats["assignees"][name] = {
+                "count": 0, 
+                "points": 0, 
+                "avatar": avatar, 
+                "tasks": [] # 🛠️ UPGRADE: List for timeline
+            }
         
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += points
-        stats["assignees"][name]["active_tickets"].append(f"{f['summary']} ({status})")
+        
+        # 🛠️ UPGRADE: Store Task details for Timeline View
+        stats["assignees"][name]["tasks"].append({
+            "key": issue['key'],
+            "summary": f['summary'],
+            "status": status,
+            "priority": priority,
+            "points": points,
+            "end": due_date
+        })
 
+        # AI Context
         perf_data_for_ai[name] = perf_data_for_ai.get(name, []) + [f"{f['summary']} ({status}, {points}pts)"]
 
     # AI Analysis
@@ -216,7 +234,7 @@ def get_sprint_analytics(project_key: str):
 
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
-    """Handles Ticket Updates."""
+    """Handles Ticket Updates (UNCHANGED)."""
     issue = payload.get('issue')
     if not issue or not issue.get('fields'): return {"status": "ignored"}
 
