@@ -4,6 +4,7 @@ import os, requests, json, time
 import google.generativeai as genai
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
+import importlib.metadata
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -32,25 +33,47 @@ SUPPORTED_PROJECTS = {
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
+# --- 🧠 DYNAMIC MODEL DISCOVERY ---
+# This runs once at startup to find EVERY model your key can access.
+def discover_available_models():
+    print("\n🔍 SYSTEM DIAGNOSTIC: Discovering available models...")
+    valid_models = []
+    try:
+        for m in genai.list_models():
+            if "generateContent" in m.supported_generation_methods:
+                valid_models.append(m.name)
+        
+        # Sort them to prioritize Flash (faster) over Pro
+        # We prefer 'flash', then 'lite', then everything else.
+        valid_models.sort(key=lambda x: (
+            0 if "1.5-flash" in x else 
+            1 if "flash-latest" in x else 
+            2 if "flash" in x and "lite" in x else
+            3 if "flash" in x else
+            4
+        ))
+        
+        print(f"✅ FOUND {len(valid_models)} MODELS: {valid_models}")
+        return valid_models
+    except Exception as e:
+        print(f"❌ Error listing models: {e}")
+        # Fallback list if discovery fails
+        return ["models/gemini-1.5-flash", "models/gemini-flash-latest", "models/gemini-pro"]
+
+# Initialize the pool
+MODEL_POOL = discover_available_models()
+
 # --- CACHE ---
 PROCESSED_CACHE = set()
 
-# --- MODEL POOL (High-Quota First) ---
-# Once you update requirements.txt, 'gemini-1.5-flash' will work.
-# It has 1,500 free requests/day vs. 50 for the others.
-MODEL_POOL = [
-    "gemini-1.5-flash",       # PRIMARY: High Quota (1500/day)
-    "gemini-1.5-flash-8b",    # BACKUP 1: High Quota
-    "gemini-flash-latest",    # BACKUP 2: Low Quota (Emergency only)
-    "gemini-2.0-flash"        # BACKUP 3: Low Quota
-]
-
-def generate_with_retry(prompt):
-    """Iterates through the model pool until one works."""
+def generate_with_survival_mode(prompt):
+    """Iterates through EVERY available model until one works."""
     last_error = None
-    for model_name in MODEL_POOL:
+    
+    # Try the first 10 models found (to avoid waiting forever)
+    for model_name in MODEL_POOL[:10]:
         try:
-            print(f"   👉 Attempting with: {model_name}...")
+            # print(f"   👉 Trying: {model_name}...")
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             return response.text
@@ -58,16 +81,16 @@ def generate_with_retry(prompt):
             last_error = e
             error_msg = str(e).lower()
             if "429" in error_msg or "quota" in error_msg:
-                print(f"   ⚠️ Quota limit on {model_name}. Switching...")
-                time.sleep(1)
+                print(f"   ⚠️ Quota exceeded on {model_name}. Next...")
                 continue
             elif "not found" in error_msg:
-                print(f"   ⚠️ Model {model_name} not recognized by SDK. Switching...")
+                print(f"   ⚠️ {model_name} not available. Next...")
                 continue
             else:
                 print(f"   ❌ Error on {model_name}: {e}")
                 continue
-    raise Exception(f"All models exhausted. Last error: {last_error}")
+    
+    raise Exception(f"All {len(MODEL_POOL)} models exhausted. You are likely out of quota for 24 hours.")
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, data=None):
@@ -92,11 +115,16 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master Online 🤖", "boards": SUPPORTED_PROJECTS}
+    return {
+        "status": "Online 🤖", 
+        "library_version": importlib.metadata.version("google-generativeai"),
+        "available_models_count": len(MODEL_POOL),
+        "top_model": MODEL_POOL[0] if MODEL_POOL else "None"
+    }
 
 @app.get("/analytics/{project_key}")
 def get_sprint_analytics(project_key: str):
-    """Generates Rich Data + AI Insights for a Project."""
+    """Generates Rich Data + AI Insights."""
     project_key = project_key.upper()
     if project_key not in SUPPORTED_PROJECTS:
         return {"error": f"Project {project_key} not found."}
@@ -104,7 +132,6 @@ def get_sprint_analytics(project_key: str):
     config = SUPPORTED_PROJECTS[project_key]
     print(f"📊 Analyzing {config['name']} ({project_key})...")
     
-    # 1. Fetch Issues
     jql_query = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", {
         "jql": jql_query,
@@ -113,7 +140,7 @@ def get_sprint_analytics(project_key: str):
     issues = res.json().get('issues', []) if res else []
     
     if not issues:
-        print(f"   ⚠️ No active sprint. Checking recent active tickets...")
+        print(f"   ⚠️ No active sprint. Checking recent backlog...")
         jql_query = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
         res = jira_request("POST", "search/jql", {
             "jql": jql_query,
@@ -125,7 +152,7 @@ def get_sprint_analytics(project_key: str):
     if not issues:
         return {"sprint_summary": "No active tasks found.", "metrics": {}, "assignee_performance": []}
 
-    # 2. Calculate Hard Metrics
+    # Calculate Stats
     stats = {
         "total_tickets": len(issues),
         "total_points": 0,
@@ -160,28 +187,27 @@ def get_sprint_analytics(project_key: str):
 
         perf_data_for_ai[name] = perf_data_for_ai.get(name, []) + [f"{f['summary']} ({status}, {points}pts)"]
 
-    # 3. AI Analysis
+    # AI Analysis
     prompt = f"""
     Analyze Work Board '{config['name']}':
     {json.dumps(perf_data_for_ai)}
-    
     Return ONLY JSON: 
     {{
         "sprint_summary": "2 sentences on overall health/risks.", 
         "assignee_performance": [
-            {{"name": "...", "analysis": "1 sentence on their load/focus."}}
+            {{"name": "...", "analysis": "1 sentence on load."}}
         ]
     }}
     """
     
     ai_response = {}
     try:
-        raw = generate_with_retry(prompt)
+        raw = generate_with_survival_mode(prompt)
         clean_json = raw.replace('```json', '').replace('```', '').strip()
         ai_response = json.loads(clean_json)
     except Exception as e:
-        # Fallback if AI fails (keeps dashboard alive)
-        ai_response = {"sprint_summary": "AI Limit Reached. Showing raw metrics only.", "assignee_performance": []}
+        print(f"❌ AI Analysis Failed: {e}")
+        ai_response = {"sprint_summary": "AI Quota Exhausted. Showing raw metrics.", "assignee_performance": []}
 
     return {
         "metrics": stats, 
@@ -227,13 +253,12 @@ async def jira_webhook_listener(payload: dict):
 
     try:
         time.sleep(2) 
-        raw = generate_with_retry(prompt)
+        raw = generate_with_survival_mode(prompt)
         data = json.loads(raw.replace('```json', '').replace('```', '').strip())
 
         update_fields = {}
         if not current_points: 
             update_fields[STORY_POINTS_FIELD] = data['points']
-        
         if not assignee and priority in ['Highest', 'High', 'Critical']:
             uid = find_user(data['owner'])
             if uid: update_fields["assignee"] = {"accountId": uid}
@@ -244,7 +269,6 @@ async def jira_webhook_listener(payload: dict):
             jira_request("POST", f"issue/{key}/comment", {
                 "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}
             })
-            
             PROCESSED_CACHE.add(key)
             print(f"✅ {key} Updated Successfully.")
 
