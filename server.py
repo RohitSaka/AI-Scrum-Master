@@ -28,8 +28,6 @@ STORY_POINTS_FIELD = "customfield_10016"
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # --- 🧠 MEMORY CACHE (The Loop Killer) ---
-# We store ticket keys here once we finish them. 
-# If Jira sends the webhook again, we check this list and ignore it.
 PROCESSED_CACHE = set()
 
 # --- MODEL ROTATION POOL ---
@@ -88,19 +86,24 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master (Loop Proof) is Online 🤖"}
+    return {"message": "AI Scrum Master (Fixed & Optimized) is Online 🤖"}
 
 @app.get("/analytics")
 def get_sprint_analytics():
-    """Generates the Sprint Summary."""
+    """Generates the Sprint Summary for ONLY the current active sprint."""
+    
+    # 🛠️ FIX 2: Updated JQL to target the Active Sprint
+    # "sprint in openSprints()" finds the currently running sprint automatically.
+    jql_query = f"project = {PROJECT_KEY} AND sprint in openSprints()"
+    
     res = jira_request("POST", "search/jql", {
-        "jql": f"project = {PROJECT_KEY} AND statusCategory != Done",
+        "jql": jql_query,
         "fields": ["summary", "status", "assignee"]
     })
     issues = res.json().get('issues', []) if res else []
     
     if not issues:
-        return {"sprint_summary": "Backlog is empty.", "assignee_performance": []}
+        return {"sprint_summary": "No active sprint found.", "assignee_performance": []}
 
     perf_data = {}
     for issue in issues:
@@ -110,7 +113,7 @@ def get_sprint_analytics():
         perf_data[name] = perf_data.get(name, []) + [f"{f['summary']} ({status})"]
 
     prompt = f"""
-    Analyze Sprint for {PROJECT_KEY}:
+    Analyze Current Active Sprint for {PROJECT_KEY}:
     {json.dumps(perf_data)}
     Return ONLY JSON: {{'sprint_summary': '...', 'assignee_performance': [{{'name': '...', 'analysis': '...'}}]}}
     """
@@ -131,7 +134,6 @@ async def jira_webhook_listener(payload: dict):
     key = issue['key']
     
     # --- 🛡️ THE LOOP KILLER ---
-    # If we have seen this ticket ID since the server started, ignore it.
     if key in PROCESSED_CACHE:
         print(f"🛑 Skipping {key} (Already Processed in this session)")
         return {"status": "cached"}
@@ -143,7 +145,6 @@ async def jira_webhook_listener(payload: dict):
     assignee = fields.get('assignee')
     current_points = fields.get(STORY_POINTS_FIELD)
 
-    # Secondary Check: If points exist, we probably did it.
     if current_points: 
         PROCESSED_CACHE.add(key)
         return {"status": "already_has_points"}
@@ -159,26 +160,29 @@ async def jira_webhook_listener(payload: dict):
     """
 
     try:
-        # Rate Limit Protection
         time.sleep(2) 
         
         raw = generate_with_retry(prompt)
         data = json.loads(raw.replace('```json', '').replace('```', '').strip())
 
-        payload = {}
-        if not current_points: payload[STORY_POINTS_FIELD] = data['points']
+        # 🛠️ FIX 1: Wrap updates in the 'fields' dictionary
+        update_fields = {}
+        if not current_points: 
+            update_fields[STORY_POINTS_FIELD] = data['points']
+        
         if not assignee and priority in ['Highest', 'High', 'Critical']:
             uid = find_user(data['owner'])
-            if uid: payload["assignee"] = {"accountId": uid}
+            if uid: update_fields["assignee"] = {"accountId": uid}
 
-        if payload:
-            jira_request("PUT", f"issue/{key}", payload)
+        if update_fields:
+            # THIS IS THE CRITICAL FIX: Wrapped in {"fields": ...}
+            jira_request("PUT", f"issue/{key}", {"fields": update_fields})
+            
             comment = f"🤖 AI: {data['points']} pts. Assigned to {data['owner']}. {data['reason']}"
             jira_request("POST", f"issue/{key}/comment", {
                 "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}
             })
             
-            # --- MARK AS DONE ---
             PROCESSED_CACHE.add(key)
             print(f"✅ {key} Updated Successfully. Added to Cache.")
 
