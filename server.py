@@ -27,34 +27,49 @@ STORY_POINTS_FIELD = "customfield_10016"
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🛠️ THE FIX: HARDCODED MODEL POOL ---
-# We explicitly list high-quota models to avoid getting stuck on "2.5-preview"
+# --- DIAGNOSTIC STARTUP ---
+print("------------------------------------------------")
+print("🔍 SYSTEM DIAGNOSTIC: Checking available models...")
+try:
+    for m in genai.list_models():
+        if "generateContent" in m.supported_generation_methods:
+            print(f"   ✅ Available: {m.name}")
+except Exception as e:
+    print(f"   ❌ Error checking models: {e}")
+print("------------------------------------------------")
+
+# --- MODEL POOL ---
+# We use the standard names. The new library version will handle the mapping.
 MODEL_POOL = [
-    "gemini-1.5-flash",       # Primary: High limits (~1500/day)
-    "gemini-1.5-flash-8b",    # Backup 1: High limits
-    "gemini-1.5-pro",         # Backup 2: Lower limits, but good fallback
-    "gemini-pro"              # Legacy Backup
+    "gemini-1.5-flash", 
+    "gemini-1.5-pro",
+    "gemini-1.0-pro"
 ]
 
 def generate_with_retry(prompt):
     """Iterates through the model pool until one works."""
+    last_error = None
     for model_name in MODEL_POOL:
         try:
-            print(f"   👉 Attempting with model: {model_name}...")
+            print(f"   👉 Attempting with: {model_name}...")
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
+            last_error = e
             error_msg = str(e).lower()
-            # If we hit a rate limit or a 404 (not found), try the next model
-            if "429" in error_msg or "quota" in error_msg or "not found" in error_msg:
-                print(f"   ⚠️ Issue with {model_name} ({error_msg[:50]}...). Switching...")
+            if "429" in error_msg or "quota" in error_msg:
+                print(f"   ⚠️ Quota limit on {model_name}. Switching...")
+                continue
+            elif "not found" in error_msg:
+                print(f"   ⚠️ Model {model_name} not found. Switching...")
                 continue
             else:
-                # If it's a real error (like bad prompt), raise it
+                # If it's a real error (like bad request), fail fast
+                print(f"   ❌ Critical error on {model_name}: {e}")
                 raise e
     
-    raise Exception("❌ All models exhausted. Please check your API key.")
+    raise Exception(f"All models failed. Last error: {last_error}")
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, data=None):
@@ -79,7 +94,7 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master (Rotation Fix) is Online 🤖"}
+    return {"message": "AI Scrum Master (v3.0) is Online 🤖"}
 
 @app.get("/analytics")
 def get_sprint_analytics():
@@ -142,7 +157,6 @@ async def jira_webhook_listener(payload: dict):
     try:
         time.sleep(2) # Breathing room
         
-        # USE THE ROTATION FUNCTION
         raw = generate_with_retry(prompt)
         data = json.loads(raw.replace('```json', '').replace('```', '').strip())
 
