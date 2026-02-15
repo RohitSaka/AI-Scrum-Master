@@ -27,13 +27,17 @@ STORY_POINTS_FIELD = "customfield_10016"
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🛠️ THE FIX: MATCHING YOUR DIAGNOSTIC LOGS ---
-# We are now using the models that we CONFIRMED exist in your account.
+# --- 🧠 MEMORY CACHE (The Loop Killer) ---
+# We store ticket keys here once we finish them. 
+# If Jira sends the webhook again, we check this list and ignore it.
+PROCESSED_CACHE = set()
+
+# --- MODEL ROTATION POOL ---
 MODEL_POOL = [
-    "gemini-2.0-flash",       # Primary: Your account has this!
-    "gemini-flash-latest",    # Backup 1: Always points to valid flash
-    "gemini-pro-latest",      # Backup 2: Stable fallback
-    "gemini-2.0-flash-lite"   # Backup 3: Lightweight alternative
+    "gemini-2.0-flash",       
+    "gemini-flash-latest",    
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b"
 ]
 
 def generate_with_retry(prompt):
@@ -50,17 +54,16 @@ def generate_with_retry(prompt):
             error_msg = str(e).lower()
             if "429" in error_msg or "quota" in error_msg:
                 print(f"   ⚠️ Quota limit on {model_name}. Switching...")
-                time.sleep(1) # Short pause before switching
+                time.sleep(1)
                 continue
             elif "not found" in error_msg:
                 print(f"   ⚠️ Model {model_name} not found. Switching...")
                 continue
             else:
-                print(f"   ❌ Critical error on {model_name}: {e}")
-                # Don't break loop, try next model just in case
+                print(f"   ❌ Error on {model_name}: {e}")
                 continue
     
-    raise Exception(f"All models failed. Last error: {last_error}")
+    raise Exception(f"All models exhausted. Last error: {last_error}")
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, data=None):
@@ -85,7 +88,7 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master (Gemini 2.0) is Online 🤖"}
+    return {"message": "AI Scrum Master (Loop Proof) is Online 🤖"}
 
 @app.get("/analytics")
 def get_sprint_analytics():
@@ -121,11 +124,18 @@ def get_sprint_analytics():
 
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
-    """Handles Ticket Updates."""
+    """Handles Ticket Updates with Infinite Loop Protection."""
     issue = payload.get('issue')
     if not issue or not issue.get('fields'): return {"status": "ignored"}
 
     key = issue['key']
+    
+    # --- 🛡️ THE LOOP KILLER ---
+    # If we have seen this ticket ID since the server started, ignore it.
+    if key in PROCESSED_CACHE:
+        print(f"🛑 Skipping {key} (Already Processed in this session)")
+        return {"status": "cached"}
+
     fields = issue['fields']
     summary = fields.get('summary', '')
     desc = str(fields.get('description', ''))
@@ -133,7 +143,10 @@ async def jira_webhook_listener(payload: dict):
     assignee = fields.get('assignee')
     current_points = fields.get(STORY_POINTS_FIELD)
 
-    if current_points and assignee: return {"status": "already_processed"}
+    # Secondary Check: If points exist, we probably did it.
+    if current_points: 
+        PROCESSED_CACHE.add(key)
+        return {"status": "already_has_points"}
 
     print(f"\n🧠 AI ANALYZING {key}...")
     
@@ -164,7 +177,10 @@ async def jira_webhook_listener(payload: dict):
             jira_request("POST", f"issue/{key}/comment", {
                 "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}
             })
-            print(f"✅ {key} Updated Successfully.")
+            
+            # --- MARK AS DONE ---
+            PROCESSED_CACHE.add(key)
+            print(f"✅ {key} Updated Successfully. Added to Cache.")
 
     except Exception as e:
         print(f"❌ Error: {e}")
