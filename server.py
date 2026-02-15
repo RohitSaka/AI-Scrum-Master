@@ -27,23 +27,13 @@ STORY_POINTS_FIELD = "customfield_10016"
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- DIAGNOSTIC STARTUP ---
-print("------------------------------------------------")
-print("🔍 SYSTEM DIAGNOSTIC: Checking available models...")
-try:
-    for m in genai.list_models():
-        if "generateContent" in m.supported_generation_methods:
-            print(f"   ✅ Available: {m.name}")
-except Exception as e:
-    print(f"   ❌ Error checking models: {e}")
-print("------------------------------------------------")
-
-# --- MODEL POOL ---
-# We use the standard names. The new library version will handle the mapping.
+# --- 🛠️ THE FIX: MATCHING YOUR DIAGNOSTIC LOGS ---
+# We are now using the models that we CONFIRMED exist in your account.
 MODEL_POOL = [
-    "gemini-1.5-flash", 
-    "gemini-1.5-pro",
-    "gemini-1.0-pro"
+    "gemini-2.0-flash",       # Primary: Your account has this!
+    "gemini-flash-latest",    # Backup 1: Always points to valid flash
+    "gemini-pro-latest",      # Backup 2: Stable fallback
+    "gemini-2.0-flash-lite"   # Backup 3: Lightweight alternative
 ]
 
 def generate_with_retry(prompt):
@@ -60,14 +50,15 @@ def generate_with_retry(prompt):
             error_msg = str(e).lower()
             if "429" in error_msg or "quota" in error_msg:
                 print(f"   ⚠️ Quota limit on {model_name}. Switching...")
+                time.sleep(1) # Short pause before switching
                 continue
             elif "not found" in error_msg:
                 print(f"   ⚠️ Model {model_name} not found. Switching...")
                 continue
             else:
-                # If it's a real error (like bad request), fail fast
                 print(f"   ❌ Critical error on {model_name}: {e}")
-                raise e
+                # Don't break loop, try next model just in case
+                continue
     
     raise Exception(f"All models failed. Last error: {last_error}")
 
@@ -94,7 +85,7 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master (v3.0) is Online 🤖"}
+    return {"message": "AI Scrum Master (Gemini 2.0) is Online 🤖"}
 
 @app.get("/analytics")
 def get_sprint_analytics():
@@ -155,7 +146,8 @@ async def jira_webhook_listener(payload: dict):
     """
 
     try:
-        time.sleep(2) # Breathing room
+        # Rate Limit Protection
+        time.sleep(2) 
         
         raw = generate_with_retry(prompt)
         data = json.loads(raw.replace('```json', '').replace('```', '').strip())
