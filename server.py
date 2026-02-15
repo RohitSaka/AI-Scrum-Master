@@ -23,23 +23,22 @@ EMAIL = os.getenv("JIRA_EMAIL")
 API_TOKEN = os.getenv("JIRA_API_TOKEN")
 STORY_POINTS_FIELD = "customfield_10016" 
 
-# --- 🛠️ YOUR MULTI-BOARD CONFIG ---
+# --- MULTI-BOARD CONFIG ---
 SUPPORTED_PROJECTS = {
     "SCRUM": {"name": "Provider Services", "platform": "jira"},
-    "OT":    {"name": "Ops Team (Kanban)", "platform": "jira"}
+    "OT":    {"name": "Ops Team (Kanban)", "platform": "jira"},
+    "KANBAN": {"name": "Kanban Board", "platform": "jira"}
 }
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🧠 MEMORY CACHE (Loop Killer) ---
+# --- CACHE & MODELS ---
 PROCESSED_CACHE = set()
-
-# --- MODEL POOL (Optimized for Speed) ---
 MODEL_POOL = [
-    "gemini-flash-latest",    # Primary
-    "gemini-1.5-flash",       # Secondary
-    "gemini-2.0-flash",       # Backup
+    "gemini-flash-latest",    
+    "gemini-1.5-flash",       
+    "gemini-2.0-flash",       
     "gemini-1.5-flash-8b"
 ]
 
@@ -97,69 +96,114 @@ def home():
 
 @app.get("/analytics/{project_key}")
 def get_sprint_analytics(project_key: str):
-    """Generates the Sprint Summary for a SPECIFIC Project."""
+    """Generates Rich Data + AI Insights for a Project."""
     project_key = project_key.upper()
-    
     if project_key not in SUPPORTED_PROJECTS:
         return {"error": f"Project {project_key} not found."}
     
     config = SUPPORTED_PROJECTS[project_key]
     print(f"📊 Analyzing {config['name']} ({project_key})...")
     
-    # Check Active Sprint
+    # 1. Fetch Issues
+    # We fetch ALL issues in the active sprint (or recent backlog)
     jql_query = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", {
         "jql": jql_query,
-        "fields": ["summary", "status", "assignee"]
+        "fields": ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD]
     })
     issues = res.json().get('issues', []) if res else []
     
+    # Fallback for Kanban (no sprints)
     if not issues:
-        # Fallback: If no sprint is active (like in Kanban), check recent active tickets
-        print(f"   ⚠️ No active sprint found for {project_key}. Checking active backlog...")
+        print(f"   ⚠️ No active sprint. Checking recent active tickets...")
         jql_query = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
         res = jira_request("POST", "search/jql", {
             "jql": jql_query,
-            "maxResults": 20,
-            "fields": ["summary", "status", "assignee"]
+            "maxResults": 30,
+            "fields": ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD]
         })
         issues = res.json().get('issues', []) if res else []
 
     if not issues:
-        return {"sprint_summary": "No active tasks found.", "assignee_performance": []}
+        return {"sprint_summary": "No active tasks found.", "metrics": {}, "assignee_performance": []}
 
-    # Data Prep
-    perf_data = {}
+    # 2. Calculate Hard Metrics (The "Dashboards" Data)
+    stats = {
+        "total_tickets": len(issues),
+        "total_points": 0,
+        "completed_points": 0,
+        "blockers": 0,
+        "status_breakdown": {"To Do": 0, "In Progress": 0, "Done": 0},
+        "assignees": {}
+    }
+
+    perf_data_for_ai = {}
+
     for issue in issues:
         f = issue['fields']
+        
+        # Extract fields
         name = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
         status = f['status']['name']
-        perf_data[name] = perf_data.get(name, []) + [f"{f['summary']} ({status})"]
+        priority = f['priority']['name'] if f['priority'] else "Medium"
+        points = f.get(STORY_POINTS_FIELD) or 0
+        
+        # Aggregate Global Stats
+        stats["total_points"] += points
+        stats["status_breakdown"][status] = stats["status_breakdown"].get(status, 0) + 1
+        if status.lower() in ["done", "completed", "closed"]:
+            stats["completed_points"] += points
+        if priority in ["Highest", "High", "Critical"] and status.lower() != "done":
+            stats["blockers"] += 1
+            
+        # Aggregate Per-User Stats
+        if name not in stats["assignees"]:
+            stats["assignees"][name] = {"count": 0, "points": 0, "active_tickets": []}
+        
+        stats["assignees"][name]["count"] += 1
+        stats["assignees"][name]["points"] += points
+        stats["assignees"][name]["active_tickets"].append(f"{f['summary']} ({status})")
 
-    # AI Analysis
+        # Prep for AI
+        perf_data_for_ai[name] = perf_data_for_ai.get(name, []) + [f"{f['summary']} ({status}, {points}pts)"]
+
+    # 3. AI Analysis
     prompt = f"""
-    Analyze the Work Board for '{config['name']}':
-    {json.dumps(perf_data)}
-    Return ONLY JSON: {{'sprint_summary': '...', 'assignee_performance': [{{'name': '...', 'analysis': '...'}}]}}
+    Analyze Work Board '{config['name']}':
+    {json.dumps(perf_data_for_ai)}
+    
+    Return ONLY JSON: 
+    {{
+        "sprint_summary": "2 sentences on overall health/risks.", 
+        "assignee_performance": [
+            {{"name": "...", "analysis": "1 sentence on their load/focus."}}
+        ]
+    }}
     """
     
+    ai_response = {}
     try:
         raw = generate_with_retry(prompt)
         clean_json = raw.replace('```json', '').replace('```', '').strip()
-        return json.loads(clean_json)
+        ai_response = json.loads(clean_json)
     except Exception as e:
-        return {"error": f"Analysis failed: {str(e)}"}
+        ai_response = {"sprint_summary": "AI Analysis Unavailable", "assignee_performance": []}
+
+    # 4. Merge Data & Return
+    return {
+        "metrics": stats, 
+        "ai_insights": ai_response
+    }
 
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
-    """Handles Ticket Updates for ALL configured Projects."""
+    """Handles Ticket Updates."""
     issue = payload.get('issue')
     if not issue or not issue.get('fields'): return {"status": "ignored"}
 
     key = issue['key']
     project_key = key.split("-")[0]
     
-    # Security: Ignore unknown projects
     if project_key not in SUPPORTED_PROJECTS:
         return {"status": "ignored_unknown_project"}
 
