@@ -1,24 +1,62 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Agile Platform</title>
+    <title>IG AI Agile Platform</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/lucide.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
-        body { background-color: #f8fafc; color: #1e293b; font-family: 'Inter', sans-serif; }
-        .sidebar { background: #0f172a; color: white; }
-        .active-tab { background: rgba(255,255,255,0.1); border-left: 4px solid #3b82f6; }
-        /* Timeline specific styles */
-        .timeline-grid { display: grid; grid-template-columns: 200px repeat(7, 1fr); gap: 1px; background: #e2e8f0; border: 1px solid #e2e8f0; }
-        .timeline-cell { background: white; padding: 10px; min-height: 80px; position: relative; }
-        .task-bar { transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .task-bar:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.15); z-index: 10; }
+        /* INSIGHT GLOBAL BRAND THEME */
+        :root {
+            --ig-cyan: #22d3ee;    /* Cyan-400 equivalent */
+            --ig-yellow: #facc15;  /* Yellow-400 equivalent */
+            --ig-magenta: #e879f9; /* Fuchsia-400 equivalent */
+            --ig-navy: #0f172a;    /* Slate-900 equivalent */
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--ig-navy); color: #f8fafc; }
+        
+        .ig-gradient-text {
+            background: linear-gradient(to right, var(--ig-cyan), var(--ig-yellow), var(--ig-magenta));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .active-tab { 
+            background: rgba(255, 255, 255, 0.1); 
+            border-left: 4px solid var(--ig-cyan); 
+            color: white;
+        }
+
+        /* TIMELINE STYLES */
+        .timeline-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch; /* Smooth scroll on iOS */
+        }
+        .timeline-grid {
+            min-width: 800px; /* Forces horizontal scroll on mobile */
+            display: grid;
+            grid-template-columns: 180px repeat(5, 1fr);
+            gap: 1px;
+            background: #334155; /* Grid lines color */
+        }
+        .timeline-cell-head { background: #1e293b; padding: 12px; text-align: center; font-weight: bold; color: #94a3b8; }
+        .timeline-user-col { position: sticky; left: 0; background: #1e293b; z-index: 10; border-right: 1px solid #334155; }
+        .timeline-day-col { background: #0f172a; position: relative; padding: 4px; }
+        
+        .task-chip {
+            font-size: 10px; padding: 4px 6px; margin-bottom: 4px; border-radius: 4px;
+            background: rgba(34, 211, 238, 0.1); border-left: 3px solid var(--ig-cyan); color: var(--ig-cyan);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .task-chip.critical { background: rgba(232, 121, 249, 0.1); border-left-color: var(--ig-magenta); color: var(--ig-magenta); }
+
+        /* Animation */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.5s ease-out forwards; }
     </style>
 </head>
 <body>
@@ -26,13 +64,18 @@
 
     <script type="text/babel">
         const { useState, useEffect } = React;
-        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; // Your Render URL
+        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
+
+        // ICONS
+        const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>;
+        const CloseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
 
         function App() {
-            const [view, setView] = useState('dashboard'); // 'dashboard' or 'timeline'
+            const [view, setView] = useState('dashboard');
             const [project, setProject] = useState('SCRUM');
             const [data, setData] = useState(null);
             const [loading, setLoading] = useState(true);
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile Menu State
 
             useEffect(() => {
                 setLoading(true);
@@ -42,35 +85,61 @@
                     .catch(e => setLoading(false));
             }, [project]);
 
+            const toggleSidebar = () => setIsSidebarOpen(!isSidebarOpen);
+
             return (
-                <div class="flex h-screen overflow-hidden">
-                    {/* SIDEBAR NAVIGATION */}
-                    <aside class="sidebar w-64 flex flex-col justify-between">
-                        <div>
-                            <div class="p-6">
-                                <h1 class="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
-                                    AI AGILE
-                                </h1>
-                                <p class="text-xs text-slate-400">Autonomous Management</p>
+                <div class="flex h-screen overflow-hidden bg-slate-900">
+                    
+                    {/* MOBILE HEADER */}
+                    <header class="md:hidden flex items-center justify-between p-4 bg-slate-900 border-b border-slate-800 z-20 absolute w-full top-0">
+                        <div class="flex items-center gap-2">
+                             {/* IG Logo Dots Representation */}
+                            <div class="flex gap-1">
+                                <div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)]"></div>
+                                <div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)]"></div>
+                                <div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)]"></div>
                             </div>
-                            <nav class="mt-4">
-                                <button onClick={() => setView('dashboard')} class={`w-full text-left p-4 hover:bg-slate-800 transition flex items-center gap-3 ${view === 'dashboard' ? 'active-tab' : ''}`}>
+                            <span class="font-bold text-lg tracking-tight text-white">IG AGILE</span>
+                        </div>
+                        <button onClick={toggleSidebar} class="text-white p-2">
+                            {isSidebarOpen ? <CloseIcon /> : <MenuIcon />}
+                        </button>
+                    </header>
+
+                    {/* SIDEBAR (Desktop: Fixed, Mobile: Drawer) */}
+                    <aside class={`
+                        fixed md:relative z-30 h-full w-64 bg-slate-950 border-r border-slate-800 flex flex-col justify-between transition-transform duration-300 ease-in-out
+                        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+                    `}>
+                        <div>
+                            <div class="p-6 hidden md:block">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)]"></div>
+                                    <div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)]"></div>
+                                    <div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)]"></div>
+                                </div>
+                                <h1 class="text-2xl font-black tracking-tighter text-white">
+                                    IG AGILE
+                                </h1>
+                                <p class="text-xs text-slate-500 font-mono mt-1">v2.1 Staffing Intelligence</p>
+                            </div>
+                            
+                            <nav class="mt-4 md:mt-4 pt-16 md:pt-0">
+                                <button onClick={() => {setView('dashboard'); setIsSidebarOpen(false)}} class={`w-full text-left p-4 hover:bg-slate-900 transition flex items-center gap-3 text-slate-300 ${view === 'dashboard' ? 'active-tab' : ''}`}>
                                     <span>📊</span> Command Center
                                 </button>
-                                <button onClick={() => setView('timeline')} class={`w-full text-left p-4 hover:bg-slate-800 transition flex items-center gap-3 ${view === 'timeline' ? 'active-tab' : ''}`}>
-                                    <span>🗓️</span> Timeline & Capacity
-                                </button>
-                                <button class="w-full text-left p-4 hover:bg-slate-800 transition flex items-center gap-3 opacity-50 cursor-not-allowed">
-                                    <span>🤖</span> Automations (Beta)
+                                <button onClick={() => {setView('timeline'); setIsSidebarOpen(false)}} class={`w-full text-left p-4 hover:bg-slate-900 transition flex items-center gap-3 text-slate-300 ${view === 'timeline' ? 'active-tab' : ''}`}>
+                                    <span>🗓️</span> Timeline View
                                 </button>
                             </nav>
                         </div>
-                        <div class="p-4 border-t border-slate-700">
-                             <div class="text-xs text-slate-500 uppercase font-bold mb-2">Active Project</div>
+
+                        <div class="p-4 border-t border-slate-800 bg-slate-950">
+                             <div class="text-xs text-slate-500 uppercase font-bold mb-2 tracking-wider">Active Board</div>
                              <select 
                                 value={project} 
-                                onChange={(e) => setProject(e.target.value)}
-                                class="w-full bg-slate-800 text-white p-2 rounded border border-slate-600 outline-none"
+                                onChange={(e) => {setProject(e.target.value); setIsSidebarOpen(false)}}
+                                class="w-full bg-slate-900 text-white p-3 rounded border border-slate-700 outline-none focus:border-[var(--ig-cyan)] transition"
                             >
                                 <option value="SCRUM">Provider Services</option>
                                 <option value="OT">Ops Team</option>
@@ -78,61 +147,65 @@
                         </div>
                     </aside>
 
-                    {/* MAIN CONTENT Area */}
-                    <main class="flex-1 overflow-auto bg-slate-50 relative">
+                    {/* MAIN CONTENT */}
+                    <main class="flex-1 overflow-auto relative bg-slate-900 pt-16 md:pt-0">
                         {loading && (
-                            <div class="absolute inset-0 flex items-center justify-center bg-white/80 z-50">
-                                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                            <div class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 z-50">
+                                <div class="w-12 h-12 border-4 border-[var(--ig-cyan)] border-t-transparent rounded-full animate-spin"></div>
+                                <div class="mt-4 text-[var(--ig-cyan)] font-mono animate-pulse">Initializing AI...</div>
                             </div>
                         )}
 
                         {data && view === 'dashboard' && <DashboardView data={data} />}
                         {data && view === 'timeline' && <TimelineView data={data} />}
                     </main>
+                    
+                    {/* Overlay for mobile when sidebar is open */}
+                    {isSidebarOpen && (
+                        <div onClick={toggleSidebar} class="fixed inset-0 bg-black/50 z-20 md:hidden"></div>
+                    )}
                 </div>
             );
         }
 
-        // --- VIEW 1: COMMAND CENTER (Your Classic AI View) ---
+        // --- VIEW 1: DASHBOARD ---
         function DashboardView({ data }) {
             return (
-                <div class="p-8 max-w-7xl mx-auto animate-fade-in">
+                <div class="p-4 md:p-8 max-w-7xl mx-auto animate-fade-in pb-20">
                     <header class="mb-8">
-                        <h2 class="text-3xl font-bold text-slate-800">Sprint Command Center</h2>
-                        <p class="text-slate-500">Real-time AI analysis of team velocity and risks.</p>
+                        <h2 class="text-2xl md:text-3xl font-bold text-white">Command Center</h2>
+                        <p class="text-slate-400 text-sm">Real-time team velocity metrics.</p>
                     </header>
 
-                    {/* METRICS ROW */}
-                    <div class="grid grid-cols-4 gap-6 mb-8">
-                        <MetricCard label="Active Tickets" value={data.metrics.total_tickets} color="bg-blue-500" />
-                        <MetricCard label="Story Points" value={data.metrics.total_points} color="bg-purple-500" />
-                        <MetricCard label="Critical Blockers" value={data.metrics.blockers} color="bg-red-500" />
-                        <MetricCard label="Team Size" value={Object.keys(data.metrics.assignees).length} color="bg-emerald-500" />
+                    {/* Metrics Grid */}
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                        <MetricCard label="Active Tickets" value={data.metrics.total_tickets} color="border-[var(--ig-cyan)] text-[var(--ig-cyan)]" />
+                        <MetricCard label="Story Points" value={data.metrics.total_points} color="border-[var(--ig-magenta)] text-[var(--ig-magenta)]" />
+                        <MetricCard label="Blockers" value={data.metrics.blockers} color="border-red-500 text-red-400" />
+                        <MetricCard label="Dev Count" value={Object.keys(data.metrics.assignees).length} color="border-[var(--ig-yellow)] text-[var(--ig-yellow)]" />
                     </div>
 
-                    {/* AI INSIGHT */}
-                    <div class="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl p-8 mb-8 text-white shadow-xl relative overflow-hidden">
-                        <div class="absolute top-0 right-0 opacity-10 text-9xl">🧠</div>
-                        <h3 class="font-bold text-yellow-400 mb-2 flex items-center gap-2">
-                            AI Executive Summary
-                        </h3>
-                        <p class="text-lg leading-relaxed text-slate-200">
+                    {/* AI Insight */}
+                    <div class="bg-slate-800 rounded-xl p-6 mb-8 border border-slate-700 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 opacity-5 text-8xl grayscale">🧠</div>
+                        <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase text-sm tracking-wider">AI Executive Analysis</h3>
+                        <p class="text-slate-300 leading-relaxed text-sm md:text-base">
                             "{data.ai_insights.sprint_summary || "Analyzing Sprint Data..."}"
                         </p>
                     </div>
 
-                    {/* DEVELOPER CARDS */}
-                    <div class="grid grid-cols-3 gap-6">
+                    {/* Developer Cards */}
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                            <div key={name} class="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg">
                                 <div class="flex items-center gap-3 mb-4">
-                                    <img src={stats.avatar || `https://ui-avatars.com/api/?name=${name}&background=random`} class="w-10 h-10 rounded-full" />
+                                    <img src={stats.avatar || `https://ui-avatars.com/api/?name=${name}&background=random`} class="w-10 h-10 rounded-full border-2 border-slate-600" />
                                     <div>
-                                        <div class="font-bold text-slate-700">{name}</div>
+                                        <div class="font-bold text-white text-sm">{name}</div>
                                         <div class="text-xs text-slate-400">{stats.count} Tasks • {stats.points} pts</div>
                                     </div>
                                 </div>
-                                <div class="bg-slate-50 p-3 rounded text-sm text-slate-600 italic border border-slate-100">
+                                <div class="bg-slate-900/50 p-3 rounded text-xs text-slate-400 italic border border-slate-800">
                                     "{data.ai_insights.assignee_performance?.find(p => p.name === name)?.analysis || "Performance stable."}"
                                 </div>
                             </div>
@@ -142,74 +215,65 @@
             );
         }
 
-        // --- VIEW 2: TIMELINE (The "Teamline" Killer) ---
+        // --- VIEW 2: TIMELINE (Mobile Optimized) ---
         function TimelineView({ data }) {
-            // Mocking dates for the demo since Jira dates might be empty in test data
-            const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
             
             return (
-                <div class="p-8 min-w-[1000px]">
-                    <header class="mb-8 flex justify-between items-end">
-                        <div>
-                            <h2 class="text-3xl font-bold text-slate-800">Timeline & Capacity</h2>
-                            <p class="text-slate-500">Resource allocation view.</p>
-                        </div>
-                        <div class="flex gap-2 text-sm">
-                            <span class="px-3 py-1 bg-white border rounded shadow-sm">Week View</span>
-                            <span class="px-3 py-1 bg-slate-100 border rounded text-slate-400">Month View</span>
-                        </div>
+                <div class="p-4 md:p-8 min-h-full pb-20">
+                    <header class="mb-6">
+                        <h2 class="text-2xl font-bold text-white">Timeline View</h2>
+                        <p class="text-slate-400 text-sm">Capacity & Scheduling.</p>
                     </header>
 
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                        {/* CALENDAR HEADER */}
-                        <div class="timeline-grid border-b border-slate-200 bg-slate-50">
-                            <div class="p-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Team Member</div>
-                            {days.map(d => (
-                                <div key={d} class="p-4 text-center border-l border-slate-200 font-semibold text-slate-600">{d}</div>
+                    <div class="bg-slate-800 rounded-lg shadow-xl overflow-hidden border border-slate-700">
+                        <div class="timeline-wrapper">
+                            {/* Grid Header */}
+                            <div class="timeline-grid">
+                                <div class="timeline-cell-head bg-slate-900 text-slate-300 border-r border-slate-700 sticky left-0 z-20">Team Member</div>
+                                {days.map(d => (
+                                    <div key={d} class="timeline-cell-head">{d}</div>
+                                ))}
+                            </div>
+
+                            {/* User Rows */}
+                            {Object.entries(data.metrics.assignees).map(([name, stats]) => (
+                                <div key={name} class="timeline-grid">
+                                    
+                                    {/* Sticky User Column */}
+                                    <div class="timeline-user-col p-4 flex flex-col justify-center">
+                                        <div class="flex items-center gap-2 mb-2">
+                                            <img src={stats.avatar || `https://ui-avatars.com/api/?name=${name}`} class="w-8 h-8 rounded-full border border-slate-600" />
+                                            <span class="font-bold text-sm truncate text-slate-200">{name.split(" ")[0]}</span>
+                                        </div>
+                                        {/* Capacity Bar */}
+                                        <div class="w-full bg-slate-700 rounded-full h-1.5 mb-1">
+                                            <div class={`h-1.5 rounded-full ${stats.points > 15 ? 'bg-[var(--ig-magenta)]' : 'bg-[var(--ig-cyan)]'}`} style={{width: `${Math.min(100, (stats.points / 20) * 100)}%`}}></div>
+                                        </div>
+                                        <div class="text-[10px] text-slate-500 flex justify-between">
+                                            <span>Load</span>
+                                            <span>{stats.points} pts</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Task Columns */}
+                                    <div class="col-span-5 bg-slate-900/50 p-2 flex flex-wrap gap-2 content-start">
+                                        {stats.tasks.map((task, i) => {
+                                            const isCritical = task.priority === 'Highest' || task.priority === 'Critical';
+                                            return (
+                                                <div key={task.key} class={`task-chip w-full ${isCritical ? 'critical' : ''}`}>
+                                                    <div class="flex justify-between">
+                                                        <span class="font-bold">{task.key}</span>
+                                                        <span>{task.points}</span>
+                                                    </div>
+                                                    <div class="truncate opacity-70">{task.summary}</div>
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
                             ))}
                         </div>
-
-                        {/* USER ROWS */}
-                        {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="timeline-grid">
-                                {/* User Info Column */}
-                                <div class="p-4 bg-white border-r border-slate-100 flex flex-col justify-center">
-                                    <div class="flex items-center gap-2 mb-2">
-                                        <img src={stats.avatar || `https://ui-avatars.com/api/?name=${name}`} class="w-8 h-8 rounded-full" />
-                                        <span class="font-bold text-sm truncate">{name.split(" ")[0]}</span>
-                                    </div>
-                                    <div class="w-full bg-slate-100 rounded-full h-1.5 mb-1 overflow-hidden">
-                                        <div class="bg-blue-500 h-1.5 rounded-full" style={{width: `${Math.min(100, (stats.points / 20) * 100)}%`}}></div>
-                                    </div>
-                                    <div class="text-[10px] text-slate-400 flex justify-between">
-                                        <span>Load</span>
-                                        <span>{stats.points}/20 pts</span>
-                                    </div>
-                                </div>
-
-                                {/* Tasks Columns (Spreading tasks across the week visually) */}
-                                <div class="col-span-7 relative bg-white p-2">
-                                    {stats.tasks.map((task, i) => {
-                                        // Visual Logic: Distribute tasks horizontally for demo
-                                        // In real production, we calculate 'left' and 'width' based on task.start and task.end
-                                        const leftPos = (i * 15) % 80; 
-                                        const width = Math.max(15, task.points * 5); 
-                                        const color = task.priority === 'Highest' || task.priority === 'Critical' ? 'bg-red-100 border-red-300 text-red-800' : 'bg-blue-100 border-blue-300 text-blue-800';
-
-                                        return (
-                                            <div key={task.key} class={`task-bar absolute top-3 h-16 rounded-lg border p-2 text-xs flex flex-col justify-between ${color}`} 
-                                                style={{left: `${leftPos}%`, width: `${width}%`}}>
-                                                <div class="font-bold truncate">{task.key}</div>
-                                                <div class="truncate opacity-75">{task.summary}</div>
-                                                <div class="flex justify-between mt-1 opacity-60">
-                                                    <span>{task.points} pts</span>
-                                                </div>
-                                            </div>
-                                        )
-                                    })}
-                                </div>
-                            </div>
-                        ))}
                     </div>
                 </div>
             );
@@ -217,10 +281,9 @@
 
         function MetricCard({ label, value, color }) {
             return (
-                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-100 relative overflow-hidden">
-                    <div class={`absolute top-0 left-0 w-1 h-full ${color}`}></div>
-                    <div class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{label}</div>
-                    <div class="text-3xl font-black text-slate-800">{value}</div>
+                <div class={`bg-slate-800 p-4 rounded-xl shadow-sm border-l-4 ${color} border-t border-r border-b border-slate-700`}>
+                    <div class="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">{label}</div>
+                    <div class="text-2xl font-black text-white">{value}</div>
                 </div>
             );
         }
