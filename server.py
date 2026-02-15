@@ -27,39 +27,34 @@ STORY_POINTS_FIELD = "customfield_10016"
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🔍 AUTO-DISCOVERY MODEL LOADER ---
-# This runs ONCE when server starts to find the correct model name
-def get_best_model():
-    print("\n🔍 Scanning for available Gemini models...")
-    try:
-        # Get all valid models
-        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 1. Look for Flash (Fastest/Cheapest)
-        for m in all_models:
-            if "flash" in m and "1.5" in m:
-                print(f"✅ Auto-Selected FLASH Model: {m}")
-                return genai.GenerativeModel(m)
-        
-        # 2. Look for Pro (Smarter)
-        for m in all_models:
-            if "pro" in m and "1.5" in m:
-                print(f"✅ Auto-Selected PRO Model: {m}")
-                return genai.GenerativeModel(m)
+# --- 🛠️ THE FIX: HARDCODED MODEL POOL ---
+# We explicitly list high-quota models to avoid getting stuck on "2.5-preview"
+MODEL_POOL = [
+    "gemini-1.5-flash",       # Primary: High limits (~1500/day)
+    "gemini-1.5-flash-8b",    # Backup 1: High limits
+    "gemini-1.5-pro",         # Backup 2: Lower limits, but good fallback
+    "gemini-pro"              # Legacy Backup
+]
 
-        # 3. Fallback to anything that works
-        if all_models:
-            print(f"⚠️ Using Fallback Model: {all_models[0]}")
-            return genai.GenerativeModel(all_models[0])
-            
-    except Exception as e:
-        print(f"❌ Critical Error Listing Models: {e}")
-        
-    print("❌ No models found. Defaulting to 'gemini-pro'")
-    return genai.GenerativeModel("gemini-pro")
-
-# Initialize the model GLOBAL variable
-active_model = get_best_model()
+def generate_with_retry(prompt):
+    """Iterates through the model pool until one works."""
+    for model_name in MODEL_POOL:
+        try:
+            print(f"   👉 Attempting with model: {model_name}...")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            error_msg = str(e).lower()
+            # If we hit a rate limit or a 404 (not found), try the next model
+            if "429" in error_msg or "quota" in error_msg or "not found" in error_msg:
+                print(f"   ⚠️ Issue with {model_name} ({error_msg[:50]}...). Switching...")
+                continue
+            else:
+                # If it's a real error (like bad prompt), raise it
+                raise e
+    
+    raise Exception("❌ All models exhausted. Please check your API key.")
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, data=None):
@@ -84,7 +79,7 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master is Online 🤖"}
+    return {"message": "AI Scrum Master (Rotation Fix) is Online 🤖"}
 
 @app.get("/analytics")
 def get_sprint_analytics():
@@ -98,7 +93,6 @@ def get_sprint_analytics():
     if not issues:
         return {"sprint_summary": "Backlog is empty.", "assignee_performance": []}
 
-    # Data Prep
     perf_data = {}
     for issue in issues:
         f = issue['fields']
@@ -113,8 +107,7 @@ def get_sprint_analytics():
     """
     
     try:
-        # Generate with the auto-discovered model
-        raw = active_model.generate_content(prompt).text
+        raw = generate_with_retry(prompt)
         clean_json = raw.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
     except Exception as e:
@@ -134,7 +127,6 @@ async def jira_webhook_listener(payload: dict):
     assignee = fields.get('assignee')
     current_points = fields.get(STORY_POINTS_FIELD)
 
-    # Skip if done
     if current_points and assignee: return {"status": "already_processed"}
 
     print(f"\n🧠 AI ANALYZING {key}...")
@@ -142,22 +134,18 @@ async def jira_webhook_listener(payload: dict):
     prompt = f"""
     Task: {summary}
     Context: {desc}
-    
     1. Estimate Points (1, 2, 3, 5, 8).
     2. Pick Owner (rohitsakabackend, rohitsakafrontend, rohitsakadevops).
-    
     Return ONLY JSON: {{ "points": int, "owner": "str", "reason": "str" }}
     """
 
     try:
-        # Rate Limit Protection
-        time.sleep(2) 
+        time.sleep(2) # Breathing room
         
-        # Use the auto-discovered model
-        raw = active_model.generate_content(prompt).text
+        # USE THE ROTATION FUNCTION
+        raw = generate_with_retry(prompt)
         data = json.loads(raw.replace('```json', '').replace('```', '').strip())
 
-        # Update Jira
         payload = {}
         if not current_points: payload[STORY_POINTS_FIELD] = data['points']
         if not assignee and priority in ['Highest', 'High', 'Critical']:
