@@ -1,240 +1,232 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Scrum Master Command Center</title>
+    <title>AI Agile Platform</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/lucide.min.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
-        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 30px -10px rgba(59, 130, 246, 0.3); }
-        .progress-bar { transition: width 1s ease-in-out; }
+        body { background-color: #f8fafc; color: #1e293b; font-family: 'Inter', sans-serif; }
+        .sidebar { background: #0f172a; color: white; }
+        .active-tab { background: rgba(255,255,255,0.1); border-left: 4px solid #3b82f6; }
+        /* Timeline specific styles */
+        .timeline-grid { display: grid; grid-template-columns: 200px repeat(7, 1fr); gap: 1px; background: #e2e8f0; border: 1px solid #e2e8f0; }
+        .timeline-cell { background: white; padding: 10px; min-height: 80px; position: relative; }
+        .task-bar { transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .task-bar:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.15); z-index: 10; }
     </style>
 </head>
-<body class="bg-[#0f172a] text-slate-100 min-h-screen">
+<body>
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
+        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; // Your Render URL
 
-        // --- CONFIG ---
-        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
-        const BOARDS = [
-            { key: "SCRUM", name: "Provider Services" },
-            { key: "OT", name: "Ops Team (Kanban)" },
-            { key: "KANBAN", name: "Kanban Board" }
-        ];
-
-        function StatCard({ label, value, color, icon }) {
-            return (
-                <div class={`glass p-4 rounded-xl border-l-4 ${color}`}>
-                    <div class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{label}</div>
-                    <div class="text-3xl font-black">{value}</div>
-                </div>
-            );
-        }
-
-        function PlayerCard({ name, stats, aiAnalysis }) {
-            const initials = name.split(" ").map(n => n[0]).join("").slice(0, 2);
-            return (
-                <div class="bg-slate-800/50 rounded-xl p-5 border border-slate-700 hover:border-blue-500/50 transition duration-300">
-                    <div class="flex items-center gap-4 mb-4">
-                        <div class="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-lg shadow-lg">
-                            {initials}
-                        </div>
-                        <div>
-                            <h3 class="font-bold text-lg text-white">{name}</h3>
-                            <div class="flex gap-2 text-xs mt-1">
-                                <span class="bg-blue-900 text-blue-300 px-2 py-0.5 rounded-full">{stats.count} Tickets</span>
-                                <span class="bg-purple-900 text-purple-300 px-2 py-0.5 rounded-full">{stats.points} Points</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    {/* Active Work List */}
-                    <div class="mb-4 space-y-2">
-                        {stats.active_tickets.slice(0, 3).map((t, i) => (
-                            <div key={i} class="text-xs text-slate-400 truncate border-l-2 border-slate-600 pl-2">
-                                {t}
-                            </div>
-                        ))}
-                        {stats.active_tickets.length > 3 && (
-                            <div class="text-xs text-slate-500 italic pl-2">
-                                +{stats.active_tickets.length - 3} more tasks...
-                            </div>
-                        )}
-                    </div>
-
-                    <div class="bg-slate-900/50 p-3 rounded-lg text-sm text-slate-300 italic border border-slate-700/50">
-                        " {aiAnalysis || "Performance data analyzing..."} "
-                    </div>
-                </div>
-            );
-        }
-
-        function Dashboard() {
-            const [activeBoard, setActiveBoard] = useState(BOARDS[0]);
+        function App() {
+            const [view, setView] = useState('dashboard'); // 'dashboard' or 'timeline'
+            const [project, setProject] = useState('SCRUM');
             const [data, setData] = useState(null);
             const [loading, setLoading] = useState(true);
 
-            const fetchData = () => {
-                setLoading(true);
-                fetch(`${API_BASE}/analytics/${activeBoard.key}`)
-                    .then(res => res.json())
-                    .then(json => {
-                        setData(json);
-                        setLoading(false);
-                    })
-                    .catch(err => {
-                        console.error("Error:", err);
-                        setLoading(false);
-                    });
-            };
-
             useEffect(() => {
-                fetchData();
-            }, [activeBoard]);
-
-            // Calculate Progress Bar Widths
-            const getProgress = (status) => {
-                if (!data?.metrics?.total_tickets) return 0;
-                const count = data.metrics.status_breakdown[status] || 0;
-                // Simple logic: map specific statuses to broad categories
-                let total = 0;
-                if (status === 'Done') total = (data.metrics.status_breakdown['Done'] || 0) + (data.metrics.status_breakdown['Completed'] || 0);
-                else if (status === 'In Progress') total = (data.metrics.status_breakdown['In Progress'] || 0);
-                else total = (data.metrics.status_breakdown['To Do'] || 0);
-                
-                return (total / data.metrics.total_tickets) * 100;
-            };
+                setLoading(true);
+                fetch(`${API_BASE}/analytics/${project}`)
+                    .then(res => res.json())
+                    .then(d => { setData(d); setLoading(false); })
+                    .catch(e => setLoading(false));
+            }, [project]);
 
             return (
-                <div class="p-4 md:p-8 max-w-7xl mx-auto">
-                    {/* HEADER */}
-                    <header class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div class="flex h-screen overflow-hidden">
+                    {/* SIDEBAR NAVIGATION */}
+                    <aside class="sidebar w-64 flex flex-col justify-between">
                         <div>
-                            <h1 class="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-400 tracking-tight">
-                                COMMAND CENTER
-                            </h1>
-                            <p class="text-slate-400 font-mono text-sm mt-1 flex items-center gap-2">
-                                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                AI SYSTEM ONLINE
-                            </p>
+                            <div class="p-6">
+                                <h1 class="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
+                                    AI AGILE
+                                </h1>
+                                <p class="text-xs text-slate-400">Autonomous Management</p>
+                            </div>
+                            <nav class="mt-4">
+                                <button onClick={() => setView('dashboard')} class={`w-full text-left p-4 hover:bg-slate-800 transition flex items-center gap-3 ${view === 'dashboard' ? 'active-tab' : ''}`}>
+                                    <span>📊</span> Command Center
+                                </button>
+                                <button onClick={() => setView('timeline')} class={`w-full text-left p-4 hover:bg-slate-800 transition flex items-center gap-3 ${view === 'timeline' ? 'active-tab' : ''}`}>
+                                    <span>🗓️</span> Timeline & Capacity
+                                </button>
+                                <button class="w-full text-left p-4 hover:bg-slate-800 transition flex items-center gap-3 opacity-50 cursor-not-allowed">
+                                    <span>🤖</span> Automations (Beta)
+                                </button>
+                            </nav>
                         </div>
-                        
-                        <div class="flex items-center gap-3">
-                            <select 
-                                class="bg-slate-800 text-white px-4 py-2 rounded-lg border border-slate-700 hover:border-blue-500 outline-none transition cursor-pointer font-bold shadow-lg"
-                                value={activeBoard.key}
-                                onChange={(e) => setActiveBoard(BOARDS.find(b => b.key === e.target.value))}
+                        <div class="p-4 border-t border-slate-700">
+                             <div class="text-xs text-slate-500 uppercase font-bold mb-2">Active Project</div>
+                             <select 
+                                value={project} 
+                                onChange={(e) => setProject(e.target.value)}
+                                class="w-full bg-slate-800 text-white p-2 rounded border border-slate-600 outline-none"
                             >
-                                {BOARDS.map(board => (
-                                    <option key={board.key} value={board.key}>
-                                        {board.name}
-                                    </option>
-                                ))}
+                                <option value="SCRUM">Provider Services</option>
+                                <option value="OT">Ops Team</option>
                             </select>
-                            <button 
-                                onClick={fetchData} 
-                                class="bg-slate-800 p-2 rounded-lg hover:bg-slate-700 border border-slate-700 transition"
-                                title="Refresh Data"
-                            >
-                                🔄
-                            </button>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTENT Area */}
+                    <main class="flex-1 overflow-auto bg-slate-50 relative">
+                        {loading && (
+                            <div class="absolute inset-0 flex items-center justify-center bg-white/80 z-50">
+                                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                            </div>
+                        )}
+
+                        {data && view === 'dashboard' && <DashboardView data={data} />}
+                        {data && view === 'timeline' && <TimelineView data={data} />}
+                    </main>
+                </div>
+            );
+        }
+
+        // --- VIEW 1: COMMAND CENTER (Your Classic AI View) ---
+        function DashboardView({ data }) {
+            return (
+                <div class="p-8 max-w-7xl mx-auto animate-fade-in">
+                    <header class="mb-8">
+                        <h2 class="text-3xl font-bold text-slate-800">Sprint Command Center</h2>
+                        <p class="text-slate-500">Real-time AI analysis of team velocity and risks.</p>
+                    </header>
+
+                    {/* METRICS ROW */}
+                    <div class="grid grid-cols-4 gap-6 mb-8">
+                        <MetricCard label="Active Tickets" value={data.metrics.total_tickets} color="bg-blue-500" />
+                        <MetricCard label="Story Points" value={data.metrics.total_points} color="bg-purple-500" />
+                        <MetricCard label="Critical Blockers" value={data.metrics.blockers} color="bg-red-500" />
+                        <MetricCard label="Team Size" value={Object.keys(data.metrics.assignees).length} color="bg-emerald-500" />
+                    </div>
+
+                    {/* AI INSIGHT */}
+                    <div class="bg-gradient-to-r from-slate-900 to-slate-800 rounded-xl p-8 mb-8 text-white shadow-xl relative overflow-hidden">
+                        <div class="absolute top-0 right-0 opacity-10 text-9xl">🧠</div>
+                        <h3 class="font-bold text-yellow-400 mb-2 flex items-center gap-2">
+                            AI Executive Summary
+                        </h3>
+                        <p class="text-lg leading-relaxed text-slate-200">
+                            "{data.ai_insights.sprint_summary || "Analyzing Sprint Data..."}"
+                        </p>
+                    </div>
+
+                    {/* DEVELOPER CARDS */}
+                    <div class="grid grid-cols-3 gap-6">
+                        {Object.entries(data.metrics.assignees).map(([name, stats]) => (
+                            <div key={name} class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                                <div class="flex items-center gap-3 mb-4">
+                                    <img src={stats.avatar || `https://ui-avatars.com/api/?name=${name}&background=random`} class="w-10 h-10 rounded-full" />
+                                    <div>
+                                        <div class="font-bold text-slate-700">{name}</div>
+                                        <div class="text-xs text-slate-400">{stats.count} Tasks • {stats.points} pts</div>
+                                    </div>
+                                </div>
+                                <div class="bg-slate-50 p-3 rounded text-sm text-slate-600 italic border border-slate-100">
+                                    "{data.ai_insights.assignee_performance?.find(p => p.name === name)?.analysis || "Performance stable."}"
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- VIEW 2: TIMELINE (The "Teamline" Killer) ---
+        function TimelineView({ data }) {
+            // Mocking dates for the demo since Jira dates might be empty in test data
+            const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+            
+            return (
+                <div class="p-8 min-w-[1000px]">
+                    <header class="mb-8 flex justify-between items-end">
+                        <div>
+                            <h2 class="text-3xl font-bold text-slate-800">Timeline & Capacity</h2>
+                            <p class="text-slate-500">Resource allocation view.</p>
+                        </div>
+                        <div class="flex gap-2 text-sm">
+                            <span class="px-3 py-1 bg-white border rounded shadow-sm">Week View</span>
+                            <span class="px-3 py-1 bg-slate-100 border rounded text-slate-400">Month View</span>
                         </div>
                     </header>
 
-                    {loading ? (
-                        <div class="h-96 flex flex-col items-center justify-center space-y-4 animate-pulse">
-                            <div class="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-                            <div class="text-xl font-mono text-blue-400">CONNECTING TO JIRA NEURAL NET...</div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        {/* CALENDAR HEADER */}
+                        <div class="timeline-grid border-b border-slate-200 bg-slate-50">
+                            <div class="p-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Team Member</div>
+                            {days.map(d => (
+                                <div key={d} class="p-4 text-center border-l border-slate-200 font-semibold text-slate-600">{d}</div>
+                            ))}
                         </div>
-                    ) : (
-                        <div class="space-y-8 animate-fade-in-up">
-                            
-                            {/* TOP STATS ROW */}
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <StatCard 
-                                    label="Total Tickets" 
-                                    value={data.metrics.total_tickets} 
-                                    color="border-blue-500" 
-                                />
-                                <StatCard 
-                                    label="Story Points" 
-                                    value={data.metrics.total_points} 
-                                    color="border-purple-500" 
-                                />
-                                <StatCard 
-                                    label="Critical Blockers" 
-                                    value={data.metrics.blockers} 
-                                    color="border-red-500 bg-red-900/10" 
-                                />
-                                <StatCard 
-                                    label="Active Developers" 
-                                    value={Object.keys(data.metrics.assignees).length} 
-                                    color="border-emerald-500" 
-                                />
-                            </div>
 
-                            {/* SPRINT HEALTH BAR */}
-                            <section class="glass p-6 rounded-2xl">
-                                <div class="flex justify-between items-end mb-2">
-                                    <h3 class="font-bold text-slate-300">Sprint Progress</h3>
-                                    <span class="text-xs font-mono text-slate-500">REAL-TIME</span>
+                        {/* USER ROWS */}
+                        {Object.entries(data.metrics.assignees).map(([name, stats]) => (
+                            <div key={name} class="timeline-grid">
+                                {/* User Info Column */}
+                                <div class="p-4 bg-white border-r border-slate-100 flex flex-col justify-center">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <img src={stats.avatar || `https://ui-avatars.com/api/?name=${name}`} class="w-8 h-8 rounded-full" />
+                                        <span class="font-bold text-sm truncate">{name.split(" ")[0]}</span>
+                                    </div>
+                                    <div class="w-full bg-slate-100 rounded-full h-1.5 mb-1 overflow-hidden">
+                                        <div class="bg-blue-500 h-1.5 rounded-full" style={{width: `${Math.min(100, (stats.points / 20) * 100)}%`}}></div>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 flex justify-between">
+                                        <span>Load</span>
+                                        <span>{stats.points}/20 pts</span>
+                                    </div>
                                 </div>
-                                <div class="h-6 w-full bg-slate-800 rounded-full overflow-hidden flex">
-                                    <div class="h-full bg-emerald-500 progress-bar" style={{width: `${getProgress('Done')}%`}}></div>
-                                    <div class="h-full bg-blue-500 progress-bar" style={{width: `${getProgress('In Progress')}%`}}></div>
-                                    <div class="h-full bg-slate-700 progress-bar" style={{width: `${getProgress('To Do')}%`}}></div>
-                                </div>
-                                <div class="flex gap-6 mt-3 text-xs font-bold justify-center">
-                                    <div class="flex items-center gap-2"><span class="w-3 h-3 bg-emerald-500 rounded-sm"></span> DONE</div>
-                                    <div class="flex items-center gap-2"><span class="w-3 h-3 bg-blue-500 rounded-sm"></span> IN PROGRESS</div>
-                                    <div class="flex items-center gap-2"><span class="w-3 h-3 bg-slate-700 rounded-sm"></span> TO DO</div>
-                                </div>
-                            </section>
 
-                            {/* AI EXECUTIVE SUMMARY */}
-                            <section class="glass p-8 rounded-2xl border-t-4 border-yellow-500 relative overflow-hidden">
-                                <div class="absolute top-0 right-0 p-4 opacity-10 text-9xl">🧠</div>
-                                <h2 class="text-2xl font-bold mb-4 text-yellow-400">AI Executive Analysis</h2>
-                                <p class="text-lg leading-relaxed text-slate-200 font-medium relative z-10">
-                                    "{data.ai_insights.sprint_summary}"
-                                </p>
-                            </section>
+                                {/* Tasks Columns (Spreading tasks across the week visually) */}
+                                <div class="col-span-7 relative bg-white p-2">
+                                    {stats.tasks.map((task, i) => {
+                                        // Visual Logic: Distribute tasks horizontally for demo
+                                        // In real production, we calculate 'left' and 'width' based on task.start and task.end
+                                        const leftPos = (i * 15) % 80; 
+                                        const width = Math.max(15, task.points * 5); 
+                                        const color = task.priority === 'Highest' || task.priority === 'Critical' ? 'bg-red-100 border-red-300 text-red-800' : 'bg-blue-100 border-blue-300 text-blue-800';
 
-                            {/* PLAYER CARDS GRID */}
-                            <section>
-                                <h2 class="text-xl font-bold mb-6 text-slate-300 uppercase tracking-widest">Team Performance Deck</h2>
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {Object.entries(data.metrics.assignees).map(([name, stats]) => {
-                                        // Find matching AI analysis
-                                        const aiNote = data.ai_insights.assignee_performance.find(p => p.name === name)?.analysis;
                                         return (
-                                            <PlayerCard key={name} name={name} stats={stats} aiAnalysis={aiNote} />
-                                        );
+                                            <div key={task.key} class={`task-bar absolute top-3 h-16 rounded-lg border p-2 text-xs flex flex-col justify-between ${color}`} 
+                                                style={{left: `${leftPos}%`, width: `${width}%`}}>
+                                                <div class="font-bold truncate">{task.key}</div>
+                                                <div class="truncate opacity-75">{task.summary}</div>
+                                                <div class="flex justify-between mt-1 opacity-60">
+                                                    <span>{task.points} pts</span>
+                                                </div>
+                                            </div>
+                                        )
                                     })}
-                                    
-                                    {Object.keys(data.metrics.assignees).length === 0 && (
-                                        <div class="col-span-full py-12 text-center text-slate-500 bg-slate-800/30 rounded-xl border border-dashed border-slate-700">
-                                            No assigned tickets found in this sprint.
-                                        </div>
-                                    )}
                                 </div>
-                            </section>
-                        </div>
-                    )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        function MetricCard({ label, value, color }) {
+            return (
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div class={`absolute top-0 left-0 w-1 h-full ${color}`}></div>
+                    <div class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">{label}</div>
+                    <div class="text-3xl font-black text-slate-800">{value}</div>
                 </div>
             );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<Dashboard />);
+        root.render(<App />);
     </script>
 </body>
 </html>
