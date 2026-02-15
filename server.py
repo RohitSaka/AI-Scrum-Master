@@ -21,20 +21,25 @@ app.add_middleware(
 JIRA_DOMAIN = os.getenv("JIRA_DOMAIN")
 EMAIL = os.getenv("JIRA_EMAIL")
 API_TOKEN = os.getenv("JIRA_API_TOKEN")
-PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
 STORY_POINTS_FIELD = "customfield_10016" 
+
+# --- 🛠️ YOUR MULTI-BOARD CONFIG ---
+SUPPORTED_PROJECTS = {
+    "SCRUM": {"name": "Provider Services", "platform": "jira"},
+    "OT":    {"name": "Ops Team (Kanban)", "platform": "jira"}
+}
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🧠 MEMORY CACHE (The Loop Killer) ---
+# --- 🧠 MEMORY CACHE (Loop Killer) ---
 PROCESSED_CACHE = set()
 
-# --- MODEL ROTATION POOL ---
+# --- MODEL POOL (Optimized for Speed) ---
 MODEL_POOL = [
-    "gemini-2.0-flash",       
-    "gemini-flash-latest",    
-    "gemini-1.5-flash",
+    "gemini-flash-latest",    # Primary
+    "gemini-1.5-flash",       # Secondary
+    "gemini-2.0-flash",       # Backup
     "gemini-1.5-flash-8b"
 ]
 
@@ -60,7 +65,6 @@ def generate_with_retry(prompt):
             else:
                 print(f"   ❌ Error on {model_name}: {e}")
                 continue
-    
     raise Exception(f"All models exhausted. Last error: {last_error}")
 
 # --- JIRA UTILITIES ---
@@ -86,16 +90,24 @@ def find_user(name):
 
 @app.get("/")
 def home():
-    return {"message": "AI Scrum Master (Fixed & Optimized) is Online 🤖"}
+    return {
+        "message": "AI Scrum Master Online 🤖", 
+        "boards": SUPPORTED_PROJECTS
+    }
 
-@app.get("/analytics")
-def get_sprint_analytics():
-    """Generates the Sprint Summary for ONLY the current active sprint."""
+@app.get("/analytics/{project_key}")
+def get_sprint_analytics(project_key: str):
+    """Generates the Sprint Summary for a SPECIFIC Project."""
+    project_key = project_key.upper()
     
-    # 🛠️ FIX 2: Updated JQL to target the Active Sprint
-    # "sprint in openSprints()" finds the currently running sprint automatically.
-    jql_query = f"project = {PROJECT_KEY} AND sprint in openSprints()"
+    if project_key not in SUPPORTED_PROJECTS:
+        return {"error": f"Project {project_key} not found."}
     
+    config = SUPPORTED_PROJECTS[project_key]
+    print(f"📊 Analyzing {config['name']} ({project_key})...")
+    
+    # Check Active Sprint
+    jql_query = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", {
         "jql": jql_query,
         "fields": ["summary", "status", "assignee"]
@@ -103,8 +115,20 @@ def get_sprint_analytics():
     issues = res.json().get('issues', []) if res else []
     
     if not issues:
-        return {"sprint_summary": "No active sprint found.", "assignee_performance": []}
+        # Fallback: If no sprint is active (like in Kanban), check recent active tickets
+        print(f"   ⚠️ No active sprint found for {project_key}. Checking active backlog...")
+        jql_query = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
+        res = jira_request("POST", "search/jql", {
+            "jql": jql_query,
+            "maxResults": 20,
+            "fields": ["summary", "status", "assignee"]
+        })
+        issues = res.json().get('issues', []) if res else []
 
+    if not issues:
+        return {"sprint_summary": "No active tasks found.", "assignee_performance": []}
+
+    # Data Prep
     perf_data = {}
     for issue in issues:
         f = issue['fields']
@@ -112,8 +136,9 @@ def get_sprint_analytics():
         status = f['status']['name']
         perf_data[name] = perf_data.get(name, []) + [f"{f['summary']} ({status})"]
 
+    # AI Analysis
     prompt = f"""
-    Analyze Current Active Sprint for {PROJECT_KEY}:
+    Analyze the Work Board for '{config['name']}':
     {json.dumps(perf_data)}
     Return ONLY JSON: {{'sprint_summary': '...', 'assignee_performance': [{{'name': '...', 'analysis': '...'}}]}}
     """
@@ -127,15 +152,19 @@ def get_sprint_analytics():
 
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
-    """Handles Ticket Updates with Infinite Loop Protection."""
+    """Handles Ticket Updates for ALL configured Projects."""
     issue = payload.get('issue')
     if not issue or not issue.get('fields'): return {"status": "ignored"}
 
     key = issue['key']
+    project_key = key.split("-")[0]
     
-    # --- 🛡️ THE LOOP KILLER ---
+    # Security: Ignore unknown projects
+    if project_key not in SUPPORTED_PROJECTS:
+        return {"status": "ignored_unknown_project"}
+
     if key in PROCESSED_CACHE:
-        print(f"🛑 Skipping {key} (Already Processed in this session)")
+        print(f"🛑 Skipping {key} (Cached)")
         return {"status": "cached"}
 
     fields = issue['fields']
@@ -149,7 +178,7 @@ async def jira_webhook_listener(payload: dict):
         PROCESSED_CACHE.add(key)
         return {"status": "already_has_points"}
 
-    print(f"\n🧠 AI ANALYZING {key}...")
+    print(f"\n🧠 AI ANALYZING {key} ({SUPPORTED_PROJECTS[project_key]['name']})...")
     
     prompt = f"""
     Task: {summary}
@@ -161,11 +190,9 @@ async def jira_webhook_listener(payload: dict):
 
     try:
         time.sleep(2) 
-        
         raw = generate_with_retry(prompt)
         data = json.loads(raw.replace('```json', '').replace('```', '').strip())
 
-        # 🛠️ FIX 1: Wrap updates in the 'fields' dictionary
         update_fields = {}
         if not current_points: 
             update_fields[STORY_POINTS_FIELD] = data['points']
@@ -175,16 +202,14 @@ async def jira_webhook_listener(payload: dict):
             if uid: update_fields["assignee"] = {"accountId": uid}
 
         if update_fields:
-            # THIS IS THE CRITICAL FIX: Wrapped in {"fields": ...}
             jira_request("PUT", f"issue/{key}", {"fields": update_fields})
-            
             comment = f"🤖 AI: {data['points']} pts. Assigned to {data['owner']}. {data['reason']}"
             jira_request("POST", f"issue/{key}/comment", {
                 "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}
             })
             
             PROCESSED_CACHE.add(key)
-            print(f"✅ {key} Updated Successfully. Added to Cache.")
+            print(f"✅ {key} Updated Successfully.")
 
     except Exception as e:
         print(f"❌ Error: {e}")
