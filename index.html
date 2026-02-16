@@ -8,24 +8,35 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/lucide.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+    
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root { --ig-cyan: #22d3ee; --ig-yellow: #facc15; --ig-magenta: #e879f9; --ig-navy: #0f172a; }
-        body { font-family: 'Inter', sans-serif; background-color: var(--ig-navy); color: #f8fafc; }
-        .active-tab { background: rgba(255, 255, 255, 0.1); border-left: 4px solid var(--ig-cyan); }
-        
-        /* Sticky Note Styles */
-        .sticky-note { 
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            transition: transform 0.2s, box-shadow 0.2s;
-            cursor: grab;
+        :root { 
+            --ig-cyan: #22d3ee; 
+            --ig-yellow: #facc15; 
+            --ig-magenta: #e879f9; 
+            --ig-navy: #0f172a; 
         }
+        body { font-family: 'Inter', sans-serif; background-color: var(--ig-navy); color: #f8fafc; }
+        
+        .active-tab { background: rgba(255, 255, 255, 0.1); border-left: 4px solid var(--ig-cyan); color: white; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.05); }
+        
+        /* Sticky Notes */
+        .sticky-note { cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         .sticky-note:active { cursor: grabbing; transform: scale(1.02); }
         .sticky-green { background: #dcfce7; color: #14532d; border-left: 4px solid #22c55e; }
         .sticky-red { background: #fee2e2; color: #7f1d1d; border-left: 4px solid #ef4444; }
         .sticky-blue { background: #dbeafe; color: #1e3a8a; border-left: 4px solid #3b82f6; }
+
+        /* Timeline */
+        .timeline-grid { display: grid; grid-template-columns: 200px repeat(5, 1fr); gap: 1px; background: #334155; border: 1px solid #334155; }
+        .timeline-cell { background: #1e293b; padding: 10px; min-height: 80px; }
+        .task-bar { transition: all 0.2s; cursor: pointer; }
+        .task-bar:hover { transform: translateY(-2px); z-index: 10; }
     </style>
 </head>
 <body>
@@ -33,178 +44,328 @@
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
-        const { motion, AnimatePresence } = window.Motion; // Framer Motion
+        const { motion, AnimatePresence } = window.Motion;
         const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
 
-        // [KEEP YOUR EXISTING APP/NAV COMPONENT CODE HERE]
-        // ... (Sidebar, DashboardView, BurndownView code is unchanged) ...
+        // --- MAIN APP COMPONENT ---
+        function App() {
+            const [view, setView] = useState('dashboard');
+            const [project, setProject] = useState('SCRUM');
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-        // --- NEW: INTERACTIVE RETRO BOARD ---
+            return (
+                <div class="flex h-screen overflow-hidden bg-slate-900">
+                    {/* MOBILE HEADER */}
+                    <header class="md:hidden flex items-center justify-between p-4 bg-slate-950 border-b border-slate-800 z-20 absolute w-full top-0">
+                        <div class="flex items-center gap-2 font-bold text-white">
+                            <div class="flex gap-1"><div class="w-2 h-2 rounded-full bg-[var(--ig-cyan)]"></div><div class="w-2 h-2 rounded-full bg-[var(--ig-yellow)]"></div><div class="w-2 h-2 rounded-full bg-[var(--ig-magenta)]"></div></div>
+                            IG AGILE
+                        </div>
+                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} class="text-white">☰</button>
+                    </header>
+
+                    {/* SIDEBAR */}
+                    <aside class={`fixed md:relative z-30 h-full w-64 bg-slate-950 border-r border-slate-800 flex flex-col justify-between transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+                        <div>
+                            <div class="p-6 hidden md:block">
+                                <h1 class="text-2xl font-black tracking-tighter text-white flex items-center gap-2">
+                                    IG AGILE <span class="text-[10px] bg-blue-600 px-1 rounded">AI</span>
+                                </h1>
+                                <p class="text-xs text-slate-500 font-mono mt-1">Enterprise Platform</p>
+                            </div>
+                            
+                            <nav class="mt-4 md:mt-0 pt-16 md:pt-4 space-y-1">
+                                <NavBtn id="dashboard" icon="📊" label="Command Center" active={view} set={setView} />
+                                <NavBtn id="timeline" icon="🗓️" label="Timeline" active={view} set={setView} />
+                                <NavBtn id="burndown" icon="📉" label="Burndown" active={view} set={setView} />
+                                <NavBtn id="retro" icon="🧘" label="Retrospective" active={view} set={setView} />
+                                <NavBtn id="reports" icon="📑" label="Reports" active={view} set={setView} />
+                            </nav>
+                        </div>
+                        <div class="p-4 bg-slate-950 border-t border-slate-800">
+                             <div class="text-xs text-slate-500 uppercase font-bold mb-2">Active Board</div>
+                             <select value={project} onChange={(e) => setProject(e.target.value)} class="w-full bg-slate-900 text-white p-2 rounded border border-slate-700 outline-none hover:border-[var(--ig-cyan)] transition">
+                                <option value="SCRUM">Provider Services</option>
+                                <option value="OT">Ops Team</option>
+                            </select>
+                        </div>
+                    </aside>
+
+                    {/* MAIN CONTENT AREA */}
+                    <main class="flex-1 overflow-auto bg-slate-900 pt-16 md:pt-0 relative">
+                        <div class="p-6 md:p-8">
+                            {view === 'dashboard' && <DashboardView project={project} />}
+                            {view === 'timeline' && <TimelineView project={project} />}
+                            {view === 'burndown' && <BurndownView project={project} />}
+                            {view === 'retro' && <RetroView project={project} />}
+                            {view === 'reports' && <ReportsView project={project} />}
+                        </div>
+                    </main>
+                    
+                    {/* Mobile Overlay */}
+                    {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} class="fixed inset-0 bg-black/50 z-20 md:hidden"></div>}
+                </div>
+            );
+        }
+
+        const NavBtn = ({ id, icon, label, active, set }) => (
+            <button onClick={() => set(id)} class={`w-full text-left p-3 hover:bg-slate-900 transition flex items-center gap-3 text-slate-400 text-sm font-medium ${active === id ? 'active-tab' : ''}`}>
+                <span class="text-lg">{icon}</span> {label}
+            </button>
+        );
+
+        // --- 1. DASHBOARD VIEW ---
+        function DashboardView({ project }) {
+            const [data, setData] = useState(null);
+            
+            useEffect(() => {
+                fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData);
+            }, [project]);
+
+            if (!data) return <LoadingScreen />;
+
+            return (
+                <div class="animate-fade-in space-y-8">
+                    <header>
+                        <h2 class="text-3xl font-bold text-white">Command Center</h2>
+                        <p class="text-slate-400">Real-time velocity & risk analysis.</p>
+                    </header>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <MetricCard label="Active Tickets" value={data.metrics.total_tickets} color="border-[var(--ig-cyan)] text-[var(--ig-cyan)]" />
+                        <MetricCard label="Story Points" value={data.metrics.total_points} color="border-[var(--ig-magenta)] text-[var(--ig-magenta)]" />
+                        <MetricCard label="Blockers" value={data.metrics.blockers} color="border-red-500 text-red-400" />
+                        <MetricCard label="Team Size" value={Object.keys(data.metrics.assignees).length} color="border-[var(--ig-yellow)] text-[var(--ig-yellow)]" />
+                    </div>
+
+                    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 opacity-10 text-9xl">🧠</div>
+                        <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase tracking-wider text-sm">AI Executive Analysis</h3>
+                        <p class="text-slate-300 leading-relaxed text-lg">"{data.ai_insights.sprint_summary || "Analyzing data..."}"</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {Object.entries(data.metrics.assignees).map(([name, stats]) => (
+                            <div key={name} class="bg-slate-800 p-5 rounded-xl border border-slate-700">
+                                <div class="flex items-center gap-3 mb-4">
+                                    <img src={stats.avatar} class="w-10 h-10 rounded-full bg-slate-700" />
+                                    <div>
+                                        <div class="font-bold text-white text-sm">{name}</div>
+                                        <div class="text-xs text-slate-400">{stats.count} Tasks • {stats.points} pts</div>
+                                    </div>
+                                </div>
+                                <div class="bg-slate-900/50 p-3 rounded text-xs text-slate-400 italic border border-slate-800">
+                                    "{data.ai_insights.assignee_performance?.find(p => p.name === name)?.analysis || "Performance stable."}"
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- 2. TIMELINE VIEW ---
+        function TimelineView({ project }) {
+            const [data, setData] = useState(null);
+            useEffect(() => { fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData); }, [project]);
+            
+            if (!data) return <LoadingScreen />;
+            const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+
+            return (
+                <div class="animate-fade-in">
+                    <h2 class="text-3xl font-bold text-white mb-6">Timeline Capacity</h2>
+                    <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+                        <div class="timeline-grid border-b border-slate-700 bg-slate-900">
+                            <div class="p-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Developer</div>
+                            {days.map(d => <div key={d} class="p-3 text-center text-slate-500 font-bold text-xs border-l border-slate-700">{d}</div>)}
+                        </div>
+                        {Object.entries(data.metrics.assignees).map(([name, stats]) => (
+                            <div key={name} class="timeline-grid border-b border-slate-700">
+                                <div class="p-4 bg-slate-800 border-r border-slate-700">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <img src={stats.avatar} class="w-6 h-6 rounded-full" />
+                                        <span class="text-white text-sm font-bold truncate">{name.split(" ")[0]}</span>
+                                    </div>
+                                    <div class="w-full bg-slate-700 h-1.5 rounded-full mb-1">
+                                        <div class={`h-1.5 rounded-full ${stats.points > 15 ? 'bg-red-500' : 'bg-[var(--ig-cyan)]'}`} style={{width: `${Math.min(100, (stats.points/20)*100)}%`}}></div>
+                                    </div>
+                                    <div class="text-[10px] text-slate-500">{stats.points}/20 pts</div>
+                                </div>
+                                <div class="col-span-5 bg-slate-900/50 p-2 flex flex-wrap gap-2 content-start">
+                                    {stats.tasks.map(t => (
+                                        <div key={t.key} class={`w-full p-2 rounded text-xs border-l-2 mb-1 ${t.priority === 'High' ? 'bg-red-900/20 border-red-500 text-red-200' : 'bg-blue-900/20 border-blue-500 text-blue-200'}`}>
+                                            <div class="flex justify-between font-bold"><span>{t.key}</span><span>{t.points}</span></div>
+                                            <div class="truncate opacity-70">{t.summary}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- 3. BURNDOWN VIEW ---
+        function BurndownView({ project }) {
+            const chartRef = useRef(null);
+            
+            useEffect(() => {
+                fetch(`${API_BASE}/burndown/${project}`).then(r=>r.json()).then(d => {
+                    if (chartRef.current) {
+                        // Destroy old chart if exists
+                        const existingChart = Chart.getChart(chartRef.current);
+                        if (existingChart) existingChart.destroy();
+
+                        new Chart(chartRef.current, {
+                            type: 'line',
+                            data: {
+                                labels: d.labels,
+                                datasets: [
+                                    { label: 'Ideal', data: d.ideal, borderColor: '#64748b', borderDash: [5,5], pointRadius: 0 },
+                                    { label: 'Actual', data: d.actual, borderColor: '#22d3ee', backgroundColor: 'rgba(34, 211, 238, 0.1)', fill: true, tension: 0.3 }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                plugins: { legend: { labels: { color: 'white' } } },
+                                scales: { 
+                                    y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }, 
+                                    x: { ticks: { color: '#94a3b8' }, grid: { display: false } } 
+                                }
+                            }
+                        });
+                    }
+                });
+            }, [project]);
+
+            return (
+                <div>
+                    <h2 class="text-3xl font-bold text-white mb-6">Sprint Burndown</h2>
+                    <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 h-[400px]">
+                        <canvas ref={chartRef}></canvas>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- 4. RETRO VIEW ---
         function RetroView({ project }) {
             const [board, setBoard] = useState({ well: [], improve: [], actions: [] });
             const [input, setInput] = useState("");
-            const [activeCol, setActiveCol] = useState("well");
+            const [col, setCol] = useState("well");
 
-            // Load initial state
-            useEffect(() => {
-                fetch(`${API_BASE}/retro/${project}`)
-                    .then(res => res.json())
-                    .then(setBoard);
-            }, [project]);
+            const refresh = () => fetch(`${API_BASE}/retro/${project}`).then(r=>r.json()).then(setBoard);
+            useEffect(() => { refresh(); }, [project]);
 
-            // Save state to backend whenever it changes
-            const saveBoard = (newBoard) => {
+            const save = (newBoard) => {
                 setBoard(newBoard);
-                fetch(`${API_BASE}/retro/update`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ project, board: newBoard })
-                });
+                fetch(`${API_BASE}/retro/update`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({project, board: newBoard})});
             };
 
-            const addCard = () => {
-                if (!input.trim()) return;
-                const newBoard = { ...board, [activeCol]: [...board[activeCol], { id: Date.now(), text: input }] };
-                saveBoard(newBoard);
-                setInput("");
+            const add = () => {
+                if(!input) return;
+                const nb = {...board, [col]: [...board[col], {id: Date.now(), text: input}]};
+                save(nb); setInput("");
             };
 
-            const deleteCard = (col, id) => {
-                const newBoard = { ...board, [col]: board[col].filter(c => c.id !== id) };
-                saveBoard(newBoard);
+            const promote = (text) => {
+                fetch(`${API_BASE}/retro/promote`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({project, text})})
+                .then(() => alert("Ticket Created!"));
             };
 
-            const promoteToJira = (text) => {
-                fetch(`${API_BASE}/retro/promote`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ project, text })
-                }).then(() => alert("✅ Ticket Created in Jira!"));
-            };
-
-            // Simple Drag-and-Drop Handler (Simplified for React)
-            const moveCard = (card, fromCol, toCol) => {
-                const newBoard = { ...board };
-                newBoard[fromCol] = newBoard[fromCol].filter(c => c.id !== card.id);
-                newBoard[toCol] = [...newBoard[toCol], card];
-                saveBoard(newBoard);
+            const del = (c, id) => save({...board, [c]: board[c].filter(i => i.id !== id)});
+            const move = (item, from, to) => {
+                const nb = {...board, [from]: board[from].filter(i=>i.id!==item.id), [to]: [...board[to], item]};
+                save(nb);
             };
 
             return (
                 <div class="h-full flex flex-col">
-                    <header class="mb-6 flex justify-between items-center">
-                        <div>
-                            <h2 class="text-3xl font-bold text-white">Retrospective Board</h2>
-                            <p class="text-slate-400 text-sm">Collaborative space. Drag to move ideas.</p>
-                        </div>
-                        <div class="flex gap-2 bg-slate-800 p-1 rounded-lg">
-                            {['well', 'improve', 'actions'].map(col => (
-                                <button 
-                                    key={col}
-                                    onClick={() => setActiveCol(col)}
-                                    class={`px-4 py-2 rounded text-sm font-bold capitalize transition ${activeCol === col ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                                >
-                                    {col === 'well' ? 'Went Well' : col === 'improve' ? 'To Improve' : 'Action Items'}
-                                </button>
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-3xl font-bold text-white">Retrospective</h2>
+                        <div class="bg-slate-800 p-1 rounded-lg flex gap-1">
+                            {['well', 'improve', 'actions'].map(c => (
+                                <button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c ? 'bg-slate-600 text-white' : 'text-slate-400'}`}>{c}</button>
                             ))}
                         </div>
-                    </header>
-
-                    {/* INPUT AREA */}
-                    <div class="mb-8 flex gap-2">
-                        <input 
-                            value={input} 
-                            onChange={e => setInput(e.target.value)} 
-                            onKeyDown={e => e.key === 'Enter' && addCard()}
-                            placeholder={`Add a note to '${activeCol === 'well' ? 'Went Well' : activeCol === 'improve' ? 'To Improve' : 'Action Items'}'...`} 
-                            class="flex-1 p-4 rounded-xl bg-slate-800 text-white border border-slate-700 outline-none focus:border-[var(--ig-cyan)] transition shadow-lg" 
-                        />
-                        <button onClick={addCard} class="bg-[var(--ig-cyan)] text-slate-900 px-8 rounded-xl font-bold hover:brightness-110 transition shadow-lg shadow-cyan-500/20">
-                            Post Note
-                        </button>
+                    </div>
+                    
+                    <div class="flex gap-2 mb-8">
+                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Add your thought..." class="flex-1 p-4 bg-slate-800 text-white rounded-xl border border-slate-700 outline-none focus:border-[var(--ig-cyan)]" />
+                        <button onClick={add} class="bg-[var(--ig-cyan)] text-slate-900 px-8 rounded-xl font-bold hover:brightness-110">Post</button>
                     </div>
 
-                    {/* BOARD COLUMNS */}
-                    <div class="grid grid-cols-3 gap-6 flex-1 overflow-hidden">
-                        <RetroColumn 
-                            title="🚀 What Went Well" 
-                            items={board.well} 
-                            color="sticky-green" 
-                            onDelete={(id) => deleteCard('well', id)}
-                            onMove={(card) => moveCard(card, 'well', 'actions')}
-                        />
-                        <RetroColumn 
-                            title="🔥 Needs Improvement" 
-                            items={board.improve} 
-                            color="sticky-red" 
-                            onDelete={(id) => deleteCard('improve', id)}
-                            onMove={(card) => moveCard(card, 'improve', 'actions')}
-                        />
-                        <RetroColumn 
-                            title="✅ Action Items" 
-                            items={board.actions} 
-                            color="sticky-blue" 
-                            isAction={true}
-                            onDelete={(id) => deleteCard('actions', id)}
-                            onPromote={promoteToJira}
-                        />
+                    <div class="grid grid-cols-3 gap-6 flex-1 min-h-0">
+                        <RetroColumn title="🚀 Went Well" items={board.well} color="sticky-green" onMove={i=>move(i,'well','actions')} onDel={id=>del('well',id)} />
+                        <RetroColumn title="🔥 Improve" items={board.improve} color="sticky-red" onMove={i=>move(i,'improve','actions')} onDel={id=>del('improve',id)} />
+                        <RetroColumn title="✅ Actions" items={board.actions} color="sticky-blue" isAction={true} onPromote={promote} onDel={id=>del('actions',id)} />
                     </div>
                 </div>
             );
         }
 
-        function RetroColumn({ title, items, color, onDelete, onMove, isAction, onPromote }) {
+        function RetroColumn({ title, items, color, onMove, onDel, isAction, onPromote }) {
             return (
-                <div class="bg-slate-800/50 rounded-2xl p-4 flex flex-col border border-slate-700/50">
-                    <h3 class="font-bold text-slate-300 mb-4 uppercase tracking-widest text-xs flex justify-between">
-                        {title} <span class="bg-slate-700 px-2 rounded-full text-white">{items.length}</span>
-                    </h3>
-                    <div class="flex-1 overflow-y-auto space-y-3 pr-2">
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 flex flex-col h-full overflow-hidden">
+                    <h3 class="font-bold text-slate-400 uppercase tracking-wider text-xs mb-4 flex justify-between">{title} <span>{items.length}</span></h3>
+                    <div class="overflow-y-auto space-y-3 flex-1 pr-2">
                         <AnimatePresence>
-                            {items.map(card => (
-                                <motion.div 
-                                    key={card.id}
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, scale: 0.9 }}
-                                    layout
-                                    class={`sticky-note p-4 rounded-lg relative group ${color}`}
-                                >
-                                    <p class="font-medium text-sm leading-relaxed">{card.text}</p>
-                                    
-                                    <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-1">
-                                        {!isAction && (
-                                            <button onClick={() => onMove(card)} title="Move to Actions" class="p-1 bg-white/50 hover:bg-white rounded text-xs">
-                                                ➡️
-                                            </button>
-                                        )}
-                                        <button onClick={() => onDelete(card.id)} title="Delete" class="p-1 bg-white/50 hover:bg-red-500 hover:text-white rounded text-xs">
-                                            ✕
-                                        </button>
+                            {items.map(i => (
+                                <motion.div key={i.id} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} class={`sticky-note p-4 rounded-lg relative group ${color}`}>
+                                    <p class="text-sm font-medium">{i.text}</p>
+                                    <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1">
+                                        {!isAction && <button onClick={()=>onMove(i)} class="bg-white/50 p-1 rounded text-xs hover:bg-white">➡️</button>}
+                                        <button onClick={()=>onDel(i.id)} class="bg-white/50 p-1 rounded text-xs hover:bg-red-500 hover:text-white">✕</button>
                                     </div>
-
-                                    {isAction && (
-                                        <button 
-                                            onClick={() => onPromote(card.text)}
-                                            class="mt-3 w-full py-2 bg-white/30 hover:bg-white/50 rounded text-xs font-bold flex items-center justify-center gap-2 transition"
-                                        >
-                                            ⚡ Create Jira Ticket
-                                        </button>
-                                    )}
+                                    {isAction && <button onClick={()=>onPromote(i.text)} class="mt-3 w-full py-1 bg-white/40 hover:bg-white/60 rounded text-xs font-bold">⚡ Make Ticket</button>}
                                 </motion.div>
                             ))}
                         </AnimatePresence>
-                        {items.length === 0 && (
-                            <div class="text-center py-10 opacity-20 text-4xl border-2 border-dashed border-slate-600 rounded-xl">
-                                +
-                            </div>
-                        )}
                     </div>
                 </div>
             );
         }
-        
-        // ... (Keep the rest of your App code)
+
+        // --- 5. REPORTS VIEW ---
+        function ReportsView({ project }) {
+            const [report, setReport] = useState(null);
+            useEffect(() => { fetch(`${API_BASE}/reports/${project}/weekly`).then(r=>r.json()).then(setReport); }, [project]);
+
+            if(!report) return <LoadingScreen />;
+
+            return (
+                <div>
+                    <h2 class="text-3xl font-bold text-white mb-6">Weekly Report</h2>
+                    <div class="bg-slate-800 p-8 rounded-xl border border-slate-700 max-w-3xl">
+                        <div class="flex justify-between mb-8 pb-8 border-b border-slate-700">
+                            <div><div class="text-slate-500 text-xs uppercase font-bold">Completed Tasks</div><div class="text-5xl font-black text-white">{report.completed_count}</div></div>
+                            <div><div class="text-slate-500 text-xs uppercase font-bold">Velocity Delivered</div><div class="text-5xl font-black text-[var(--ig-cyan)]">{report.completed_points} pts</div></div>
+                        </div>
+                        <div class="prose prose-invert">
+                            <h3 class="text-white font-bold mb-2">AI Summary</h3>
+                            <p class="text-slate-300 leading-relaxed">{report.ai_summary.sprint_summary || JSON.stringify(report.ai_summary)}</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- UTILS ---
+        function LoadingScreen() {
+            return <div class="h-96 flex flex-col items-center justify-center"><div class="w-12 h-12 border-4 border-[var(--ig-cyan)] border-t-transparent rounded-full animate-spin"></div><div class="mt-4 text-[var(--ig-cyan)] font-mono animate-pulse">Initializing Neural Net...</div></div>;
+        }
+
+        function MetricCard({ label, value, color }) {
+            return <div class={`bg-slate-800 p-5 rounded-xl shadow-sm border-l-4 ${color} border-t border-r border-b border-slate-700`}>
+                <div class="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">{label}</div>
+                <div class="text-3xl font-black text-white">{value}</div>
+            </div>;
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
