@@ -34,7 +34,7 @@ SUPPORTED_PROJECTS = {
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🧠 DYNAMIC MODEL DISCOVERY (CORE LOGIC - UNCHANGED) ---
+# --- 🧠 DYNAMIC MODEL DISCOVERY ---
 def discover_available_models():
     print("\n🔍 SYSTEM DIAGNOSTIC: Discovering available models...")
     valid_models = []
@@ -43,13 +43,12 @@ def discover_available_models():
             if "generateContent" in m.supported_generation_methods:
                 valid_models.append(m.name)
         
-        # Sort to prioritize Flash (faster)
+        # Sort: Flash first (fastest/cheapest), then others
         valid_models.sort(key=lambda x: (
             0 if "1.5-flash" in x else 
             1 if "flash-latest" in x else 
-            2 if "flash" in x and "lite" in x else
-            3 if "flash" in x else
-            4
+            2 if "flash" in x else
+            3
         ))
         
         print(f"✅ FOUND {len(valid_models)} MODELS: {valid_models}")
@@ -58,7 +57,6 @@ def discover_available_models():
         print(f"❌ Error listing models: {e}")
         return ["models/gemini-1.5-flash", "models/gemini-flash-latest", "models/gemini-pro"]
 
-# Initialize the pool
 MODEL_POOL = discover_available_models()
 
 # --- CACHE ---
@@ -67,7 +65,7 @@ PROCESSED_CACHE = set()
 def generate_with_survival_mode(prompt):
     """Iterates through EVERY available model until one works."""
     last_error = None
-    for model_name in MODEL_POOL[:10]:
+    for model_name in MODEL_POOL[:15]: # Try up to 15 models
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
@@ -76,16 +74,18 @@ def generate_with_survival_mode(prompt):
             last_error = e
             error_msg = str(e).lower()
             if "429" in error_msg or "quota" in error_msg:
-                print(f"   ⚠️ Quota exceeded on {model_name}. Next...")
+                print(f"   ⚠️ Quota exceeded on {model_name}. Switching...")
+                time.sleep(1) # 1s cooldown to recover
                 continue
             elif "not found" in error_msg:
-                print(f"   ⚠️ {model_name} not available. Next...")
                 continue
             else:
                 print(f"   ❌ Error on {model_name}: {e}")
                 continue
     
-    raise Exception(f"All {len(MODEL_POOL)} models exhausted. You are likely out of quota for 24 hours.")
+    # If all fail, return a fallback JSON so the UI doesn't crash
+    print("❌ ALL AI MODELS EXHAUSTED.")
+    return '{"sprint_summary": "AI Analysis Temporarily Unavailable (Quota Limit).", "assignee_performance": []}'
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, data=None):
@@ -106,22 +106,17 @@ def find_user(name):
         return res.json()[0]['accountId']
     return None
 
-# --- NEW: JSON RETRO STORAGE (The "Figma Board" Backend) ---
+# --- NEW: JSON RETRO STORAGE ---
 RETRO_FILE = "retro_data.json"
 
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE):
-        # Default empty board structure
-        return {}
+    if not os.path.exists(RETRO_FILE): return {}
     try:
-        with open(RETRO_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+        with open(RETRO_FILE, "r") as f: return json.load(f)
+    except: return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f:
-        json.dump(data, f)
+    with open(RETRO_FILE, "w") as f: json.dump(data, f)
 
 # --- ENDPOINTS ---
 
@@ -130,7 +125,6 @@ def home():
     return {
         "status": "Online 🤖", 
         "library_version": importlib.metadata.version("google-generativeai"),
-        "available_models_count": len(MODEL_POOL),
         "top_model": MODEL_POOL[0] if MODEL_POOL else "None"
     }
 
@@ -144,7 +138,6 @@ def get_sprint_analytics(project_key: str):
     config = SUPPORTED_PROJECTS[project_key]
     print(f"📊 Analyzing {config['name']} ({project_key})...")
     
-    # 🛠️ FETCHER: Includes Due Dates & Avatars for Timeline View
     fields_to_fetch = ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD, "duedate", "created"]
 
     jql_query = f"project = {project_key} AND sprint in openSprints()"
@@ -154,8 +147,8 @@ def get_sprint_analytics(project_key: str):
     })
     issues = res.json().get('issues', []) if res else []
     
+    # Fallback to backlog if no sprint
     if not issues:
-        print(f"   ⚠️ No active sprint. Checking recent backlog...")
         jql_query = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
         res = jira_request("POST", "search/jql", {
             "jql": jql_query,
@@ -167,7 +160,6 @@ def get_sprint_analytics(project_key: str):
     if not issues:
         return {"sprint_summary": "No active tasks found.", "metrics": {}, "assignee_performance": []}
 
-    # Calculate Stats
     stats = {
         "total_tickets": len(issues),
         "total_points": 0,
@@ -200,8 +192,6 @@ def get_sprint_analytics(project_key: str):
         
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += points
-        
-        # Add Task to Timeline List
         stats["assignees"][name]["tasks"].append({
             "key": issue['key'],
             "summary": f['summary'],
@@ -226,40 +216,35 @@ def get_sprint_analytics(project_key: str):
     }}
     """
     
-    ai_response = {}
     try:
         raw = generate_with_survival_mode(prompt)
         clean_json = raw.replace('```json', '').replace('```', '').strip()
         ai_response = json.loads(clean_json)
     except Exception as e:
-        print(f"❌ AI Analysis Failed: {e}")
-        ai_response = {"sprint_summary": "AI Quota Exhausted. Showing raw metrics.", "assignee_performance": []}
+        ai_response = {"sprint_summary": "AI Quota Exhausted.", "assignee_performance": []}
 
     return {"metrics": stats, "ai_insights": ai_response}
 
-# --- BURNDOWN CHART ENDPOINT ---
+# --- BURNDOWN ---
 @app.get("/burndown/{project_key}")
 def get_burndown_data(project_key: str):
-    """Calculates Burndown logic based on ticket resolution dates."""
     project_key = project_key.upper()
-    
     jql = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", {
-        "jql": jql, "fields": [STORY_POINTS_FIELD, "resolutiondate", "created"]
+        "jql": jql, "fields": [STORY_POINTS_FIELD, "resolutiondate"]
     })
     issues = res.json().get('issues', []) if res else []
     
     if not issues: return {"labels": [], "ideal": [], "actual": []}
 
     total_points = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
-    
     today = datetime.now()
     dates = [(today - timedelta(days=i)).strftime("%b %d") for i in range(14, -1, -1)]
     
     actual_data = []
     remaining = total_points
     
-    # MVP Linear Simulation (Connect to resolutiondate in V2)
+    # MVP Burn Simulation
     for _ in dates:
         actual_data.append(remaining)
         remaining -= (total_points * 0.05) 
@@ -275,27 +260,20 @@ def get_burndown_data(project_key: str):
         "velocity": total_points
     }
 
-# --- NEW: VISUAL RETRO BOARD (JSON STORAGE) ---
-# Replaced the ticket-based logic with file-based logic
+# --- RETRO ---
 @app.get("/retro/{project_key}")
 def get_retro_board(project_key: str):
-    """Fetches the Visual Retro Board state from JSON."""
     project_key = project_key.upper()
     data = load_retro_data()
-    
-    # Initialize if empty
     if project_key not in data:
         data[project_key] = {"well": [], "improve": [], "actions": []}
         save_retro_data(data)
-        
     return data[project_key]
 
 @app.post("/retro/update")
 def update_retro_board(payload: dict):
-    """Updates the board state (Drag/Drop/Add/Delete)."""
     project = payload.get("project")
-    board_state = payload.get("board") # Expects {well: [], improve: [], actions: []}
-    
+    board_state = payload.get("board") 
     data = load_retro_data()
     data[project] = board_state
     save_retro_data(data)
@@ -303,10 +281,8 @@ def update_retro_board(payload: dict):
 
 @app.post("/retro/promote")
 def promote_to_jira(payload: dict):
-    """Bridge: Takes a sticky note and creates a Jira Ticket."""
     project = payload.get("project")
     text = payload.get("text")
-    
     data = {
         "fields": {
             "project": {"key": project},
@@ -319,7 +295,7 @@ def promote_to_jira(payload: dict):
     jira_request("POST", "issue", data)
     return {"status": "promoted"}
 
-# --- REPORTING ENDPOINT ---
+# --- REPORTING (FIXED PROMPT) ---
 @app.get("/reports/{project_key}/{timeframe}")
 def get_periodic_report(project_key: str, timeframe: str):
     """Generates Weekly/Monthly Completion Reports."""
@@ -332,12 +308,22 @@ def get_periodic_report(project_key: str, timeframe: str):
     
     completed_points = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
     
-    prompt = f"Write a {timeframe} report. Completed {len(issues)} tasks worth {completed_points} points. Tasks: {[i['fields']['summary'] for i in issues]}"
+    # Simplified Prompt to save tokens and avoid errors
+    prompt = f"""
+    Write a short executive summary for a {timeframe} report.
+    - Completed: {len(issues)} tasks
+    - Total Points: {completed_points}
+    - Tasks: {[i['fields']['summary'] for i in issues]}
+    
+    Return JSON: {{ "summary": "YOUR TEXT HERE" }}
+    """
+    
     try:
         raw = generate_with_survival_mode(prompt)
         ai_text = json.loads(raw.replace('```json', '').replace('```', '').strip())
-    except:
-        ai_text = {"summary": "Report generation failed due to AI quota."}
+    except Exception as e:
+        print(f"Report Generation Failed: {e}")
+        ai_text = {"summary": "AI Report Unavailable. Please check usage quotas."}
         
     return {
         "completed_count": len(issues),
@@ -345,7 +331,7 @@ def get_periodic_report(project_key: str, timeframe: str):
         "ai_summary": ai_text
     }
 
-# --- WEBHOOK (UNCHANGED) ---
+# --- WEBHOOK ---
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
     """Handles Ticket Updates."""

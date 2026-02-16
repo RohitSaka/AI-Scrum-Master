@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IG AI Agile Platform</title>
+    <title>AI Agile Platform</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,13 +20,25 @@
             --ig-magenta: #e879f9; 
             --ig-navy: #0f172a; 
         }
-        body { font-family: 'Inter', sans-serif; background-color: var(--ig-navy); color: #f8fafc; }
         
-        .active-tab { background: rgba(255, 255, 255, 0.1); border-left: 4px solid var(--ig-cyan); color: white; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.05); }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: var(--ig-navy); 
+            color: #f8fafc; 
+            /* THE "SHADY" IG LOOK */
+            background: radial-gradient(circle at 10% 20%, rgba(34, 211, 238, 0.05), transparent 30%),
+                        radial-gradient(circle at 90% 80%, rgba(232, 121, 249, 0.05), transparent 30%);
+            min-height: 100vh;
+        }
+        
+        .active-tab { 
+            background: rgba(255, 255, 255, 0.08); 
+            border-left: 4px solid var(--ig-cyan); 
+            color: white; 
+        }
         
         /* Sticky Notes */
-        .sticky-note { cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .sticky-note { cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
         .sticky-note:active { cursor: grabbing; transform: scale(1.02); }
         .sticky-green { background: #dcfce7; color: #14532d; border-left: 4px solid #22c55e; }
         .sticky-red { background: #fee2e2; color: #7f1d1d; border-left: 4px solid #ef4444; }
@@ -36,7 +48,7 @@
         .timeline-grid { display: grid; grid-template-columns: 200px repeat(5, 1fr); gap: 1px; background: #334155; border: 1px solid #334155; }
         .timeline-cell { background: #1e293b; padding: 10px; min-height: 80px; }
         .task-bar { transition: all 0.2s; cursor: pointer; }
-        .task-bar:hover { transform: translateY(-2px); z-index: 10; }
+        .task-bar:hover { transform: translateY(-2px); z-index: 10; box-shadow: 0 0 10px var(--ig-cyan); }
     </style>
 </head>
 <body>
@@ -53,28 +65,39 @@
             const [project, setProject] = useState('SCRUM');
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
+            // IG LOGO COMPONENT
+            const IGLogo = () => (
+                <div class="flex gap-1">
+                    <div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)] shadow-[0_0_8px_var(--ig-cyan)]"></div>
+                    <div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)] shadow-[0_0_8px_var(--ig-yellow)]"></div>
+                    <div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)] shadow-[0_0_8px_var(--ig-magenta)]"></div>
+                </div>
+            );
+
             return (
-                <div class="flex h-screen overflow-hidden bg-slate-900">
+                <div class="flex h-screen overflow-hidden">
                     {/* MOBILE HEADER */}
-                    <header class="md:hidden flex items-center justify-between p-4 bg-slate-950 border-b border-slate-800 z-20 absolute w-full top-0">
-                        <div class="flex items-center gap-2 font-bold text-white">
-                            <div class="flex gap-1"><div class="w-2 h-2 rounded-full bg-[var(--ig-cyan)]"></div><div class="w-2 h-2 rounded-full bg-[var(--ig-yellow)]"></div><div class="w-2 h-2 rounded-full bg-[var(--ig-magenta)]"></div></div>
-                            IG AGILE
+                    <header class="md:hidden flex items-center justify-between p-4 bg-slate-950/80 backdrop-blur-md border-b border-slate-800 z-20 absolute w-full top-0">
+                        <div class="flex items-center gap-3 font-bold text-white">
+                            <IGLogo />
+                            <span class="tracking-wide">IG AGILE</span>
                         </div>
                         <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} class="text-white">☰</button>
                     </header>
 
                     {/* SIDEBAR */}
-                    <aside class={`fixed md:relative z-30 h-full w-64 bg-slate-950 border-r border-slate-800 flex flex-col justify-between transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+                    <aside class={`fixed md:relative z-30 h-full w-64 bg-slate-950/90 backdrop-blur-xl border-r border-slate-800 flex flex-col justify-between transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
                         <div>
+                            {/* DESKTOP LOGO HEADER */}
                             <div class="p-6 hidden md:block">
-                                <h1 class="text-2xl font-black tracking-tighter text-white flex items-center gap-2">
-                                    IG AGILE <span class="text-[10px] bg-blue-600 px-1 rounded">AI</span>
-                                </h1>
-                                <p class="text-xs text-slate-500 font-mono mt-1">Enterprise Platform</p>
+                                <div class="flex items-center gap-3 mb-2">
+                                    <IGLogo />
+                                    <h1 class="text-2xl font-black tracking-tighter text-white">IG AGILE</h1>
+                                </div>
+                                <p class="text-xs text-slate-500 font-mono pl-1">Enterprise Platform v3.1</p>
                             </div>
                             
-                            <nav class="mt-4 md:mt-0 pt-16 md:pt-4 space-y-1">
+                            <nav class="mt-4 md:mt-4 pt-16 md:pt-0 space-y-1 px-2">
                                 <NavBtn id="dashboard" icon="📊" label="Command Center" active={view} set={setView} />
                                 <NavBtn id="timeline" icon="🗓️" label="Timeline" active={view} set={setView} />
                                 <NavBtn id="burndown" icon="📉" label="Burndown" active={view} set={setView} />
@@ -82,9 +105,9 @@
                                 <NavBtn id="reports" icon="📑" label="Reports" active={view} set={setView} />
                             </nav>
                         </div>
-                        <div class="p-4 bg-slate-950 border-t border-slate-800">
-                             <div class="text-xs text-slate-500 uppercase font-bold mb-2">Active Board</div>
-                             <select value={project} onChange={(e) => setProject(e.target.value)} class="w-full bg-slate-900 text-white p-2 rounded border border-slate-700 outline-none hover:border-[var(--ig-cyan)] transition">
+                        <div class="p-4 border-t border-slate-800 bg-black/20">
+                             <div class="text-[10px] text-slate-500 uppercase font-bold mb-2 tracking-widest">Active Board</div>
+                             <select value={project} onChange={(e) => setProject(e.target.value)} class="w-full bg-slate-900 text-white p-2 rounded border border-slate-700 outline-none focus:border-[var(--ig-cyan)] transition cursor-pointer">
                                 <option value="SCRUM">Provider Services</option>
                                 <option value="OT">Ops Team</option>
                             </select>
@@ -92,8 +115,8 @@
                     </aside>
 
                     {/* MAIN CONTENT AREA */}
-                    <main class="flex-1 overflow-auto bg-slate-900 pt-16 md:pt-0 relative">
-                        <div class="p-6 md:p-8">
+                    <main class="flex-1 overflow-auto pt-16 md:pt-0 relative">
+                        <div class="p-6 md:p-10 max-w-7xl mx-auto">
                             {view === 'dashboard' && <DashboardView project={project} />}
                             {view === 'timeline' && <TimelineView project={project} />}
                             {view === 'burndown' && <BurndownView project={project} />}
@@ -103,13 +126,13 @@
                     </main>
                     
                     {/* Mobile Overlay */}
-                    {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} class="fixed inset-0 bg-black/50 z-20 md:hidden"></div>}
+                    {isSidebarOpen && <div onClick={() => setIsSidebarOpen(false)} class="fixed inset-0 bg-black/60 z-20 md:hidden"></div>}
                 </div>
             );
         }
 
         const NavBtn = ({ id, icon, label, active, set }) => (
-            <button onClick={() => set(id)} class={`w-full text-left p-3 hover:bg-slate-900 transition flex items-center gap-3 text-slate-400 text-sm font-medium ${active === id ? 'active-tab' : ''}`}>
+            <button onClick={() => set(id)} class={`w-full text-left p-3 rounded-lg hover:bg-slate-900 transition flex items-center gap-3 text-slate-400 text-sm font-medium ${active === id ? 'active-tab shadow-lg shadow-cyan-900/20' : ''}`}>
                 <span class="text-lg">{icon}</span> {label}
             </button>
         );
@@ -117,17 +140,14 @@
         // --- 1. DASHBOARD VIEW ---
         function DashboardView({ project }) {
             const [data, setData] = useState(null);
-            
-            useEffect(() => {
-                fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData);
-            }, [project]);
+            useEffect(() => { fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData); }, [project]);
 
             if (!data) return <LoadingScreen />;
 
             return (
                 <div class="animate-fade-in space-y-8">
                     <header>
-                        <h2 class="text-3xl font-bold text-white">Command Center</h2>
+                        <h2 class="text-3xl font-bold text-white tracking-tight">Command Center</h2>
                         <p class="text-slate-400">Real-time velocity & risk analysis.</p>
                     </header>
 
@@ -138,17 +158,17 @@
                         <MetricCard label="Team Size" value={Object.keys(data.metrics.assignees).length} color="border-[var(--ig-yellow)] text-[var(--ig-yellow)]" />
                     </div>
 
-                    <div class="bg-slate-800 rounded-xl p-6 border border-slate-700 relative overflow-hidden">
-                        <div class="absolute top-0 right-0 opacity-10 text-9xl">🧠</div>
-                        <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase tracking-wider text-sm">AI Executive Analysis</h3>
-                        <p class="text-slate-300 leading-relaxed text-lg">"{data.ai_insights.sprint_summary || "Analyzing data..."}"</p>
+                    <div class="bg-slate-800/50 backdrop-blur rounded-xl p-6 border border-slate-700 relative overflow-hidden">
+                        <div class="absolute top-0 right-0 opacity-5 text-9xl grayscale">🧠</div>
+                        <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase tracking-wider text-xs">AI Executive Analysis</h3>
+                        <p class="text-slate-200 leading-relaxed text-lg font-light">"{data.ai_insights.sprint_summary || "Analyzing data..."}"</p>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="bg-slate-800 p-5 rounded-xl border border-slate-700">
+                            <div key={name} class="bg-slate-800/80 p-5 rounded-xl border border-slate-700 hover:border-slate-500 transition">
                                 <div class="flex items-center gap-3 mb-4">
-                                    <img src={stats.avatar} class="w-10 h-10 rounded-full bg-slate-700" />
+                                    <img src={stats.avatar} class="w-10 h-10 rounded-full bg-slate-700 border border-slate-600" />
                                     <div>
                                         <div class="font-bold text-white text-sm">{name}</div>
                                         <div class="text-xs text-slate-400">{stats.count} Tasks • {stats.points} pts</div>
@@ -175,28 +195,28 @@
             return (
                 <div class="animate-fade-in">
                     <h2 class="text-3xl font-bold text-white mb-6">Timeline Capacity</h2>
-                    <div class="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                        <div class="timeline-grid border-b border-slate-700 bg-slate-900">
-                            <div class="p-3 text-slate-400 font-bold text-xs uppercase tracking-wider">Developer</div>
+                    <div class="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden shadow-2xl">
+                        <div class="timeline-grid border-b border-slate-700 bg-slate-900/50">
+                            <div class="p-3 text-slate-400 font-bold text-xs uppercase tracking-wider flex items-center">Developer</div>
                             {days.map(d => <div key={d} class="p-3 text-center text-slate-500 font-bold text-xs border-l border-slate-700">{d}</div>)}
                         </div>
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="timeline-grid border-b border-slate-700">
-                                <div class="p-4 bg-slate-800 border-r border-slate-700">
+                            <div key={name} class="timeline-grid border-b border-slate-700/50">
+                                <div class="p-4 bg-slate-900/30 border-r border-slate-700/50 flex flex-col justify-center">
                                     <div class="flex items-center gap-2 mb-2">
                                         <img src={stats.avatar} class="w-6 h-6 rounded-full" />
-                                        <span class="text-white text-sm font-bold truncate">{name.split(" ")[0]}</span>
+                                        <span class="text-white text-xs font-bold truncate">{name.split(" ")[0]}</span>
                                     </div>
-                                    <div class="w-full bg-slate-700 h-1.5 rounded-full mb-1">
-                                        <div class={`h-1.5 rounded-full ${stats.points > 15 ? 'bg-red-500' : 'bg-[var(--ig-cyan)]'}`} style={{width: `${Math.min(100, (stats.points/20)*100)}%`}}></div>
+                                    <div class="w-full bg-slate-700 h-1 rounded-full mb-1">
+                                        <div class={`h-1 rounded-full ${stats.points > 15 ? 'bg-red-500' : 'bg-[var(--ig-cyan)]'}`} style={{width: `${Math.min(100, (stats.points/20)*100)}%`}}></div>
                                     </div>
-                                    <div class="text-[10px] text-slate-500">{stats.points}/20 pts</div>
+                                    <div class="text-[10px] text-slate-500 flex justify-between"><span>Load</span><span>{stats.points} pts</span></div>
                                 </div>
-                                <div class="col-span-5 bg-slate-900/50 p-2 flex flex-wrap gap-2 content-start">
+                                <div class="col-span-5 bg-slate-900/20 p-2 flex flex-wrap gap-2 content-start">
                                     {stats.tasks.map(t => (
-                                        <div key={t.key} class={`w-full p-2 rounded text-xs border-l-2 mb-1 ${t.priority === 'High' ? 'bg-red-900/20 border-red-500 text-red-200' : 'bg-blue-900/20 border-blue-500 text-blue-200'}`}>
-                                            <div class="flex justify-between font-bold"><span>{t.key}</span><span>{t.points}</span></div>
-                                            <div class="truncate opacity-70">{t.summary}</div>
+                                        <div key={t.key} class={`w-full p-2 rounded border-l-2 mb-1 cursor-pointer hover:bg-white/5 transition ${t.priority === 'High' ? 'bg-red-900/10 border-red-500 text-red-200' : 'bg-[var(--ig-cyan)]/10 border-[var(--ig-cyan)] text-cyan-100'}`}>
+                                            <div class="flex justify-between font-bold text-[10px]"><span>{t.key}</span><span>{t.points} pts</span></div>
+                                            <div class="truncate opacity-70 text-[10px]">{t.summary}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -214,7 +234,6 @@
             useEffect(() => {
                 fetch(`${API_BASE}/burndown/${project}`).then(r=>r.json()).then(d => {
                     if (chartRef.current) {
-                        // Destroy old chart if exists
                         const existingChart = Chart.getChart(chartRef.current);
                         if (existingChart) existingChart.destroy();
 
@@ -223,12 +242,13 @@
                             data: {
                                 labels: d.labels,
                                 datasets: [
-                                    { label: 'Ideal', data: d.ideal, borderColor: '#64748b', borderDash: [5,5], pointRadius: 0 },
-                                    { label: 'Actual', data: d.actual, borderColor: '#22d3ee', backgroundColor: 'rgba(34, 211, 238, 0.1)', fill: true, tension: 0.3 }
+                                    { label: 'Ideal', data: d.ideal, borderColor: '#64748b', borderDash: [5,5], pointRadius: 0, borderWidth: 2 },
+                                    { label: 'Actual', data: d.actual, borderColor: '#e879f9', backgroundColor: 'rgba(232, 121, 249, 0.1)', fill: true, tension: 0.3, borderWidth: 3, pointBackgroundColor: '#e879f9' }
                                 ]
                             },
                             options: {
                                 responsive: true,
+                                maintainAspectRatio: false,
                                 plugins: { legend: { labels: { color: 'white' } } },
                                 scales: { 
                                     y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }, 
@@ -243,7 +263,7 @@
             return (
                 <div>
                     <h2 class="text-3xl font-bold text-white mb-6">Sprint Burndown</h2>
-                    <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 h-[400px]">
+                    <div class="bg-slate-800/80 p-6 rounded-xl border border-slate-700 h-[500px] shadow-xl">
                         <canvas ref={chartRef}></canvas>
                     </div>
                 </div>
@@ -282,22 +302,22 @@
             };
 
             return (
-                <div class="h-full flex flex-col">
+                <div class="h-full flex flex-col pb-20">
                     <div class="flex justify-between items-center mb-6">
                         <h2 class="text-3xl font-bold text-white">Retrospective</h2>
                         <div class="bg-slate-800 p-1 rounded-lg flex gap-1">
                             {['well', 'improve', 'actions'].map(c => (
-                                <button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c ? 'bg-slate-600 text-white' : 'text-slate-400'}`}>{c}</button>
+                                <button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>{c}</button>
                             ))}
                         </div>
                     </div>
                     
                     <div class="flex gap-2 mb-8">
-                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Add your thought..." class="flex-1 p-4 bg-slate-800 text-white rounded-xl border border-slate-700 outline-none focus:border-[var(--ig-cyan)]" />
-                        <button onClick={add} class="bg-[var(--ig-cyan)] text-slate-900 px-8 rounded-xl font-bold hover:brightness-110">Post</button>
+                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Add your thought..." class="flex-1 p-4 bg-slate-800/80 text-white rounded-xl border border-slate-700 outline-none focus:border-[var(--ig-cyan)] transition shadow-lg" />
+                        <button onClick={add} class="bg-[var(--ig-cyan)] text-slate-900 px-8 rounded-xl font-bold hover:brightness-110 shadow-[0_0_15px_rgba(34,211,238,0.3)] transition">Post</button>
                     </div>
 
-                    <div class="grid grid-cols-3 gap-6 flex-1 min-h-0">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1 min-h-0">
                         <RetroColumn title="🚀 Went Well" items={board.well} color="sticky-green" onMove={i=>move(i,'well','actions')} onDel={id=>del('well',id)} />
                         <RetroColumn title="🔥 Improve" items={board.improve} color="sticky-red" onMove={i=>move(i,'improve','actions')} onDel={id=>del('improve',id)} />
                         <RetroColumn title="✅ Actions" items={board.actions} color="sticky-blue" isAction={true} onPromote={promote} onDel={id=>del('actions',id)} />
@@ -308,18 +328,18 @@
 
         function RetroColumn({ title, items, color, onMove, onDel, isAction, onPromote }) {
             return (
-                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700/50 flex flex-col h-full overflow-hidden">
-                    <h3 class="font-bold text-slate-400 uppercase tracking-wider text-xs mb-4 flex justify-between">{title} <span>{items.length}</span></h3>
+                <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50 flex flex-col h-full overflow-hidden">
+                    <h3 class="font-bold text-slate-400 uppercase tracking-wider text-xs mb-4 flex justify-between border-b border-white/5 pb-2">{title} <span>{items.length}</span></h3>
                     <div class="overflow-y-auto space-y-3 flex-1 pr-2">
                         <AnimatePresence>
                             {items.map(i => (
                                 <motion.div key={i.id} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} class={`sticky-note p-4 rounded-lg relative group ${color}`}>
-                                    <p class="text-sm font-medium">{i.text}</p>
-                                    <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1">
-                                        {!isAction && <button onClick={()=>onMove(i)} class="bg-white/50 p-1 rounded text-xs hover:bg-white">➡️</button>}
-                                        <button onClick={()=>onDel(i.id)} class="bg-white/50 p-1 rounded text-xs hover:bg-red-500 hover:text-white">✕</button>
+                                    <p class="text-sm font-medium leading-relaxed">{i.text}</p>
+                                    <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                                        {!isAction && <button onClick={()=>onMove(i)} class="bg-white/50 p-1 rounded text-xs hover:bg-white transition">➡️</button>}
+                                        <button onClick={()=>onDel(i.id)} class="bg-white/50 p-1 rounded text-xs hover:bg-red-500 hover:text-white transition">✕</button>
                                     </div>
-                                    {isAction && <button onClick={()=>onPromote(i.text)} class="mt-3 w-full py-1 bg-white/40 hover:bg-white/60 rounded text-xs font-bold">⚡ Make Ticket</button>}
+                                    {isAction && <button onClick={()=>onPromote(i.text)} class="mt-3 w-full py-1.5 bg-white/40 hover:bg-white/60 rounded text-xs font-bold uppercase tracking-wide">⚡ Make Ticket</button>}
                                 </motion.div>
                             ))}
                         </AnimatePresence>
@@ -336,16 +356,16 @@
             if(!report) return <LoadingScreen />;
 
             return (
-                <div>
+                <div class="animate-fade-in">
                     <h2 class="text-3xl font-bold text-white mb-6">Weekly Report</h2>
-                    <div class="bg-slate-800 p-8 rounded-xl border border-slate-700 max-w-3xl">
+                    <div class="bg-slate-800/80 p-8 rounded-xl border border-slate-700 max-w-3xl shadow-2xl">
                         <div class="flex justify-between mb-8 pb-8 border-b border-slate-700">
-                            <div><div class="text-slate-500 text-xs uppercase font-bold">Completed Tasks</div><div class="text-5xl font-black text-white">{report.completed_count}</div></div>
-                            <div><div class="text-slate-500 text-xs uppercase font-bold">Velocity Delivered</div><div class="text-5xl font-black text-[var(--ig-cyan)]">{report.completed_points} pts</div></div>
+                            <div><div class="text-slate-500 text-xs uppercase font-bold tracking-widest">Completed Tasks</div><div class="text-6xl font-black text-white">{report.completed_count}</div></div>
+                            <div class="text-right"><div class="text-slate-500 text-xs uppercase font-bold tracking-widest">Velocity Delivered</div><div class="text-6xl font-black text-[var(--ig-cyan)] drop-shadow-[0_0_10px_rgba(34,211,238,0.3)]">{report.completed_points} pts</div></div>
                         </div>
                         <div class="prose prose-invert">
-                            <h3 class="text-white font-bold mb-2">AI Summary</h3>
-                            <p class="text-slate-300 leading-relaxed">{report.ai_summary.sprint_summary || JSON.stringify(report.ai_summary)}</p>
+                            <h3 class="text-[var(--ig-yellow)] font-bold mb-2 uppercase tracking-wide text-sm">AI Executive Summary</h3>
+                            <p class="text-slate-300 leading-relaxed text-lg font-light">{report.ai_summary.summary || report.ai_summary.sprint_summary || "Report generated."}</p>
                         </div>
                     </div>
                 </div>
@@ -358,7 +378,7 @@
         }
 
         function MetricCard({ label, value, color }) {
-            return <div class={`bg-slate-800 p-5 rounded-xl shadow-sm border-l-4 ${color} border-t border-r border-b border-slate-700`}>
+            return <div class={`bg-slate-800/80 p-5 rounded-xl shadow-lg border-l-4 ${color} border-t border-r border-b border-slate-700 hover:transform hover:-translate-y-1 transition`}>
                 <div class="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">{label}</div>
                 <div class="text-3xl font-black text-white">{value}</div>
             </div>;
