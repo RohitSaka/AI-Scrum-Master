@@ -34,21 +34,29 @@ SUPPORTED_PROJECTS = {
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🧠 DYNAMIC MODEL DISCOVERY ---
+# --- 🧠 DYNAMIC MODEL DISCOVERY (FIXED) ---
 def discover_available_models():
     print("\n🔍 SYSTEM DIAGNOSTIC: Discovering available models...")
     valid_models = []
     try:
         for m in genai.list_models():
-            if "generateContent" in m.supported_generation_methods:
-                valid_models.append(m.name)
+            # 1. Must support generateContent
+            if "generateContent" not in m.supported_generation_methods:
+                continue
+            
+            # 2. FILTER: Exclude Audio/TTS specific models (The Fix)
+            if "tts" in m.name.lower() or "audio" in m.name.lower():
+                continue
+                
+            valid_models.append(m.name)
         
-        # Sort: Flash first (fastest/cheapest), then others
+        # Sort to prioritize Flash (faster)
         valid_models.sort(key=lambda x: (
             0 if "1.5-flash" in x else 
             1 if "flash-latest" in x else 
-            2 if "flash" in x else
-            3
+            2 if "flash" in x and "lite" in x else
+            3 if "flash" in x else
+            4
         ))
         
         print(f"✅ FOUND {len(valid_models)} MODELS: {valid_models}")
