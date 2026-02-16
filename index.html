@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Agile Platform</title>
+    <title>IG AI Agile Platform</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -23,78 +23,102 @@
         
         body { 
             font-family: 'Inter', sans-serif; 
-            background-color: var(--ig-navy); 
-            color: #f8fafc; 
-            /* THE "SHADY" IG LOOK */
-            background: radial-gradient(circle at 10% 20%, rgba(34, 211, 238, 0.05), transparent 30%),
-                        radial-gradient(circle at 90% 80%, rgba(232, 121, 249, 0.05), transparent 30%);
-            min-height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* LIGHT MODE VARS */
+        .light-mode {
+            background-color: #f8fafc;
+            color: #0f172a;
+            --bg-sidebar: #ffffff;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+        }
+
+        /* DARK MODE VARS */
+        .dark-mode {
+            background-color: var(--ig-navy);
+            color: #f8fafc;
+            --bg-sidebar: #020617;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            /* Shady Gradient Background for Dark Mode */
+            background-image: radial-gradient(circle at 10% 20%, rgba(34, 211, 238, 0.05), transparent 30%),
+                              radial-gradient(circle at 90% 80%, rgba(232, 121, 249, 0.05), transparent 30%);
         }
         
         .active-tab { 
-            background: rgba(255, 255, 255, 0.08); 
+            background: rgba(34, 211, 238, 0.1); 
             border-left: 4px solid var(--ig-cyan); 
-            color: white; 
+            color: var(--text-main); 
         }
         
-        /* Sticky Notes */
-        .sticky-note { cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
-        .sticky-note:active { cursor: grabbing; transform: scale(1.02); }
-        .sticky-green { background: #dcfce7; color: #14532d; border-left: 4px solid #22c55e; }
-        .sticky-red { background: #fee2e2; color: #7f1d1d; border-left: 4px solid #ef4444; }
-        .sticky-blue { background: #dbeafe; color: #1e3a8a; border-left: 4px solid #3b82f6; }
+        .glass-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
 
-        /* Timeline */
-        .timeline-grid { display: grid; grid-template-columns: 200px repeat(5, 1fr); gap: 1px; background: #334155; border: 1px solid #334155; }
-        .timeline-cell { background: #1e293b; padding: 10px; min-height: 80px; }
-        .task-bar { transition: all 0.2s; cursor: pointer; }
-        .task-bar:hover { transform: translateY(-2px); z-index: 10; box-shadow: 0 0 10px var(--ig-cyan); }
+        /* Sticky Notes */
+        .sticky-note { cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.1); color: #1e293b; }
+        .sticky-green { background: #dcfce7; border-left: 4px solid #22c55e; }
+        .sticky-red { background: #fee2e2; border-left: 4px solid #ef4444; }
+        .sticky-blue { background: #dbeafe; border-left: 4px solid #3b82f6; }
     </style>
 </head>
-<body>
-    <div id="root"></div>
+<body class="dark-mode"> <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const { motion, AnimatePresence } = window.Motion;
         const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
 
-        // --- MAIN APP COMPONENT ---
+        // IG LOGO COMPONENT
+        const IGLogo = () => (
+            <div class="flex gap-1">
+                <div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)] shadow-[0_0_8px_var(--ig-cyan)]"></div>
+                <div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)] shadow-[0_0_8px_var(--ig-yellow)]"></div>
+                <div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)] shadow-[0_0_8px_var(--ig-magenta)]"></div>
+            </div>
+        );
+
         function App() {
             const [view, setView] = useState('dashboard');
             const [project, setProject] = useState('SCRUM');
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+            const [theme, setTheme] = useState('dark');
 
-            // IG LOGO COMPONENT
-            const IGLogo = () => (
-                <div class="flex gap-1">
-                    <div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)] shadow-[0_0_8px_var(--ig-cyan)]"></div>
-                    <div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)] shadow-[0_0_8px_var(--ig-yellow)]"></div>
-                    <div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)] shadow-[0_0_8px_var(--ig-magenta)]"></div>
-                </div>
-            );
+            const toggleTheme = () => {
+                const newTheme = theme === 'dark' ? 'light' : 'dark';
+                setTheme(newTheme);
+                document.body.className = newTheme === 'dark' ? 'dark-mode' : 'light-mode';
+            };
 
             return (
                 <div class="flex h-screen overflow-hidden">
                     {/* MOBILE HEADER */}
-                    <header class="md:hidden flex items-center justify-between p-4 bg-slate-950/80 backdrop-blur-md border-b border-slate-800 z-20 absolute w-full top-0">
-                        <div class="flex items-center gap-3 font-bold text-white">
+                    <header class="md:hidden flex items-center justify-between p-4 border-b z-20 absolute w-full top-0 glass-card">
+                        <div class="flex items-center gap-3 font-bold">
                             <IGLogo />
-                            <span class="tracking-wide">IG AGILE</span>
+                            <span class="tracking-wide text-[var(--text-main)]">IG AGILE</span>
                         </div>
-                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} class="text-white">☰</button>
+                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} class="text-[var(--text-main)]">☰</button>
                     </header>
 
                     {/* SIDEBAR */}
-                    <aside class={`fixed md:relative z-30 h-full w-64 bg-slate-950/90 backdrop-blur-xl border-r border-slate-800 flex flex-col justify-between transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+                    <aside class={`fixed md:relative z-30 h-full w-64 flex flex-col justify-between transition-transform duration-300 border-r ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`} style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-color)'}}>
                         <div>
                             {/* DESKTOP LOGO HEADER */}
                             <div class="p-6 hidden md:block">
                                 <div class="flex items-center gap-3 mb-2">
                                     <IGLogo />
-                                    <h1 class="text-2xl font-black tracking-tighter text-white">IG AGILE</h1>
+                                    <h1 class="text-2xl font-black tracking-tighter text-[var(--text-main)]">IG AGILE</h1>
                                 </div>
-                                <p class="text-xs text-slate-500 font-mono pl-1">Enterprise Platform v3.1</p>
+                                <p class="text-xs text-[var(--text-muted)] font-mono pl-1">Enterprise Platform v3.2</p>
                             </div>
                             
                             <nav class="mt-4 md:mt-4 pt-16 md:pt-0 space-y-1 px-2">
@@ -105,9 +129,15 @@
                                 <NavBtn id="reports" icon="📑" label="Reports" active={view} set={setView} />
                             </nav>
                         </div>
-                        <div class="p-4 border-t border-slate-800 bg-black/20">
-                             <div class="text-[10px] text-slate-500 uppercase font-bold mb-2 tracking-widest">Active Board</div>
-                             <select value={project} onChange={(e) => setProject(e.target.value)} class="w-full bg-slate-900 text-white p-2 rounded border border-slate-700 outline-none focus:border-[var(--ig-cyan)] transition cursor-pointer">
+                        
+                        <div class="p-4 border-t" style={{borderColor: 'var(--border-color)'}}>
+                             {/* THEME TOGGLE */}
+                             <button onClick={toggleTheme} class="w-full mb-4 p-2 rounded flex items-center justify-center gap-2 border text-xs font-bold uppercase tracking-wider transition hover:bg-opacity-10 hover:bg-white" style={{borderColor: 'var(--border-color)', color: 'var(--text-muted)'}}>
+                                {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
+                             </button>
+
+                             <div class="text-[10px] text-[var(--text-muted)] uppercase font-bold mb-2 tracking-widest">Active Board</div>
+                             <select value={project} onChange={(e) => setProject(e.target.value)} class="w-full p-2 rounded border outline-none focus:border-[var(--ig-cyan)] transition cursor-pointer" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border-color)'}}>
                                 <option value="SCRUM">Provider Services</option>
                                 <option value="OT">Ops Team</option>
                             </select>
@@ -132,12 +162,13 @@
         }
 
         const NavBtn = ({ id, icon, label, active, set }) => (
-            <button onClick={() => set(id)} class={`w-full text-left p-3 rounded-lg hover:bg-slate-900 transition flex items-center gap-3 text-slate-400 text-sm font-medium ${active === id ? 'active-tab shadow-lg shadow-cyan-900/20' : ''}`}>
+            <button onClick={() => set(id)} class={`w-full text-left p-3 rounded-lg transition flex items-center gap-3 text-sm font-medium ${active === id ? 'active-tab shadow-lg' : 'text-[var(--text-muted)] hover:bg-opacity-10 hover:bg-white'}`}>
                 <span class="text-lg">{icon}</span> {label}
             </button>
         );
 
-        // --- 1. DASHBOARD VIEW ---
+        // --- VIEWS ---
+
         function DashboardView({ project }) {
             const [data, setData] = useState(null);
             useEffect(() => { fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData); }, [project]);
@@ -147,8 +178,8 @@
             return (
                 <div class="animate-fade-in space-y-8">
                     <header>
-                        <h2 class="text-3xl font-bold text-white tracking-tight">Command Center</h2>
-                        <p class="text-slate-400">Real-time velocity & risk analysis.</p>
+                        <h2 class="text-3xl font-bold text-[var(--text-main)] tracking-tight">Command Center</h2>
+                        <p class="text-[var(--text-muted)]">Real-time velocity & risk analysis.</p>
                     </header>
 
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -158,23 +189,23 @@
                         <MetricCard label="Team Size" value={Object.keys(data.metrics.assignees).length} color="border-[var(--ig-yellow)] text-[var(--ig-yellow)]" />
                     </div>
 
-                    <div class="bg-slate-800/50 backdrop-blur rounded-xl p-6 border border-slate-700 relative overflow-hidden">
+                    <div class="glass-card rounded-xl p-6 relative overflow-hidden">
                         <div class="absolute top-0 right-0 opacity-5 text-9xl grayscale">🧠</div>
                         <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase tracking-wider text-xs">AI Executive Analysis</h3>
-                        <p class="text-slate-200 leading-relaxed text-lg font-light">"{data.ai_insights.sprint_summary || "Analyzing data..."}"</p>
+                        <p class="text-[var(--text-main)] leading-relaxed text-lg font-light">"{data.ai_insights.sprint_summary || "Analyzing data..."}"</p>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="bg-slate-800/80 p-5 rounded-xl border border-slate-700 hover:border-slate-500 transition">
+                            <div key={name} class="glass-card p-5 rounded-xl hover:border-[var(--ig-cyan)] transition">
                                 <div class="flex items-center gap-3 mb-4">
-                                    <img src={stats.avatar} class="w-10 h-10 rounded-full bg-slate-700 border border-slate-600" />
+                                    <img src={stats.avatar} class="w-10 h-10 rounded-full border border-[var(--border-color)]" />
                                     <div>
-                                        <div class="font-bold text-white text-sm">{name}</div>
-                                        <div class="text-xs text-slate-400">{stats.count} Tasks • {stats.points} pts</div>
+                                        <div class="font-bold text-[var(--text-main)] text-sm">{name}</div>
+                                        <div class="text-xs text-[var(--text-muted)]">{stats.count} Tasks • {stats.points} pts</div>
                                     </div>
                                 </div>
-                                <div class="bg-slate-900/50 p-3 rounded text-xs text-slate-400 italic border border-slate-800">
+                                <div class="p-3 rounded text-xs text-[var(--text-muted)] italic" style={{backgroundColor: 'rgba(0,0,0,0.05)'}}>
                                     "{data.ai_insights.assignee_performance?.find(p => p.name === name)?.analysis || "Performance stable."}"
                                 </div>
                             </div>
@@ -184,7 +215,6 @@
             );
         }
 
-        // --- 2. TIMELINE VIEW ---
         function TimelineView({ project }) {
             const [data, setData] = useState(null);
             useEffect(() => { fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData); }, [project]);
@@ -194,27 +224,27 @@
 
             return (
                 <div class="animate-fade-in">
-                    <h2 class="text-3xl font-bold text-white mb-6">Timeline Capacity</h2>
-                    <div class="bg-slate-800/80 rounded-xl border border-slate-700 overflow-hidden shadow-2xl">
-                        <div class="timeline-grid border-b border-slate-700 bg-slate-900/50">
-                            <div class="p-3 text-slate-400 font-bold text-xs uppercase tracking-wider flex items-center">Developer</div>
-                            {days.map(d => <div key={d} class="p-3 text-center text-slate-500 font-bold text-xs border-l border-slate-700">{d}</div>)}
+                    <h2 class="text-3xl font-bold text-[var(--text-main)] mb-6">Timeline Capacity</h2>
+                    <div class="glass-card rounded-xl overflow-hidden shadow-2xl">
+                        <div class="grid grid-cols-[200px_repeat(5,1fr)] border-b" style={{borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-sidebar)'}}>
+                            <div class="p-3 text-[var(--text-muted)] font-bold text-xs uppercase tracking-wider flex items-center">Developer</div>
+                            {days.map(d => <div key={d} class="p-3 text-center text-[var(--text-muted)] font-bold text-xs border-l" style={{borderColor: 'var(--border-color)'}}>{d}</div>)}
                         </div>
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="timeline-grid border-b border-slate-700/50">
-                                <div class="p-4 bg-slate-900/30 border-r border-slate-700/50 flex flex-col justify-center">
+                            <div key={name} class="grid grid-cols-[200px_repeat(5,1fr)] border-b" style={{borderColor: 'var(--border-color)'}}>
+                                <div class="p-4 border-r flex flex-col justify-center" style={{borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)'}}>
                                     <div class="flex items-center gap-2 mb-2">
                                         <img src={stats.avatar} class="w-6 h-6 rounded-full" />
-                                        <span class="text-white text-xs font-bold truncate">{name.split(" ")[0]}</span>
+                                        <span class="text-[var(--text-main)] text-xs font-bold truncate">{name.split(" ")[0]}</span>
                                     </div>
-                                    <div class="w-full bg-slate-700 h-1 rounded-full mb-1">
+                                    <div class="w-full h-1 rounded-full mb-1" style={{backgroundColor: 'rgba(0,0,0,0.1)'}}>
                                         <div class={`h-1 rounded-full ${stats.points > 15 ? 'bg-red-500' : 'bg-[var(--ig-cyan)]'}`} style={{width: `${Math.min(100, (stats.points/20)*100)}%`}}></div>
                                     </div>
-                                    <div class="text-[10px] text-slate-500 flex justify-between"><span>Load</span><span>{stats.points} pts</span></div>
+                                    <div class="text-[10px] text-[var(--text-muted)] flex justify-between"><span>Load</span><span>{stats.points} pts</span></div>
                                 </div>
-                                <div class="col-span-5 bg-slate-900/20 p-2 flex flex-wrap gap-2 content-start">
+                                <div class="col-span-5 p-2 flex flex-wrap gap-2 content-start" style={{backgroundColor: 'var(--bg-sidebar)'}}>
                                     {stats.tasks.map(t => (
-                                        <div key={t.key} class={`w-full p-2 rounded border-l-2 mb-1 cursor-pointer hover:bg-white/5 transition ${t.priority === 'High' ? 'bg-red-900/10 border-red-500 text-red-200' : 'bg-[var(--ig-cyan)]/10 border-[var(--ig-cyan)] text-cyan-100'}`}>
+                                        <div key={t.key} class={`w-full p-2 rounded border-l-2 mb-1 cursor-pointer transition ${t.priority === 'High' ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-[var(--ig-cyan)]/10 border-[var(--ig-cyan)] text-[var(--ig-cyan)]'}`}>
                                             <div class="flex justify-between font-bold text-[10px]"><span>{t.key}</span><span>{t.points} pts</span></div>
                                             <div class="truncate opacity-70 text-[10px]">{t.summary}</div>
                                         </div>
@@ -227,7 +257,6 @@
             );
         }
 
-        // --- 3. BURNDOWN VIEW ---
         function BurndownView({ project }) {
             const chartRef = useRef(null);
             
@@ -249,9 +278,9 @@
                             options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
-                                plugins: { legend: { labels: { color: 'white' } } },
+                                plugins: { legend: { labels: { color: '#94a3b8' } } },
                                 scales: { 
-                                    y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }, 
+                                    y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }, 
                                     x: { ticks: { color: '#94a3b8' }, grid: { display: false } } 
                                 }
                             }
@@ -262,15 +291,14 @@
 
             return (
                 <div>
-                    <h2 class="text-3xl font-bold text-white mb-6">Sprint Burndown</h2>
-                    <div class="bg-slate-800/80 p-6 rounded-xl border border-slate-700 h-[500px] shadow-xl">
+                    <h2 class="text-3xl font-bold text-[var(--text-main)] mb-6">Sprint Burndown</h2>
+                    <div class="glass-card p-6 rounded-xl h-[500px]">
                         <canvas ref={chartRef}></canvas>
                     </div>
                 </div>
             );
         }
 
-        // --- 4. RETRO VIEW ---
         function RetroView({ project }) {
             const [board, setBoard] = useState({ well: [], improve: [], actions: [] });
             const [input, setInput] = useState("");
@@ -304,16 +332,16 @@
             return (
                 <div class="h-full flex flex-col pb-20">
                     <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-3xl font-bold text-white">Retrospective</h2>
-                        <div class="bg-slate-800 p-1 rounded-lg flex gap-1">
+                        <h2 class="text-3xl font-bold text-[var(--text-main)]">Retrospective</h2>
+                        <div class="p-1 rounded-lg flex gap-1 border" style={{borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)'}}>
                             {['well', 'improve', 'actions'].map(c => (
-                                <button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c ? 'bg-slate-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>{c}</button>
+                                <button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c ? 'bg-[var(--ig-cyan)] text-slate-900 shadow' : 'text-[var(--text-muted)] hover:text-[var(--text-main)]'}`}>{c}</button>
                             ))}
                         </div>
                     </div>
                     
                     <div class="flex gap-2 mb-8">
-                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Add your thought..." class="flex-1 p-4 bg-slate-800/80 text-white rounded-xl border border-slate-700 outline-none focus:border-[var(--ig-cyan)] transition shadow-lg" />
+                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Add your thought..." class="flex-1 p-4 rounded-xl border outline-none focus:border-[var(--ig-cyan)] transition shadow-lg" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border-color)'}} />
                         <button onClick={add} class="bg-[var(--ig-cyan)] text-slate-900 px-8 rounded-xl font-bold hover:brightness-110 shadow-[0_0_15px_rgba(34,211,238,0.3)] transition">Post</button>
                     </div>
 
@@ -328,8 +356,8 @@
 
         function RetroColumn({ title, items, color, onMove, onDel, isAction, onPromote }) {
             return (
-                <div class="bg-slate-800/40 p-4 rounded-xl border border-slate-700/50 flex flex-col h-full overflow-hidden">
-                    <h3 class="font-bold text-slate-400 uppercase tracking-wider text-xs mb-4 flex justify-between border-b border-white/5 pb-2">{title} <span>{items.length}</span></h3>
+                <div class="glass-card p-4 rounded-xl flex flex-col h-full overflow-hidden">
+                    <h3 class="font-bold text-[var(--text-muted)] uppercase tracking-wider text-xs mb-4 flex justify-between border-b pb-2" style={{borderColor: 'var(--border-color)'}}>{title} <span>{items.length}</span></h3>
                     <div class="overflow-y-auto space-y-3 flex-1 pr-2">
                         <AnimatePresence>
                             {items.map(i => (
@@ -348,7 +376,6 @@
             );
         }
 
-        // --- 5. REPORTS VIEW ---
         function ReportsView({ project }) {
             const [report, setReport] = useState(null);
             useEffect(() => { fetch(`${API_BASE}/reports/${project}/weekly`).then(r=>r.json()).then(setReport); }, [project]);
@@ -357,30 +384,29 @@
 
             return (
                 <div class="animate-fade-in">
-                    <h2 class="text-3xl font-bold text-white mb-6">Weekly Report</h2>
-                    <div class="bg-slate-800/80 p-8 rounded-xl border border-slate-700 max-w-3xl shadow-2xl">
-                        <div class="flex justify-between mb-8 pb-8 border-b border-slate-700">
-                            <div><div class="text-slate-500 text-xs uppercase font-bold tracking-widest">Completed Tasks</div><div class="text-6xl font-black text-white">{report.completed_count}</div></div>
-                            <div class="text-right"><div class="text-slate-500 text-xs uppercase font-bold tracking-widest">Velocity Delivered</div><div class="text-6xl font-black text-[var(--ig-cyan)] drop-shadow-[0_0_10px_rgba(34,211,238,0.3)]">{report.completed_points} pts</div></div>
+                    <h2 class="text-3xl font-bold text-[var(--text-main)] mb-6">Weekly Report</h2>
+                    <div class="glass-card p-8 rounded-xl max-w-3xl shadow-2xl">
+                        <div class="flex justify-between mb-8 pb-8 border-b" style={{borderColor: 'var(--border-color)'}}>
+                            <div><div class="text-[var(--text-muted)] text-xs uppercase font-bold tracking-widest">Completed Tasks</div><div class="text-6xl font-black text-[var(--text-main)]">{report.completed_count}</div></div>
+                            <div class="text-right"><div class="text-[var(--text-muted)] text-xs uppercase font-bold tracking-widest">Velocity Delivered</div><div class="text-6xl font-black text-[var(--ig-cyan)] drop-shadow-[0_0_10px_rgba(34,211,238,0.3)]">{report.completed_points} pts</div></div>
                         </div>
-                        <div class="prose prose-invert">
+                        <div class="prose">
                             <h3 class="text-[var(--ig-yellow)] font-bold mb-2 uppercase tracking-wide text-sm">AI Executive Summary</h3>
-                            <p class="text-slate-300 leading-relaxed text-lg font-light">{report.ai_summary.summary || report.ai_summary.sprint_summary || "Report generated."}</p>
+                            <p class="text-[var(--text-main)] leading-relaxed text-lg font-light">{report.ai_summary.summary || report.ai_summary.sprint_summary || "Report generated."}</p>
                         </div>
                     </div>
                 </div>
             );
         }
 
-        // --- UTILS ---
         function LoadingScreen() {
             return <div class="h-96 flex flex-col items-center justify-center"><div class="w-12 h-12 border-4 border-[var(--ig-cyan)] border-t-transparent rounded-full animate-spin"></div><div class="mt-4 text-[var(--ig-cyan)] font-mono animate-pulse">Initializing Neural Net...</div></div>;
         }
 
         function MetricCard({ label, value, color }) {
-            return <div class={`bg-slate-800/80 p-5 rounded-xl shadow-lg border-l-4 ${color} border-t border-r border-b border-slate-700 hover:transform hover:-translate-y-1 transition`}>
-                <div class="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">{label}</div>
-                <div class="text-3xl font-black text-white">{value}</div>
+            return <div class={`glass-card p-5 rounded-xl border-l-4 ${color} hover:transform hover:-translate-y-1 transition`}>
+                <div class="text-[var(--text-muted)] text-[10px] font-bold uppercase tracking-wider mb-1">{label}</div>
+                <div class="text-3xl font-black text-[var(--text-main)]">{value}</div>
             </div>;
         }
 
