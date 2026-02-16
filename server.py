@@ -40,30 +40,14 @@ def discover_available_models():
     valid_models = []
     try:
         for m in genai.list_models():
-            # 1. Must support generateContent
-            if "generateContent" not in m.supported_generation_methods:
-                continue
-            
-            # 2. FILTER: Exclude Audio/TTS specific models (The Fix)
-            if "tts" in m.name.lower() or "audio" in m.name.lower():
-                continue
-                
+            if "generateContent" not in m.supported_generation_methods: continue
+            if "tts" in m.name.lower() or "audio" in m.name.lower(): continue
             valid_models.append(m.name)
         
-        # Sort to prioritize Flash (faster)
-        valid_models.sort(key=lambda x: (
-            0 if "1.5-flash" in x else 
-            1 if "flash-latest" in x else 
-            2 if "flash" in x and "lite" in x else
-            3 if "flash" in x else
-            4
-        ))
-        
+        valid_models.sort(key=lambda x: (0 if "1.5-flash" in x else 1))
         print(f"✅ FOUND {len(valid_models)} MODELS: {valid_models}")
         return valid_models
-    except Exception as e:
-        print(f"❌ Error listing models: {e}")
-        return ["models/gemini-1.5-flash", "models/gemini-flash-latest", "models/gemini-pro"]
+    except: return ["models/gemini-1.5-flash", "models/gemini-flash-latest"]
 
 MODEL_POOL = discover_available_models()
 
@@ -72,28 +56,15 @@ PROCESSED_CACHE = set()
 
 def generate_with_survival_mode(prompt):
     """Iterates through EVERY available model until one works."""
-    last_error = None
-    for model_name in MODEL_POOL[:15]: # Try up to 15 models
+    for model_name in MODEL_POOL[:15]:
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             return response.text
-        except Exception as e:
-            last_error = e
-            error_msg = str(e).lower()
-            if "429" in error_msg or "quota" in error_msg:
-                print(f"   ⚠️ Quota exceeded on {model_name}. Switching...")
-                time.sleep(1) # 1s cooldown to recover
-                continue
-            elif "not found" in error_msg:
-                continue
-            else:
-                print(f"   ❌ Error on {model_name}: {e}")
-                continue
-    
-    # If all fail, return a fallback JSON so the UI doesn't crash
-    print("❌ ALL AI MODELS EXHAUSTED.")
-    return '{"sprint_summary": "AI Analysis Temporarily Unavailable (Quota Limit).", "assignee_performance": []}'
+        except Exception:
+            time.sleep(1) # Cooldown
+            continue
+    raise Exception("All models exhausted.")
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, data=None):
@@ -104,8 +75,7 @@ def jira_request(method, endpoint, data=None):
         if method == "POST": return requests.post(url, json=data, auth=auth, headers=headers)
         if method == "PUT": return requests.put(url, json=data, auth=auth, headers=headers)
         if method == "GET": return requests.get(url, auth=auth, headers=headers)
-    except Exception as e:
-        print(f"Jira API Connection Error: {e}")
+    except: return None
     return None
 
 def find_user(name):
@@ -116,7 +86,6 @@ def find_user(name):
 
 # --- NEW: JSON RETRO STORAGE ---
 RETRO_FILE = "retro_data.json"
-
 def load_retro_data():
     if not os.path.exists(RETRO_FILE): return {}
     try:
@@ -130,70 +99,79 @@ def save_retro_data(data):
 
 @app.get("/")
 def home():
-    return {
-        "status": "Online 🤖", 
-        "library_version": importlib.metadata.version("google-generativeai"),
-        "top_model": MODEL_POOL[0] if MODEL_POOL else "None"
-    }
+    return {"status": "Online 🤖", "model": MODEL_POOL[0]}
 
+# --- 1. UPDATE TICKET (Drawer Feature) ---
+@app.post("/issue/update")
+async def update_issue(payload: dict):
+    key = payload.get("key")
+    field = payload.get("field")
+    value = payload.get("value")
+    
+    update_payload = {}
+    if field == "duedate":
+        update_payload = {"fields": {"duedate": value}}
+    elif field == "assignee":
+        account_id = find_user(value)
+        if account_id: update_payload = {"fields": {"assignee": {"accountId": account_id}}}
+
+    if update_payload:
+        jira_request("PUT", f"issue/{key}", update_payload)
+        return {"status": "updated"}
+    return {"status": "ignored"}
+
+# --- 2. STANDUP BOT (Chat Feature) ---
+@app.post("/standup/post")
+async def post_standup_update(payload: dict):
+    key = payload.get("key")
+    message = payload.get("message")
+    comment = f"🤖 [DAILY STANDUP BOT]\nUser Update: {message}"
+    jira_request("POST", f"issue/{key}/comment", {
+        "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}
+    })
+    return {"status": "posted"}
+
+# --- 3. ANALYTICS ---
 @app.get("/analytics/{project_key}")
 def get_sprint_analytics(project_key: str):
-    """Generates Command Center & Timeline Data."""
     project_key = project_key.upper()
-    if project_key not in SUPPORTED_PROJECTS:
-        return {"error": f"Project {project_key} not found."}
+    if project_key not in SUPPORTED_PROJECTS: return {"error": "Not Found"}
     
     config = SUPPORTED_PROJECTS[project_key]
     print(f"📊 Analyzing {config['name']} ({project_key})...")
     
-    fields_to_fetch = ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD, "duedate", "created"]
+    # UPGRADE: Added 'description' for the Drawer
+    fields = ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD, "duedate", "created", "description"]
 
-    jql_query = f"project = {project_key} AND sprint in openSprints()"
-    res = jira_request("POST", "search/jql", {
-        "jql": jql_query,
-        "fields": fields_to_fetch
-    })
+    jql = f"project = {project_key} AND sprint in openSprints()"
+    res = jira_request("POST", "search/jql", {"jql": jql, "fields": fields})
     issues = res.json().get('issues', []) if res else []
     
-    # Fallback to backlog if no sprint
     if not issues:
-        jql_query = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
-        res = jira_request("POST", "search/jql", {
-            "jql": jql_query,
-            "maxResults": 30,
-            "fields": fields_to_fetch
-        })
+        jql = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
+        res = jira_request("POST", "search/jql", {"jql": jql, "maxResults": 30, "fields": fields})
         issues = res.json().get('issues', []) if res else []
-
-    if not issues:
-        return {"sprint_summary": "No active tasks found.", "metrics": {}, "assignee_performance": []}
 
     stats = {
         "total_tickets": len(issues),
-        "total_points": 0,
-        "completed_points": 0,
-        "blockers": 0,
+        "total_points": 0, "completed_points": 0, "blockers": 0,
         "status_breakdown": {"To Do": 0, "In Progress": 0, "Done": 0},
         "assignees": {}
     }
-
-    perf_data_for_ai = {}
+    perf_data = {}
 
     for issue in issues:
         f = issue['fields']
         name = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
         avatar = f['assignee']['avatarUrls']['48x48'] if f['assignee'] else ""
         status = f['status']['name']
-        priority = f['priority']['name'] if f['priority'] else "Medium"
+        prio = f['priority']['name'] if f['priority'] else "Medium"
         points = f.get(STORY_POINTS_FIELD) or 0
-        due_date = f.get('duedate')
-
+        
         stats["total_points"] += points
         stats["status_breakdown"][status] = stats["status_breakdown"].get(status, 0) + 1
-        if status.lower() in ["done", "completed", "closed"]:
-            stats["completed_points"] += points
-        if priority in ["Highest", "High", "Critical"] and status.lower() != "done":
-            stats["blockers"] += 1
+        if status.lower() in ["done", "completed", "closed"]: stats["completed_points"] += points
+        if prio in ["Highest", "High", "Critical"] and status != "Done": stats["blockers"] += 1
             
         if name not in stats["assignees"]:
             stats["assignees"][name] = {"count": 0, "points": 0, "avatar": avatar, "tasks": []}
@@ -203,141 +181,91 @@ def get_sprint_analytics(project_key: str):
         stats["assignees"][name]["tasks"].append({
             "key": issue['key'],
             "summary": f['summary'],
+            "description": f.get('description', 'No description provided.'), # For Drawer
             "status": status,
-            "priority": priority,
+            "priority": prio,
             "points": points,
-            "end": due_date
+            "end": f.get('duedate')
         })
+        perf_data[name] = perf_data.get(name, []) + [f"{f['summary']} ({status})"]
 
-        perf_data_for_ai[name] = perf_data_for_ai.get(name, []) + [f"{f['summary']} ({status}, {points}pts)"]
-
-    # AI Analysis
-    prompt = f"""
-    Analyze Work Board '{config['name']}':
-    {json.dumps(perf_data_for_ai)}
-    Return ONLY JSON: 
-    {{
-        "sprint_summary": "2 sentences on overall health/risks.", 
-        "assignee_performance": [
-            {{"name": "...", "analysis": "1 sentence on load."}}
-        ]
-    }}
-    """
-    
+    # AI Analysis with Fallback
     try:
+        prompt = f"Analyze board '{config['name']}': {json.dumps(perf_data)}. Return JSON: {{'sprint_summary': '...', 'assignee_performance': []}}"
         raw = generate_with_survival_mode(prompt)
-        clean_json = raw.replace('```json', '').replace('```', '').strip()
-        ai_response = json.loads(clean_json)
-    except Exception as e:
-        ai_response = {"sprint_summary": "AI Quota Exhausted.", "assignee_performance": []}
+        ai_response = json.loads(raw.replace('```json','').replace('```','').strip())
+    except:
+        ai_response = {"sprint_summary": "AI Limit Reached. Using statistical fallback.", "assignee_performance": []}
 
     return {"metrics": stats, "ai_insights": ai_response}
 
-# --- BURNDOWN ---
+# --- 4. BURNDOWN ---
 @app.get("/burndown/{project_key}")
 def get_burndown_data(project_key: str):
     project_key = project_key.upper()
     jql = f"project = {project_key} AND sprint in openSprints()"
-    res = jira_request("POST", "search/jql", {
-        "jql": jql, "fields": [STORY_POINTS_FIELD, "resolutiondate"]
-    })
+    res = jira_request("POST", "search/jql", {"jql": jql, "fields": [STORY_POINTS_FIELD]})
     issues = res.json().get('issues', []) if res else []
     
-    if not issues: return {"labels": [], "ideal": [], "actual": []}
-
-    total_points = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
-    today = datetime.now()
-    dates = [(today - timedelta(days=i)).strftime("%b %d") for i in range(14, -1, -1)]
+    total = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
+    dates = [(datetime.now()-timedelta(days=i)).strftime("%b %d") for i in range(14,-1,-1)]
     
-    actual_data = []
-    remaining = total_points
-    
-    # MVP Burn Simulation
+    actual = []
+    rem = total
     for _ in dates:
-        actual_data.append(remaining)
-        remaining -= (total_points * 0.05) 
-        if remaining < 0: remaining = 0
+        actual.append(rem)
+        rem -= (total*0.05)
+        if rem<0: rem=0
+        
+    return {"labels": dates, "ideal": [max(0, total-(i*(total/14))) for i in range(15)], "actual": actual, "velocity": total}
 
-    ideal_step = total_points / 14
-    ideal_data = [max(0, total_points - (i * ideal_step)) for i in range(15)]
-
-    return {
-        "labels": dates,
-        "ideal": ideal_data,
-        "actual": actual_data,
-        "velocity": total_points
-    }
-
-# --- RETRO ---
+# --- 5. RETRO ---
 @app.get("/retro/{project_key}")
-def get_retro_board(project_key: str):
-    project_key = project_key.upper()
+def get_retro(project_key: str):
     data = load_retro_data()
-    if project_key not in data:
-        data[project_key] = {"well": [], "improve": [], "actions": []}
+    if project_key.upper() not in data: 
+        data[project_key.upper()] = {"well": [], "improve": [], "actions": []}
         save_retro_data(data)
-    return data[project_key]
+    return data[project_key.upper()]
 
 @app.post("/retro/update")
-def update_retro_board(payload: dict):
-    project = payload.get("project")
-    board_state = payload.get("board") 
+def update_retro(payload: dict):
     data = load_retro_data()
-    data[project] = board_state
+    data[payload.get("project")] = payload.get("board")
     save_retro_data(data)
     return {"status": "saved"}
 
 @app.post("/retro/promote")
-def promote_to_jira(payload: dict):
-    project = payload.get("project")
-    text = payload.get("text")
-    data = {
+def promote_retro(payload: dict):
+    jira_request("POST", "issue", {
         "fields": {
-            "project": {"key": project},
-            "summary": f"[RETRO ACTION] {text}",
-            "description": "Promoted from AI Agile Visual Board.",
-            "issuetype": {"name": "Task"},
-            "priority": {"name": "High"}
+            "project": {"key": payload.get("project")},
+            "summary": f"[RETRO] {payload.get('text')}",
+            "issuetype": {"name": "Task"}
         }
-    }
-    jira_request("POST", "issue", data)
+    })
     return {"status": "promoted"}
 
-# --- REPORTING (FIXED PROMPT) ---
+# --- 6. REPORTING (MATH FALLBACK) ---
 @app.get("/reports/{project_key}/{timeframe}")
-def get_periodic_report(project_key: str, timeframe: str):
-    """Generates Weekly/Monthly Completion Reports."""
+def get_report(project_key: str, timeframe: str):
     days = 7 if timeframe == "weekly" else 30
-    date_threshold = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    
-    jql = f"project = {project_key} AND statusCategory = Done AND resolved >= '{date_threshold}'"
-    res = jira_request("POST", "search/jql", {"jql": jql, "fields": ["summary", "assignee", STORY_POINTS_FIELD]})
+    dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    jql = f"project = {project_key} AND statusCategory = Done AND resolved >= '{dt}'"
+    res = jira_request("POST", "search/jql", {"jql": jql, "fields": ["summary", STORY_POINTS_FIELD]})
     issues = res.json().get('issues', []) if res else []
     
-    completed_points = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
+    pts = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
     
-    # Simplified Prompt to save tokens and avoid errors
-    prompt = f"""
-    Write a short executive summary for a {timeframe} report.
-    - Completed: {len(issues)} tasks
-    - Total Points: {completed_points}
-    - Tasks: {[i['fields']['summary'] for i in issues]}
-    
-    Return JSON: {{ "summary": "YOUR TEXT HERE" }}
-    """
-    
+    # Try AI, Fallback to Math
     try:
+        prompt = f"Summarize: {len(issues)} tasks, {pts} points. Return JSON: {{'summary': 'text'}}"
         raw = generate_with_survival_mode(prompt)
-        ai_text = json.loads(raw.replace('```json', '').replace('```', '').strip())
-    except Exception as e:
-        print(f"Report Generation Failed: {e}")
-        ai_text = {"summary": "AI Report Unavailable. Please check usage quotas."}
+        ai = json.loads(raw.replace('```json','').replace('```','').strip())
+    except:
+        ai = {"summary": f"In the last {days} days, the team completed {len(issues)} tasks totaling {pts} story points."}
         
-    return {
-        "completed_count": len(issues),
-        "completed_points": completed_points,
-        "ai_summary": ai_text
-    }
+    return {"completed_count": len(issues), "completed_points": pts, "ai_summary": ai}
 
 # --- WEBHOOK ---
 @app.post("/webhook")
