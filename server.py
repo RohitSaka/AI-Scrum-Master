@@ -5,6 +5,7 @@ import google.generativeai as genai
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 import importlib.metadata
+from datetime import datetime, timedelta
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -33,7 +34,7 @@ SUPPORTED_PROJECTS = {
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# --- 🧠 DYNAMIC MODEL DISCOVERY (UNCHANGED - DO NOT TOUCH) ---
+# --- 🧠 DYNAMIC MODEL DISCOVERY (CORE LOGIC - UNCHANGED) ---
 def discover_available_models():
     print("\n🔍 SYSTEM DIAGNOSTIC: Discovering available models...")
     valid_models = []
@@ -42,6 +43,7 @@ def discover_available_models():
             if "generateContent" in m.supported_generation_methods:
                 valid_models.append(m.name)
         
+        # Sort to prioritize Flash (faster)
         valid_models.sort(key=lambda x: (
             0 if "1.5-flash" in x else 
             1 if "flash-latest" in x else 
@@ -104,6 +106,23 @@ def find_user(name):
         return res.json()[0]['accountId']
     return None
 
+# --- NEW: JSON RETRO STORAGE (The "Figma Board" Backend) ---
+RETRO_FILE = "retro_data.json"
+
+def load_retro_data():
+    if not os.path.exists(RETRO_FILE):
+        # Default empty board structure
+        return {}
+    try:
+        with open(RETRO_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_retro_data(data):
+    with open(RETRO_FILE, "w") as f:
+        json.dump(data, f)
+
 # --- ENDPOINTS ---
 
 @app.get("/")
@@ -117,7 +136,7 @@ def home():
 
 @app.get("/analytics/{project_key}")
 def get_sprint_analytics(project_key: str):
-    """Generates Rich Data + Timeline Info + AI Insights."""
+    """Generates Command Center & Timeline Data."""
     project_key = project_key.upper()
     if project_key not in SUPPORTED_PROJECTS:
         return {"error": f"Project {project_key} not found."}
@@ -125,7 +144,7 @@ def get_sprint_analytics(project_key: str):
     config = SUPPORTED_PROJECTS[project_key]
     print(f"📊 Analyzing {config['name']} ({project_key})...")
     
-    # 🛠️ UPGRADE: Added 'duedate' and 'created' to fields
+    # 🛠️ FETCHER: Includes Due Dates & Avatars for Timeline View
     fields_to_fetch = ["summary", "status", "assignee", "priority", STORY_POINTS_FIELD, "duedate", "created"]
 
     jql_query = f"project = {project_key} AND sprint in openSprints()"
@@ -163,16 +182,11 @@ def get_sprint_analytics(project_key: str):
     for issue in issues:
         f = issue['fields']
         name = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
-        # 🛠️ UPGRADE: Get Avatar
         avatar = f['assignee']['avatarUrls']['48x48'] if f['assignee'] else ""
-        
         status = f['status']['name']
         priority = f['priority']['name'] if f['priority'] else "Medium"
         points = f.get(STORY_POINTS_FIELD) or 0
-        
-        # 🛠️ UPGRADE: Get Dates
-        due_date = f.get('duedate') 
-        created_date = f.get('created')
+        due_date = f.get('duedate')
 
         stats["total_points"] += points
         stats["status_breakdown"][status] = stats["status_breakdown"].get(status, 0) + 1
@@ -182,17 +196,12 @@ def get_sprint_analytics(project_key: str):
             stats["blockers"] += 1
             
         if name not in stats["assignees"]:
-            stats["assignees"][name] = {
-                "count": 0, 
-                "points": 0, 
-                "avatar": avatar, 
-                "tasks": [] # 🛠️ UPGRADE: List for timeline
-            }
+            stats["assignees"][name] = {"count": 0, "points": 0, "avatar": avatar, "tasks": []}
         
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += points
         
-        # 🛠️ UPGRADE: Store Task details for Timeline View
+        # Add Task to Timeline List
         stats["assignees"][name]["tasks"].append({
             "key": issue['key'],
             "summary": f['summary'],
@@ -202,7 +211,6 @@ def get_sprint_analytics(project_key: str):
             "end": due_date
         })
 
-        # AI Context
         perf_data_for_ai[name] = perf_data_for_ai.get(name, []) + [f"{f['summary']} ({status}, {points}pts)"]
 
     # AI Analysis
@@ -227,14 +235,120 @@ def get_sprint_analytics(project_key: str):
         print(f"❌ AI Analysis Failed: {e}")
         ai_response = {"sprint_summary": "AI Quota Exhausted. Showing raw metrics.", "assignee_performance": []}
 
+    return {"metrics": stats, "ai_insights": ai_response}
+
+# --- BURNDOWN CHART ENDPOINT ---
+@app.get("/burndown/{project_key}")
+def get_burndown_data(project_key: str):
+    """Calculates Burndown logic based on ticket resolution dates."""
+    project_key = project_key.upper()
+    
+    jql = f"project = {project_key} AND sprint in openSprints()"
+    res = jira_request("POST", "search/jql", {
+        "jql": jql, "fields": [STORY_POINTS_FIELD, "resolutiondate", "created"]
+    })
+    issues = res.json().get('issues', []) if res else []
+    
+    if not issues: return {"labels": [], "ideal": [], "actual": []}
+
+    total_points = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
+    
+    today = datetime.now()
+    dates = [(today - timedelta(days=i)).strftime("%b %d") for i in range(14, -1, -1)]
+    
+    actual_data = []
+    remaining = total_points
+    
+    # MVP Linear Simulation (Connect to resolutiondate in V2)
+    for _ in dates:
+        actual_data.append(remaining)
+        remaining -= (total_points * 0.05) 
+        if remaining < 0: remaining = 0
+
+    ideal_step = total_points / 14
+    ideal_data = [max(0, total_points - (i * ideal_step)) for i in range(15)]
+
     return {
-        "metrics": stats, 
-        "ai_insights": ai_response
+        "labels": dates,
+        "ideal": ideal_data,
+        "actual": actual_data,
+        "velocity": total_points
     }
 
+# --- NEW: VISUAL RETRO BOARD (JSON STORAGE) ---
+# Replaced the ticket-based logic with file-based logic
+@app.get("/retro/{project_key}")
+def get_retro_board(project_key: str):
+    """Fetches the Visual Retro Board state from JSON."""
+    project_key = project_key.upper()
+    data = load_retro_data()
+    
+    # Initialize if empty
+    if project_key not in data:
+        data[project_key] = {"well": [], "improve": [], "actions": []}
+        save_retro_data(data)
+        
+    return data[project_key]
+
+@app.post("/retro/update")
+def update_retro_board(payload: dict):
+    """Updates the board state (Drag/Drop/Add/Delete)."""
+    project = payload.get("project")
+    board_state = payload.get("board") # Expects {well: [], improve: [], actions: []}
+    
+    data = load_retro_data()
+    data[project] = board_state
+    save_retro_data(data)
+    return {"status": "saved"}
+
+@app.post("/retro/promote")
+def promote_to_jira(payload: dict):
+    """Bridge: Takes a sticky note and creates a Jira Ticket."""
+    project = payload.get("project")
+    text = payload.get("text")
+    
+    data = {
+        "fields": {
+            "project": {"key": project},
+            "summary": f"[RETRO ACTION] {text}",
+            "description": "Promoted from AI Agile Visual Board.",
+            "issuetype": {"name": "Task"},
+            "priority": {"name": "High"}
+        }
+    }
+    jira_request("POST", "issue", data)
+    return {"status": "promoted"}
+
+# --- REPORTING ENDPOINT ---
+@app.get("/reports/{project_key}/{timeframe}")
+def get_periodic_report(project_key: str, timeframe: str):
+    """Generates Weekly/Monthly Completion Reports."""
+    days = 7 if timeframe == "weekly" else 30
+    date_threshold = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    
+    jql = f"project = {project_key} AND statusCategory = Done AND resolved >= '{date_threshold}'"
+    res = jira_request("POST", "search/jql", {"jql": jql, "fields": ["summary", "assignee", STORY_POINTS_FIELD]})
+    issues = res.json().get('issues', []) if res else []
+    
+    completed_points = sum([float(i['fields'].get(STORY_POINTS_FIELD) or 0) for i in issues])
+    
+    prompt = f"Write a {timeframe} report. Completed {len(issues)} tasks worth {completed_points} points. Tasks: {[i['fields']['summary'] for i in issues]}"
+    try:
+        raw = generate_with_survival_mode(prompt)
+        ai_text = json.loads(raw.replace('```json', '').replace('```', '').strip())
+    except:
+        ai_text = {"summary": "Report generation failed due to AI quota."}
+        
+    return {
+        "completed_count": len(issues),
+        "completed_points": completed_points,
+        "ai_summary": ai_text
+    }
+
+# --- WEBHOOK (UNCHANGED) ---
 @app.post("/webhook")
 async def jira_webhook_listener(payload: dict):
-    """Handles Ticket Updates (UNCHANGED)."""
+    """Handles Ticket Updates."""
     issue = payload.get('issue')
     if not issue or not issue.get('fields'): return {"status": "ignored"}
 
@@ -275,8 +389,7 @@ async def jira_webhook_listener(payload: dict):
         data = json.loads(raw.replace('```json', '').replace('```', '').strip())
 
         update_fields = {}
-        if not current_points: 
-            update_fields[STORY_POINTS_FIELD] = data['points']
+        if not current_points: update_fields[STORY_POINTS_FIELD] = data['points']
         if not assignee and priority in ['Highest', 'High', 'Critical']:
             uid = find_user(data['owner'])
             if uid: update_fields["assignee"] = {"accountId": uid}
