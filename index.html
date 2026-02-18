@@ -125,6 +125,7 @@
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
             const [isChatOpen, setIsChatOpen] = useState(false);
+            const [isGlobalLoading, setIsGlobalLoading] = useState(false); // NEW: Track loading state at top level
 
             useEffect(() => {
                 secureFetch('/projects').then(r => r ? r.json() : []).then(data => {
@@ -142,15 +143,22 @@
                                 <div><h1 className="text-lg font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Agile</h1><p className="text-[10px] uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>{userRole.replace('_', ' ')}</p></div>
                             </div>
                             <nav className="space-y-1">
-                                <NavBtn id="dashboard" icon="BarChart2" label="Command Center" active={view} set={setView} />
-                                {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Calendar" label="Timeline" active={view} set={setView} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} /></>}
-                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} /><NavBtn id="reports" icon="FileText" label="Reports" active={view} set={setView} /><NavBtn id="burndown" icon="TrendingDown" label="Burndown" active={view} set={setView} /></>}
+                                <NavBtn id="dashboard" icon="BarChart2" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
+                                {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Calendar" label="Timeline" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
+                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="reports" icon="FileText" label="Reports" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="burndown" icon="TrendingDown" label="Burndown" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
                         </div>
                         <div className="p-4 border-t space-y-4" style={{borderColor: 'var(--border)'}}>
                             <ThemeToggle theme={theme} setTheme={setTheme} fullWidth />
-                            <div><label className="text-[10px] font-bold uppercase mb-2 block" style={{color: 'var(--text-muted)'}}>Active Project</label>
-                                <select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} className="w-full p-2 rounded border text-sm input-field cursor-pointer">
+                            <div>
+                                <label className="text-[10px] font-bold uppercase mb-2 block" style={{color: 'var(--text-muted)'}}>Active Project</label>
+                                {/* NEW: Disable dropdown and change styling if loading */}
+                                <select 
+                                    value={activeProject || ''} 
+                                    onChange={e=>setActiveProject(e.target.value)} 
+                                    disabled={isGlobalLoading}
+                                    className={`w-full p-2 rounded border text-sm input-field ${isGlobalLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                >
                                     {projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
                                 </select>
                             </div>
@@ -160,11 +168,11 @@
                     <main className="flex-1 overflow-auto p-8 relative transition-colors duration-300">
                         {activeProject ? (
                             <>
-                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} />}
-                                {view === 'timeline' && <TimelineView project={activeProject} />}
+                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} />}
+                                {view === 'timeline' && <TimelineView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'standup' && <StandupView project={activeProject} />}
-                                {view === 'retro' && <RetroView project={activeProject} />}
-                                {view === 'reports' && <ReportsView project={activeProject} />}
+                                {view === 'retro' && <RetroView project={activeProject} setIsLoading={setIsGlobalLoading} />}
+                                {view === 'reports' && <ReportsView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'burndown' && <BurndownView project={activeProject} />}
                             </>
                         ) : <LoadingScreen msg="Connecting to Jira..." />}
@@ -182,8 +190,8 @@
             );
         }
 
-        const NavBtn = ({ id, icon, label, active, set }) => (
-            <button onClick={()=>set(id)} className={`nav-btn w-full ${active===id ? 'active' : ''}`}><Icon name={icon} size={18} /> {label}</button>
+        const NavBtn = ({ id, icon, label, active, set, disabled }) => (
+            <button onClick={()=>set(id)} disabled={disabled} className={`nav-btn w-full ${active===id ? 'active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}><Icon name={icon} size={18} /> {label}</button>
         );
 
         function MetricCard({ label, value, color, isDanger }) {
@@ -195,20 +203,20 @@
             );
         }
 
-        // --- DASHBOARD (FIXED STALE DATA) ---
-        function DashboardView({ project, role }) {
+        // --- DASHBOARD ---
+        function DashboardView({ project, role, setIsLoading }) {
             const [data, setData] = useState(null);
-            const [isLoading, setIsLoading] = useState(true);
             
             useEffect(() => { 
-                setIsLoading(true); // FORCE LOADING SCREEN
+                setData(null);
+                setIsLoading(true);
                 secureFetch(`/analytics/${project}`)
                     .then(r => r ? r.json() : null)
                     .then(d => { setData(d); setIsLoading(false); })
-                    .catch(() => setIsLoading(false));
+                    .catch(() => { setIsLoading(false); });
             }, [project]);
             
-            if (isLoading || !data) return <LoadingScreen msg="AI is analyzing sprint data..." />;
+            if (!data) return <LoadingScreen msg="AI is analyzing sprint data..." />;
 
             return (
                 <div className="animate-fade-in space-y-6">
@@ -231,20 +239,20 @@
             );
         }
 
-        // --- TIMELINE (FIXED STALE DATA & CRASH) ---
-        function TimelineView({ project }) {
+        // --- TIMELINE ---
+        function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
-            const [isLoading, setIsLoading] = useState(true);
             
             useEffect(() => { 
-                setIsLoading(true); // FORCE LOADING SCREEN
+                setData(null);
+                setIsLoading(true);
                 secureFetch(`/analytics/${project}`)
                     .then(r=>r?.json())
                     .then(d => { setData(d); setIsLoading(false); })
                     .catch(() => setIsLoading(false));
             }, [project]);
             
-            if (isLoading || !data) return <LoadingScreen msg="Loading assignees..." />;
+            if (!data) return <LoadingScreen msg="Loading assignees..." />;
 
             return (
                 <div className="animate-fade-in">
@@ -257,7 +265,6 @@
                                     <div><div className="text-sm font-medium" style={{color: 'var(--text-main)'}}>{name.split(" ")[0]}</div><div className="text-[10px]" style={{color: 'var(--text-muted)'}}>{stats.points} pts</div></div>
                                 </div>
                                 <div className="flex-1 flex gap-2 flex-wrap">
-                                    {/* SAFE CHAINING ADDED HERE (?.) TO PREVENT CRASH IF TASKS MISSING */}
                                     {stats.tasks?.map(t => (
                                         <div key={t.key} className="px-3 py-1.5 rounded text-xs border cursor-pointer hover:scale-105 transition shadow-sm" style={{borderColor: t.priority==='High' ? 'var(--danger)' : 'var(--primary)', backgroundColor: 'var(--bg-body)', color: 'var(--text-main)'}}>
                                             <span className="font-bold opacity-70 mr-1">{t.key}</span> {t.summary.substring(0, 25)}...
@@ -272,13 +279,13 @@
             );
         }
 
-        // --- RETRO (FIXED STALE DATA) ---
-        function RetroView({ project }) {
+        // --- RETRO ---
+        function RetroView({ project, setIsLoading }) {
             const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
             
             useEffect(() => { 
-                setSprints([]); setActiveSprint(null); setBoard(null); // RESET STATE
-                secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { setSprints(d); if(d.length) setActiveSprint(d[0].id); }); 
+                setSprints([]); setActiveSprint(null); setBoard(null); setIsLoading(true);
+                secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { setSprints(d); if(d.length) setActiveSprint(d[0].id); setIsLoading(false); }); 
             }, [project]);
             
             useEffect(() => { 
@@ -307,20 +314,21 @@
         function StandupView({ project }) { return <div className="text-center p-10 opacity-50 text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Bot Coming Soon</div>; }
         function BurndownView() { return <div className="text-center p-10 opacity-50 text-xl font-bold" style={{color: 'var(--text-muted)'}}>Burndown Chart Coming Soon</div> }
         
-        // --- REPORTS (FIXED CRASH) ---
-        function ReportsView({ project }) { 
+        // --- REPORTS ---
+        function ReportsView({ project, setIsLoading }) { 
             const [rep, setRep] = useState(null);
             
             useEffect(()=>{ 
-                setRep(null); // FIX: Was wrongly calling setData(null)
+                setRep(null); 
+                setIsLoading(true);
                 secureFetch(`/reports/${project}/weekly`)
                     .then(r=>r?.json())
-                    .then(setRep)
-                    .catch(() => setRep({completed_count: 0, completed_points: 0, ai_summary: {summary: "Failed to load"}}));
+                    .then(d => { setRep(d); setIsLoading(false); })
+                    .catch(() => { setRep({completed_count: 0, completed_points: 0, ai_summary: {summary: "Failed to load"}}); setIsLoading(false); });
             },[project]);
             
             if(!rep) return <LoadingScreen msg="Generating Weekly Report..."/>;
-            return <div className="glass-card p-8"><h2 className="text-2xl font-bold mb-2" style={{color: 'var(--text-main)'}}>Weekly Report</h2><div className="text-4xl font-black mb-4" style={{color: 'var(--primary)'}}>{rep.completed_count} Tasks Completed</div><p className="leading-relaxed" style={{color: 'var(--text-muted)'}}>{rep.ai_summary?.summary}</p></div> 
+            return <div className="glass-card p-8"><h2 className="text-2xl font-bold mb-2" style={{color: 'var(--text-main)'}}>Weekly Report</h2><div className="text-4xl font-black mb-4" style={{color: 'var(--primary)'}}>{rep.completed_count} Tasks Completed</div><p className="leading-relaxed" style={{color: 'var(--text-muted)'}}>{rep.ai_summary?.summary || "No summary available."}</p></div> 
         }
 
         function LoadingScreen({ msg = "Loading..." }) { 
