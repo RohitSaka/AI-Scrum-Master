@@ -1,11 +1,10 @@
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
-import requests, json, os, re, time
+import requests, json, os, time
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
-# 1. Load Environment Variables
 load_dotenv()
 app = FastAPI()
 
@@ -16,89 +15,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- CONFIGURATION ---
 STORY_POINT_CACHE = {} 
 RETRO_FILE = "retro_data.json"
-ACTIVE_MODEL = None # Will be set automatically
 
-# --- SECURITY & AUTH ---
-async def get_jira_creds(
-    x_jira_domain: str = Header(...),
-    x_jira_email: str = Header(...),
-    x_jira_token: str = Header(...)
-):
+async def get_jira_creds(x_jira_domain: str = Header(...), x_jira_email: str = Header(...), x_jira_token: str = Header(...)):
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- CRITICAL: DYNAMIC MODEL DISCOVERY ---
-def find_working_model():
-    """
-    Hits the Google API to find exactly which model name is valid for your key.
-    This prevents 404 errors by never guessing.
-    """
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("❌ CRITICAL: GEMINI_API_KEY is missing from environment variables!")
-        return None
-
-    print("\n🔍 *** STARTING DYNAMIC MODEL DISCOVERY ***")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    
-    try:
-        response = requests.get(url)
-        if response.status_code != 200:
-            print(f"❌ Failed to list models. Error: {response.text}")
-            return "gemini-1.5-flash" # Last resort fallback
-
-        data = response.json()
-        available_models = [m['name'] for m in data.get('models', []) if 'generateContent' in m['supportedGenerationMethods']]
-        
-        print(f"✅ Found {len(available_models)} available models.")
-
-        # Smart Selection Logic (Paid > Fast > Legacy)
-        priorities = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
-        
-        for p in priorities:
-            for model in available_models:
-                if p in model:
-                    clean_name = model.replace("models/", "")
-                    print(f"🚀 SELECTED BEST MODEL: {clean_name}")
-                    return clean_name
-        
-        # If no preferred match, take the first valid one
-        if available_models:
-            return available_models[0].replace("models/", "")
-            
-    except Exception as e:
-        print(f"❌ Network Error during model discovery: {e}")
-    
-    return "gemini-1.5-flash"
-
-# Initialize Model on Startup
-ACTIVE_MODEL = find_working_model()
-
+# --- AI CORE: ACTIVE FAILOVER LOOP ---
 def generate_ai_response(prompt, temperature=0.3):
+    """
+    Tries models based on speed/stability. If Google returns 503/429,
+    it instantly catches the error and tries the next model in the list.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
-    # Use the discovered model, or fallback if discovery failed
-    model = ACTIVE_MODEL if ACTIVE_MODEL else "gemini-1.5-flash"
+    if not api_key: return None
+
+    # Based on your AI Studio screenshot, these are the best options in order:
+    fallback_chain = [
+        "gemini-2.5-flash",  # Super fast, modern, less likely to 503
+        "gemini-2.0-flash",  # Highly stable backup
+        "gemini-1.5-flash",  # Legacy fast
+        "gemini-2.5-pro",    # Smart but slow, prone to rate limits
+        "gemini-pro"         # Final resort
+    ]
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}
-    }
-    
-    try:
-        r = requests.post(url, headers=headers, json=payload)
-        if r.status_code == 200:
-            return r.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            print(f"⚠️ AI Generation Failed ({model}): {r.text[:200]}")
-            return None
-    except Exception as e:
-        print(f"❌ AI Network Error: {e}")
-        return None
+    for model in fallback_chain:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}
+        }
+        try:
+            r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+            if r.status_code == 200:
+                print(f"✅ AI Success: {model}")
+                return r.json()['candidates'][0]['content']['parts'][0]['text']
+            else:
+                # E.g., 503 Service Unavailable or 429 Too Many Requests
+                print(f"⚠️ {model} failed ({r.status_code}): {r.text[:100]}... switching to backup.")
+                continue # TRY NEXT MODEL IMMEDIATELY
+        except Exception as e:
+            print(f"❌ Network Error on {model}: {e}")
+            continue
+
+    print("❌ ALL AI MODELS FAILED.")
+    return '{"executive_summary": "AI servers are currently overloaded. Retrying...", "risk_level": "Unknown", "key_recommendation": "Refresh the page in a few moments."}'
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, creds, data=None):
@@ -106,13 +68,9 @@ def jira_request(method, endpoint, creds, data=None):
     auth = HTTPBasicAuth(creds['email'], creds['token'])
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     try:
-        if method == "POST": 
-            r = requests.post(url, json=data, auth=auth, headers=headers)
-        elif method == "PUT": 
-            r = requests.put(url, json=data, auth=auth, headers=headers)
-        elif method == "GET": 
-            r = requests.get(url, auth=auth, headers=headers)
-        
+        if method == "POST": r = requests.post(url, json=data, auth=auth, headers=headers)
+        elif method == "PUT": r = requests.put(url, json=data, auth=auth, headers=headers)
+        elif method == "GET": r = requests.get(url, auth=auth, headers=headers)
         if r.status_code >= 400: return None
         return r
     except: return None
@@ -129,40 +87,21 @@ def get_story_point_field(creds):
         except: pass
     return "customfield_10016"
 
-# --- HELPER: ESTIMATION ---
-def estimate_story_points(summary, description):
-    prompt = f"""
-    Role: Technical Architect.
-    Task: Estimate Jira Ticket (1 pt = 6 hours).
-    Ticket: {summary}
-    Desc: {description}
-    Return JSON: {{ "points": int, "reasoning": "string" }}
-    """
-    raw = generate_ai_response(prompt, temperature=0.1)
-    if not raw: return None
-    try: return json.loads(raw.replace('```json','').replace('```','').strip())
-    except: return None
-
-# --- DATA STORAGE (FIXED SYNTAX) ---
+# --- DATA STORAGE ---
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE): 
-        return {}
+    if not os.path.exists(RETRO_FILE): return {}
     try: 
-        with open(RETRO_FILE, "r") as f: 
-            return json.load(f)
-    except: 
-        return {}
+        with open(RETRO_FILE, "r") as f: return json.load(f)
+    except: return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f: 
-        json.dump(data, f)
+    with open(RETRO_FILE, "w") as f: json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online", "active_model": ACTIVE_MODEL}
+def home(): return {"status": "Online"}
 
-# --- 1. ANALYTICS ---
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -206,7 +145,7 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     {tickets}
     Return JSON:
     {{
-        "executive_summary": "2 sentences on risks/health.",
+        "executive_summary": "Write 2 sentences on the health and risks. Be decisive.",
         "risk_level": "Low/Medium/High",
         "key_recommendation": "Advice for PM."
     }}
@@ -215,58 +154,34 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     ai_raw = generate_ai_response(prompt)
     if ai_raw:
         try: ai_data = json.loads(ai_raw.replace('```json','').replace('```','').strip())
-        except: ai_data = {"executive_summary": "Format Error", "risk_level": "Unknown", "key_recommendation": "Check Logs"}
+        except: ai_data = {"executive_summary": "Format Error in AI response.", "risk_level": "Unknown", "key_recommendation": "Check Logs"}
     else:
-        ai_data = {"executive_summary": "AI Unreachable", "risk_level": "Unknown", "key_recommendation": "Check API Key"}
+        ai_data = {"executive_summary": "AI completely unreachable after all retries.", "risk_level": "Unknown", "key_recommendation": "Check API Key"}
 
     return {"metrics": stats, "ai_insights": ai_data}
 
-# --- 2. ESTIMATE ---
-@app.post("/estimate")
-async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
-    key = payload.get("key")
-    res = jira_request("GET", f"issue/{key}", creds)
-    if not res: return {"status": "error", "message": "Ticket not found"}
-    
-    issue = res.json()
-    summary = issue['fields']['summary']
-    desc = str(issue['fields'].get('description', ''))[:1000]
-    
-    est = estimate_story_points(summary, desc)
-    if not est: return {"status": "error", "message": "AI Failed"}
-    
-    sp_field = get_story_point_field(creds)
-    jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: est['points']}})
-    jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 AI Estimate: {est['points']} Pts. {est['reasoning']}"}]}]}})
-    
-    return {"status": "success", "points": est['points'], "reason": est['reasoning']}
-
-# --- 3. PROJECTS ---
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", "project", creds)
     try: return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
     except: return []
 
-# --- 4. CHAT ---
 @app.post("/chat/agent")
 def chat_agent(payload: dict, creds: dict = Depends(get_jira_creds)):
     jql = f"project = {payload.get('project')} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status"]})
     context = str(res.json().get('issues', []))[:3000] if res else ""
     
-    prompt = f"Context:\n{context}\nUser: {payload.get('query')}\nAnswer concisely."
-    response = generate_ai_response(prompt)
-    return {"response": response if response else "AI Error"}
+    prompt = f"Context:\n{context}\nUser: {payload.get('query')}\nAnswer concisely. Format with Markdown."
+    
+    # We use a dedicated Flash model for text chat since we don't need JSON
+    api_key = os.getenv("GEMINI_API_KEY")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    try:
+        r = requests.post(url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
+        return {"response": r.json()['candidates'][0]['content']['parts'][0]['text']}
+    except: return {"response": "Chat AI Error"}
 
-# --- 5. STANDUP ---
-@app.post("/standup/post")
-async def post_standup(payload: dict, creds: dict = Depends(get_jira_creds)):
-    key, msg = payload.get("key"), payload.get("message")
-    jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 Standup: {msg}"}]}]}})
-    return {"status": "posted"}
-
-# --- 6. RETRO ---
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str):
     data = load_retro_data()
