@@ -12,15 +12,17 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/lucide.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
-        /* --- ENTERPRISE THEME VARIABLES --- */
+        /* --- ENTERPRISE THEME ENGINE --- */
         :root {
             --transition-speed: 0.3s;
         }
 
-        /* DARK MODE (Professional Slate/Indigo) */
+        /* DARK MODE (Modern Tech - Slate/Indigo) */
         .dark-mode {
             --bg-body: #0f172a;       /* Slate-900 */
             --bg-sidebar: #020617;    /* Slate-950 */
@@ -30,44 +32,48 @@
             --text-muted: #94a3b8;    /* Slate-400 */
             --border: #334155;        /* Slate-700 */
             --primary: #6366f1;       /* Indigo-500 */
-            --primary-dim: rgba(99, 102, 241, 0.1);
+            --primary-fg: #ffffff;
+            --primary-dim: rgba(99, 102, 241, 0.15);
             --danger: #ef4444;        /* Red-500 */
             --success: #10b981;       /* Emerald-500 */
             --warning: #f59e0b;       /* Amber-500 */
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            --glass-border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
-        /* LIGHT MODE (Clean Jira-like) */
+        /* LIGHT MODE (Jira Enterprise - White/Blue) */
         .light-mode {
-            --bg-body: #f1f5f9;       /* Slate-100 */
-            --bg-sidebar: #ffffff;    /* White */
-            --bg-card: #ffffff;       /* White */
-            --bg-hover: #f8fafc;      /* Slate-50 */
-            --text-main: #0f172a;     /* Slate-900 */
-            --text-muted: #64748b;    /* Slate-500 */
-            --border: #e2e8f0;        /* Slate-200 */
-            --primary: #4f46e5;       /* Indigo-600 */
-            --primary-dim: rgba(79, 70, 229, 0.05);
-            --danger: #dc2626;        /* Red-600 */
-            --success: #059669;       /* Emerald-600 */
-            --warning: #d97706;       /* Amber-600 */
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            --bg-body: #F4F5F7;       /* Atlassian Light Gray */
+            --bg-sidebar: #FFFFFF;    /* White */
+            --bg-card: #FFFFFF;       /* White */
+            --bg-hover: #EBECF0;      /* Light Hover */
+            --text-main: #172B4D;     /* Atlassian Dark Blue */
+            --text-muted: #5E6C84;    /* Atlassian Gray */
+            --border: #DFE1E6;        /* Light Border */
+            --primary: #0052CC;       /* Atlassian Blue */
+            --primary-fg: #ffffff;
+            --primary-dim: rgba(0, 82, 204, 0.1);
+            --danger: #DE350B;        /* Atlassian Red */
+            --success: #00875A;       /* Atlassian Green */
+            --warning: #FF991F;       /* Atlassian Orange */
+            --shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            --glass-border: 1px solid var(--border);
         }
         
         body { 
-            font-family: 'Inter', sans-serif; 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             background-color: var(--bg-body); 
             color: var(--text-main); 
             transition: background-color var(--transition-speed), color var(--transition-speed);
             overflow: hidden; 
         }
 
-        /* Reusable Components */
+        /* UI COMPONENTS */
         .glass-card { 
             background: var(--bg-card); 
-            border: 1px solid var(--border); 
+            border: var(--glass-border); 
             box-shadow: var(--shadow); 
-            border-radius: 0.5rem; 
+            border-radius: 0.5rem; /* 8px */
         }
         
         .nav-btn { 
@@ -90,45 +96,52 @@
             border: 1px solid var(--border);
             color: var(--text-main);
             outline: none;
-            transition: border-color 0.2s;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        .input-field:focus { border-color: var(--primary); }
+        .input-field:focus { 
+            border-color: var(--primary); 
+            box-shadow: 0 0 0 2px var(--primary-dim);
+        }
 
-        .sticky-note { 
-            cursor: grab; transition: transform 0.2s; 
-            box-shadow: var(--shadow); 
-        }
-        .sticky-note:active { cursor: grabbing; transform: scale(1.02); }
-        
         .chat-bubble { position: fixed; bottom: 24px; right: 24px; z-index: 50; }
         
-        /* Markdown Styles for Chat */
+        /* Markdown Styles */
         .prose strong { color: var(--primary); font-weight: 700; }
         .prose ul { list-style-type: disc; padding-left: 1.2rem; }
         .prose li { margin-bottom: 0.25rem; }
+        .prose p { margin-bottom: 0.5rem; }
         
         /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+        
+        /* Loader */
+        .loader {
+            width: 20px; height: 20px;
+            border: 2px solid #FFF;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="dark-mode"> <div id="root"></div>
+<body class="dark-mode">
+    <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const { motion, AnimatePresence } = window.Motion;
         
-        // 🔹 CONFIGURATION: Your Render Backend URL
         const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
 
-        // -----------------------------------------------------------
-        // 🔒 SECURE AUTH LAYER (VALET KEY)
-        // -----------------------------------------------------------
+        // --- AUTH LAYER ---
         const secureFetch = async (endpoint, options = {}) => {
             const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
-            
             if (!config.token || !config.domain) return null;
 
             const headers = {
@@ -154,16 +167,15 @@
             }
         };
 
-        // -----------------------------------------------------------
-        // 🚀 APP CONTROLLER
-        // -----------------------------------------------------------
+        // --- APP ROOT ---
         function App() {
             const [config, setConfig] = useState(JSON.parse(localStorage.getItem('ig_config')));
-            const [theme, setTheme] = useState('dark');
+            // Load saved theme or default to dark
+            const [theme, setTheme] = useState(localStorage.getItem('ig_theme') || 'dark');
 
-            // Apply Theme to Body
             useEffect(() => {
                 document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode';
+                localStorage.setItem('ig_theme', theme);
             }, [theme]);
 
             if (!config || !config.token) {
@@ -173,39 +185,28 @@
             return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
         }
 
-        // -----------------------------------------------------------
-        // 🔑 SCREEN 1: LOGIN & CONFIG
-        // -----------------------------------------------------------
+        // --- LOGIN SCREEN ---
         function LoginScreen({ onLogin, theme, setTheme }) {
             const [form, setForm] = useState({ domain: '', email: '', token: '', role: 'scrum_master' });
             const [loading, setLoading] = useState(false);
 
             const handleLogin = () => {
-                if (!form.domain || !form.email || !form.token) {
-                    return alert("Please enter all Jira credentials.");
-                }
+                if (!form.domain || !form.email || !form.token) return alert("Please fill in all fields.");
                 setLoading(true);
                 localStorage.setItem('ig_config', JSON.stringify(form));
-                setTimeout(() => {
-                    setLoading(false);
-                    onLogin(form);
-                }, 1000);
+                setTimeout(() => { setLoading(false); onLogin(form); }, 1000);
             };
 
             return (
-                <div className="h-screen flex items-center justify-center relative overflow-hidden transition-colors duration-300">
+                <div className="h-screen flex items-center justify-center relative transition-colors duration-500" style={{backgroundColor: 'var(--bg-body)'}}>
                     <div className="absolute top-4 right-4">
                         <ThemeToggle theme={theme} setTheme={setTheme} />
                     </div>
                     
-                    <motion.div 
-                        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                        className="w-[400px] glass-card p-10 z-10 shadow-2xl"
-                    >
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-[400px] glass-card p-10 z-10 shadow-2xl">
                         <div className="mb-8 text-center">
-                            <div className="flex justify-center mb-4"><IGLogo /></div>
-                            <h1 className="text-2xl font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Agile Intelligence</h1>
-                            <p className="text-sm" style={{color: 'var(--text-muted)'}}>Enterprise Connection</p>
+                            <h1 className="text-2xl font-bold tracking-tight" style={{color: 'var(--text-main)'}}>IG Agile</h1>
+                            <p className="text-sm" style={{color: 'var(--text-muted)'}}>Enterprise Intelligence</p>
                         </div>
 
                         <div className="space-y-5">
@@ -217,25 +218,12 @@
                                     <option value="developer">🛠️ Developer / Engineer</option>
                                 </select>
                             </div>
+                            <div className="h-px bg-slate-700/20"></div>
+                            <div><label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>Jira Domain</label><input value={form.domain} onChange={e=>setForm({...form, domain:e.target.value})} placeholder="company.atlassian.net" className="w-full p-3 rounded-lg text-sm input-field" /></div>
+                            <div><label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>Email</label><input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="you@company.com" className="w-full p-3 rounded-lg text-sm input-field" /></div>
+                            <div><label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>API Token</label><input type="password" value={form.token} onChange={e=>setForm({...form, token:e.target.value})} placeholder="Atlassian API Token" className="w-full p-3 rounded-lg text-sm input-field" /></div>
 
-                            <div className="h-px bg-slate-700/50"></div>
-
-                            <div>
-                                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>Jira Domain</label>
-                                <input value={form.domain} onChange={e=>setForm({...form, domain:e.target.value})} placeholder="company.atlassian.net" className="w-full p-3 rounded-lg text-sm input-field" />
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>Email</label>
-                                <input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="you@company.com" className="w-full p-3 rounded-lg text-sm input-field" />
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>API Token</label>
-                                <input type="password" value={form.token} onChange={e=>setForm({...form, token:e.target.value})} placeholder="Atlassian API Token" className="w-full p-3 rounded-lg text-sm input-field" />
-                            </div>
-
-                            <button onClick={handleLogin} disabled={loading} className="w-full text-white font-bold p-3 rounded-lg shadow-lg transition disabled:opacity-50 mt-4 flex justify-center items-center gap-2" style={{backgroundColor: 'var(--primary)'}}>
+                            <button onClick={handleLogin} disabled={loading} className="w-full text-white font-bold p-3 rounded-lg shadow-lg transition disabled:opacity-50 mt-4 flex justify-center items-center gap-2" style={{backgroundColor: 'var(--primary)', color: 'var(--primary-fg)'}}>
                                 {loading ? <span className="loader"></span> : "Connect Securely"}
                             </button>
                         </div>
@@ -244,38 +232,19 @@
             );
         }
 
-        // -----------------------------------------------------------
-        // 🖥️ SCREEN 2: MAIN DASHBOARD
-        // -----------------------------------------------------------
+        // --- DASHBOARD LAYOUT ---
         function DashboardLayout({ userRole, theme, setTheme }) {
             const [view, setView] = useState('dashboard');
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
-            const [selectedTask, setSelectedTask] = useState(null);
             const [isChatOpen, setIsChatOpen] = useState(false);
 
-            // Dynamic Project Discovery
             useEffect(() => {
-                secureFetch('/projects')
-                    .then(res => res ? res.json() : [])
-                    .then(data => {
-                        if (data && data.length > 0) {
-                            setProjects(data);
-                            setActiveProject(data[0].key);
-                        } else {
-                            setProjects([{key: 'DEMO', name: 'Demo Project'}]);
-                            setActiveProject('DEMO');
-                        }
-                    })
-                    .catch(() => setProjects([{key: 'ERR', name: 'Connection Error'}]));
+                secureFetch('/projects').then(r => r ? r.json() : []).then(data => {
+                    if (data && data.length > 0) { setProjects(data); setActiveProject(data[0].key); }
+                    else { setProjects([{key: 'DEMO', name: 'Demo Project'}]); setActiveProject('DEMO'); }
+                }).catch(() => setProjects([{key: 'ERR', name: 'Connection Error'}]));
             }, []);
-
-            const logout = () => {
-                if (confirm("Log out and clear credentials?")) {
-                    localStorage.removeItem('ig_config');
-                    window.location.reload();
-                }
-            };
 
             return (
                 <div className="flex h-screen overflow-hidden">
@@ -283,52 +252,30 @@
                     <aside className="w-64 flex flex-col justify-between border-r transition-colors duration-300" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)'}}>
                         <div className="p-4">
                             <div className="mb-8 pl-2 flex items-center gap-2">
-                                <IGLogo />
-                                <div>
-                                    <h1 className="text-lg font-bold tracking-tight" style={{color: 'var(--text-main)'}}>IG AGILE</h1>
-                                    <p className="text-[10px] uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>{userRole.replace('_', ' ')}</p>
-                                </div>
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold" style={{backgroundColor: 'var(--primary)'}}>IG</div>
+                                <div><h1 className="text-lg font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Agile</h1><p className="text-[10px] uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>{userRole.replace('_', ' ')}</p></div>
                             </div>
                             
                             <nav className="space-y-1">
                                 <NavBtn id="dashboard" icon={<lucide.BarChart2 size={18}/>} label="Executive View" active={view} set={setView} />
-                                
-                                {(userRole !== 'leadership') && (
-                                    <>
-                                        <NavBtn id="timeline" icon={<lucide.Calendar size={18}/>} label="Timeline" active={view} set={setView} />
-                                        <NavBtn id="standup" icon={<lucide.MessageSquare size={18}/>} label="Standup Bot" active={view} set={setView} />
-                                    </>
-                                )}
-                                
-                                {(userRole === 'scrum_master' || userRole === 'leadership') && (
-                                    <>
-                                        <NavBtn id="retro" icon={<lucide.RefreshCcw size={18}/>} label="Retrospective" active={view} set={setView} />
-                                        <NavBtn id="reports" icon={<lucide.FileText size={18}/>} label="Reports" active={view} set={setView} />
-                                        <NavBtn id="burndown" icon={<lucide.TrendingDown size={18}/>} label="Burndown" active={view} set={setView} />
-                                    </>
-                                )}
+                                {userRole !== 'leadership' && <><NavBtn id="timeline" icon={<lucide.Calendar size={18}/>} label="Timeline" active={view} set={setView} /><NavBtn id="standup" icon={<lucide.MessageSquare size={18}/>} label="Standup Bot" active={view} set={setView} /></>}
+                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="retro" icon={<lucide.RefreshCcw size={18}/>} label="Retrospective" active={view} set={setView} /><NavBtn id="reports" icon={<lucide.FileText size={18}/>} label="Reports" active={view} set={setView} /><NavBtn id="burndown" icon={<lucide.TrendingDown size={18}/>} label="Burndown" active={view} set={setView} /></>}
                             </nav>
                         </div>
 
                         <div className="p-4 border-t space-y-4" style={{borderColor: 'var(--border)'}}>
                             <ThemeToggle theme={theme} setTheme={setTheme} fullWidth />
-                            
-                            <div>
-                                <label className="text-[10px] font-bold uppercase mb-2 block" style={{color: 'var(--text-muted)'}}>Active Project</label>
-                                <select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} className="w-full p-2 rounded border text-sm input-field cursor-pointer">
-                                    {projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
-                                </select>
-                            </div>
-                            <button onClick={logout} className="w-full text-left text-xs p-1 hover:underline" style={{color: 'var(--danger)'}}>Sign Out</button>
+                            <div><label className="text-[10px] font-bold uppercase mb-2 block" style={{color: 'var(--text-muted)'}}>Active Project</label><select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} className="w-full p-2 rounded border text-sm input-field cursor-pointer">{projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}</select></div>
+                            <button onClick={()=>{localStorage.removeItem('ig_config'); window.location.reload()}} className="w-full text-left text-xs p-1 hover:underline" style={{color: 'var(--danger)'}}>Sign Out</button>
                         </div>
                     </aside>
 
-                    {/* MAIN CONTENT */}
+                    {/* MAIN */}
                     <main className="flex-1 overflow-auto p-8 relative transition-colors duration-300">
                         {activeProject ? (
                             <>
                                 {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} />}
-                                {view === 'timeline' && <TimelineView project={activeProject} onTaskClick={setSelectedTask} />}
+                                {view === 'timeline' && <TimelineView project={activeProject} />}
                                 {view === 'standup' && <StandupView project={activeProject} />}
                                 {view === 'retro' && <RetroView project={activeProject} />}
                                 {view === 'reports' && <ReportsView project={activeProject} />}
@@ -337,22 +284,15 @@
                         ) : <LoadingScreen />}
                     </main>
 
-                    {/* OVERLAYS */}
-                    <InspectorDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
                     <AIChatBubble isOpen={isChatOpen} toggle={() => setIsChatOpen(!isChatOpen)} project={activeProject} />
                 </div>
             );
         }
 
         // --- COMPONENTS ---
-
         function ThemeToggle({ theme, setTheme, fullWidth }) {
             return (
-                <button 
-                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                    className={`p-2 rounded border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition hover:opacity-80 ${fullWidth ? 'w-full' : ''}`}
-                    style={{borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-card)'}}
-                >
+                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-2 rounded border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition hover:opacity-80 ${fullWidth ? 'w-full' : ''}`} style={{borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-card)'}}>
                     {theme === 'dark' ? <lucide.Sun size={14}/> : <lucide.Moon size={14}/>}
                     {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
                 </button>
@@ -360,90 +300,63 @@
         }
 
         const NavBtn = ({ id, icon, label, active, set }) => (
-            <button onClick={()=>set(id)} className={`nav-btn w-full ${active===id ? 'active' : ''}`}>
-                {icon} {label}
-            </button>
+            <button onClick={()=>set(id)} className={`nav-btn w-full ${active===id ? 'active' : ''}`}>{icon} {label}</button>
         );
 
         function MetricCard({ label, value, color, isDanger }) {
             return (
-                <div className="glass-card p-6 border-l-4" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}>
+                <div className="glass-card p-6 border-l-4 transition hover:transform hover:scale-[1.02]" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}>
                     <div className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{color: 'var(--text-muted)'}}>{label}</div>
                     <div className="text-3xl font-bold" style={{color: 'var(--text-main)'}}>{value}</div>
                 </div>
             );
         }
 
-        // --- 1. EXECUTIVE DASHBOARD ---
+        // --- VIEWS ---
         function DashboardView({ project, role }) {
             const [data, setData] = useState(null);
             useEffect(() => { secureFetch(`/analytics/${project}`).then(r => r ? r.json() : null).then(setData); }, [project]);
-            
             if (!data) return <LoadingScreen />;
 
             return (
                 <div className="animate-fade-in space-y-6">
                     <header className="flex justify-between items-end">
-                        <div>
-                            <h2 className="text-3xl font-bold" style={{color: 'var(--text-main)'}}>Command Center</h2>
-                            <p className="text-sm mt-1" style={{color: 'var(--text-muted)'}}>Live sprint health & risk analysis</p>
-                        </div>
-                        {data.ai_insights.risk_level && (
-                            <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border ${
-                                data.ai_insights.risk_level === 'High' ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-emerald-500/10 border-emerald-500 text-emerald-500'
-                            }`}>
-                                Risk: {data.ai_insights.risk_level}
-                            </span>
-                        )}
+                        <div><h2 className="text-3xl font-bold" style={{color: 'var(--text-main)'}}>Command Center</h2><p className="text-sm mt-1" style={{color: 'var(--text-muted)'}}>Live sprint health & risk analysis</p></div>
+                        {data.ai_insights.risk_level && <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border ${data.ai_insights.risk_level === 'High' ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-emerald-500/10 border-emerald-500 text-emerald-500'}`}>Risk: {data.ai_insights.risk_level}</span>}
                     </header>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <MetricCard label="Velocity (Pts)" value={data.metrics.total_points} color="primary" />
-                        <MetricCard label="Active Tasks" value={data.metrics.total_tickets} color="success" />
+                        <MetricCard label="Velocity (Pts)" value={data.metrics.points} color="primary" />
+                        <MetricCard label="Active Tasks" value={data.metrics.total} color="success" />
                         <MetricCard label="Blockers" value={data.metrics.blockers} color="danger" isDanger={data.metrics.blockers > 0} />
-                        <MetricCard label="Contributors" value={Object.keys(data.metrics.assignees).length} color="warning" />
+                        <MetricCard label="Bugs Found" value={data.metrics.bugs} color="warning" />
                     </div>
 
                     <div className="glass-card p-8 border-l-4 relative overflow-hidden" style={{borderLeftColor: 'var(--primary)'}}>
                         <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{color: 'var(--primary)'}}>AI Executive Summary</h3>
-                        <p className="text-lg font-light leading-relaxed" style={{color: 'var(--text-main)'}}>
-                            "{data.ai_insights.executive_summary || "Analyzing project metrics..."}"
-                        </p>
-                        {data.ai_insights.key_recommendation && (
-                            <div className="mt-6 pt-6 border-t flex gap-2 items-start" style={{borderColor: 'var(--border)'}}>
-                                <span style={{color: 'var(--warning)'}}>💡</span>
-                                <div>
-                                    <span className="text-xs font-bold uppercase block mb-1" style={{color: 'var(--text-muted)'}}>Recommendation</span>
-                                    <span className="text-sm" style={{color: 'var(--text-main)'}}>{data.ai_insights.key_recommendation}</span>
-                                </div>
-                            </div>
-                        )}
+                        <p className="text-lg font-light leading-relaxed" style={{color: 'var(--text-main)'}}>"{data.ai_insights.executive_summary}"</p>
+                        {data.ai_insights.key_recommendation && <div className="mt-6 pt-6 border-t flex gap-2 items-start" style={{borderColor: 'var(--border)'}}><span style={{color: 'var(--warning)'}}>💡</span><div><span className="text-xs font-bold uppercase block mb-1" style={{color: 'var(--text-muted)'}}>Recommendation</span><span className="text-sm" style={{color: 'var(--text-main)'}}>{data.ai_insights.key_recommendation}</span></div></div>}
                     </div>
-
-                    {role !== 'leadership' && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                                <div key={name} className="glass-card p-5 transition hover:shadow-md">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: 'var(--border)'}}>
-                                            {name.charAt(0)}
-                                        </div>
-                                        <div>
-                                            <div className="text-sm font-bold" style={{color: 'var(--text-main)'}}>{name}</div>
-                                            <div className="text-xs" style={{color: 'var(--text-muted)'}}>{stats.points} pts &bull; {stats.count} tasks</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
                 </div>
             );
         }
 
-        // --- 2. TIMELINE VIEW ---
-        function TimelineView({ project, onTaskClick }) {
+        // --- TIMELINE ---
+        function TimelineView({ project }) {
             const [data, setData] = useState(null);
+            
+            const handleEstimate = async (key) => {
+                const conf = confirm(`Auto-estimate points for ${key}? This uses AI to read the description.`);
+                if(!conf) return;
+                alert("🤖 AI is analyzing... please wait.");
+                const res = await secureFetch('/estimate', {method:'POST', body:JSON.stringify({key})});
+                const d = await res.json();
+                if(d.status === 'success') {
+                    alert(`✅ Estimated: ${d.points} Points\nReason: ${d.reason}`);
+                    window.location.reload();
+                } else alert("Error analyzing ticket.");
+            };
+
             useEffect(() => { secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(setData); }, [project]);
             if (!data) return <LoadingScreen />;
 
@@ -451,32 +364,17 @@
                 <div className="animate-fade-in">
                     <h2 className="text-2xl font-bold mb-6" style={{color: 'var(--text-main)'}}>Delivery Timeline</h2>
                     <div className="glass-card rounded-xl overflow-hidden">
-                        <div className="p-4 border-b flex" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
-                            <div className="w-48 text-[10px] font-bold uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>Engineer</div>
-                            <div className="text-[10px] font-bold uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>Sprint Load</div>
-                        </div>
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
                             <div key={name} className="flex border-b p-4 transition items-center hover:bg-opacity-50" style={{borderColor: 'var(--border)'}}>
                                 <div className="w-48 flex items-center gap-3">
                                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{backgroundColor: 'var(--border)'}}>{name.charAt(0)}</div>
-                                    <div>
-                                        <div className="text-sm font-medium" style={{color: 'var(--text-main)'}}>{name.split(" ")[0]}</div>
-                                        <div className="text-[10px]" style={{color: 'var(--text-muted)'}}>{stats.points} pts</div>
-                                    </div>
+                                    <div><div className="text-sm font-medium" style={{color: 'var(--text-main)'}}>{name.split(" ")[0]}</div><div className="text-[10px]" style={{color: 'var(--text-muted)'}}>{stats.points} pts</div></div>
                                 </div>
                                 <div className="flex-1 flex gap-2 flex-wrap">
                                     {stats.tasks.map(t => (
-                                        <div 
-                                            key={t.key} 
-                                            onClick={() => onTaskClick(t)}
-                                            className="px-3 py-1.5 rounded text-xs border cursor-pointer hover:scale-105 transition shadow-sm"
-                                            style={{
-                                                borderColor: t.priority==='High' ? 'var(--danger)' : 'var(--primary)',
-                                                backgroundColor: 'var(--bg-body)',
-                                                color: 'var(--text-main)'
-                                            }}
-                                        >
+                                        <div key={t.key} onClick={()=>handleEstimate(t.key)} className="px-3 py-1.5 rounded text-xs border cursor-pointer hover:scale-105 transition shadow-sm group relative" style={{borderColor: t.priority==='High' ? 'var(--danger)' : 'var(--primary)', backgroundColor: 'var(--bg-body)', color: 'var(--text-main)'}}>
                                             <span className="font-bold opacity-70 mr-1">{t.key}</span> {t.summary.substring(0, 25)}...
+                                            {t.points === 0 && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
                                         </div>
                                     ))}
                                 </div>
@@ -487,214 +385,61 @@
             );
         }
 
-        // --- 3. STANDUP BOT ---
+        // --- STANDUP ---
         function StandupView({ project }) {
-            const [hist, setHist] = useState([{sender:'bot', text:"Hello! What's your update for today? (I can log time if you say '2h')"}]);
+            const [hist, setHist] = useState([{sender:'bot', text:"Hello! What's your update? (I can log work if you mention time, e.g. '2h')"}]);
             const [reply, setReply] = useState("");
-            
-            const send = () => {
-                if(!reply) return;
-                setHist([...hist, {sender:'user', text:reply}]);
-                setReply("");
-                secureFetch(`/standup/post`, {method:'POST', body:JSON.stringify({key:'GEN', message:reply})})
-                    .then(r=>r.json())
-                    .then(d => {
-                        let msg = "Got it. Posted to Jira.";
-                        if (d.time_logged) msg += ` ✅ Logged ${d.time_logged}.`;
-                        setHist(prev => [...prev, {sender:'bot', text: msg}]);
-                    });
-            };
-
+            const send = () => { if(!reply) return; setHist([...hist, {sender:'user', text:reply}]); setReply(""); secureFetch(`/standup/post`, {method:'POST', body:JSON.stringify({key:'GEN', message:reply})}).then(r=>r.json()).then(d => { setHist(prev => [...prev, {sender:'bot', text: `Posted. ${d.time_logged ? '✅ Logged '+d.time_logged : ''}`}]); }); };
             return (
                 <div className="max-w-2xl mx-auto h-[600px] flex flex-col glass-card rounded-xl overflow-hidden shadow-2xl">
-                    <div className="p-4 border-b flex items-center gap-3" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg" style={{backgroundColor: 'var(--primary)', color: 'white'}}>🤖</div>
-                        <div><h3 className="font-bold text-sm" style={{color: 'var(--text-main)'}}>Standup Assistant</h3><p className="text-[10px]" style={{color: 'var(--text-muted)'}}>Syncs comments & worklogs</p></div>
-                    </div>
-                    <div className="flex-1 p-6 space-y-4 overflow-y-auto" style={{backgroundColor: 'var(--bg-body)'}}>
-                        {hist.map((m,i) => (
-                            <div key={i} className={`flex ${m.sender==='user'?'justify-end':'justify-start'}`}>
-                                <div className="p-3 rounded-2xl text-sm max-w-[80%]" 
-                                     style={{
-                                         backgroundColor: m.sender==='user' ? 'var(--primary)' : 'var(--bg-card)',
-                                         color: m.sender==='user' ? 'white' : 'var(--text-main)',
-                                         border: m.sender==='bot' ? '1px solid var(--border)' : 'none'
-                                     }}>
-                                    {m.text}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="p-4 border-t flex gap-2" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
-                        <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} className="flex-1 p-3 rounded-lg text-sm input-field" placeholder="Type update..." />
-                        <button onClick={send} className="text-white px-6 rounded-lg font-bold text-sm transition hover:opacity-90" style={{backgroundColor: 'var(--primary)'}}>Send</button>
-                    </div>
+                    <div className="p-4 border-b flex items-center gap-3" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}><div className="w-8 h-8 rounded-full flex items-center justify-center text-lg" style={{backgroundColor: 'var(--primary)', color: 'white'}}>🤖</div><div><h3 className="font-bold text-sm" style={{color: 'var(--text-main)'}}>Standup Bot</h3></div></div>
+                    <div className="flex-1 p-6 space-y-4 overflow-y-auto" style={{backgroundColor: 'var(--bg-body)'}}>{hist.map((m,i) => <div key={i} className={`flex ${m.sender==='user'?'justify-end':'justify-start'}`}><div className="p-3 rounded-2xl text-sm max-w-[80%]" style={{backgroundColor: m.sender==='user' ? 'var(--primary)' : 'var(--bg-card)', color: m.sender==='user' ? 'white' : 'var(--text-main)', border: m.sender==='bot' ? '1px solid var(--border)' : 'none'}}>{m.text}</div></div>)}</div>
+                    <div className="p-4 border-t flex gap-2" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}><input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} className="flex-1 p-3 rounded-lg text-sm input-field" placeholder="Type update..." /><button onClick={send} className="text-white px-6 rounded-lg font-bold text-sm transition" style={{backgroundColor: 'var(--primary)'}}>Send</button></div>
                 </div>
             );
         }
 
-        // --- 4. RETROSPECTIVE ---
+        // --- RETRO ---
         function RetroView({ project }) {
-            const [sprints, setSprints] = useState([]);
-            const [activeSprint, setActiveSprint] = useState(null);
-            const [board, setBoard] = useState({ well: [], improve: [], kudos: [], actions: [] });
-            const [input, setInput] = useState("");
-            const [col, setCol] = useState("well");
-            const [loadingAI, setLoadingAI] = useState(false);
-
+            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState({ well: [], improve: [], kudos: [], actions: [] }); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
             useEffect(() => { secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { setSprints(d); if(d.length) setActiveSprint(d[0].id); }); }, [project]);
             useEffect(() => { if(activeSprint) secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r=>r?.json()).then(setBoard); }, [project, activeSprint]);
-
             const save = (nb) => { setBoard(nb); secureFetch(`/retro/update`, {method:'POST', body:JSON.stringify({project, sprint:activeSprint, board:nb})}); };
             const add = () => { if(!input) return; save({...board, [col]: [...board[col], {id:Date.now(), text:input}]}); setInput(""); };
             const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions:[...board.actions, ...d.actions]}); setLoadingAI(false); }); };
-            const del = (c, id) => save({...board, [c]: board[c].filter(i=>i.id!==id)});
-
             return (
                 <div className="h-full flex flex-col pb-6">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex gap-4 items-center">
-                            <h2 className="text-2xl font-bold" style={{color: 'var(--text-main)'}}>Retrospective</h2>
-                            <select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} className="p-2 rounded border text-xs input-field">
-                                {sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div className="flex gap-2 mb-6">
-                        <div className="flex p-1 rounded-lg border" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)'}}>
-                            {['well', 'improve', 'kudos'].map(c => (
-                                <button key={c} onClick={()=>setCol(c)} className="px-4 py-1.5 rounded-md text-xs font-bold capitalize transition" style={{
-                                    backgroundColor: col===c ? 'var(--primary)' : 'transparent',
-                                    color: col===c ? 'white' : 'var(--text-muted)'
-                                }}>{c}</button>
-                            ))}
-                        </div>
-                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder={`Add to ${col}...`} className="flex-1 rounded-lg px-4 text-sm input-field" />
-                        <button onClick={add} className="text-white px-6 rounded-lg font-bold text-sm hover:opacity-90" style={{backgroundColor: 'var(--primary)'}}>Post</button>
-                    </div>
-
+                    <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold" style={{color: 'var(--text-main)'}}>Retrospective</h2><select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} className="p-2 rounded border text-xs input-field">{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                    <div className="flex gap-2 mb-6"><div className="flex p-1 rounded-lg border" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)'}}>{['well', 'improve', 'kudos'].map(c => <button key={c} onClick={()=>setCol(c)} className="px-4 py-1.5 rounded-md text-xs font-bold capitalize transition" style={{backgroundColor: col===c ? 'var(--primary)' : 'transparent', color: col===c ? 'white' : 'var(--text-muted)'}}>{c}</button>)}</div><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder={`Add to ${col}...`} className="flex-1 rounded-lg px-4 text-sm input-field" /><button onClick={add} className="text-white px-6 rounded-lg font-bold text-sm" style={{backgroundColor: 'var(--primary)'}}>Post</button></div>
                     <div className="grid grid-cols-4 gap-4 flex-1 min-h-0">
-                        <RetroColumn title="🚀 Went Well" items={board.well} onDel={del} col="well" />
-                        <RetroColumn title="🔥 Needs Improvement" items={board.improve} onDel={del} col="improve" />
-                        <RetroColumn title="🏆 Kudos" items={board.kudos} onDel={del} col="kudos" />
-                        
-                        <div className="glass-card p-4 rounded-xl flex flex-col border-l-2" style={{borderLeftColor: 'var(--primary)'}}>
-                            <h3 className="font-bold uppercase text-[10px] mb-4 flex justify-between items-center" style={{color: 'var(--primary)'}}>
-                                Action Items 
-                                <button onClick={genActions} disabled={loadingAI} className="px-2 py-1 rounded text-[10px] transition disabled:opacity-50" style={{backgroundColor: 'var(--primary-dim)', color: 'var(--primary)'}}>
-                                    {loadingAI ? "Thinking..." : "✨ AI Generate"}
-                                </button>
-                            </h3>
-                            <div className="overflow-y-auto space-y-3 flex-1 pr-2">
-                                {board.actions.map(i => (
-                                    <div key={i.id} className="p-3 rounded border text-sm relative group" style={{borderColor: 'var(--primary)', backgroundColor: 'var(--primary-dim)', color: 'var(--text-main)'}}>
-                                        {i.text}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        {['well','improve','kudos'].map(c=><div key={c} className="glass-card p-4 rounded-xl flex flex-col overflow-hidden"><h3 className="font-bold uppercase text-[10px] mb-4" style={{color: 'var(--text-muted)'}}>{c}</h3><div className="overflow-y-auto space-y-3 flex-1">{board[c].map(i=><div key={i.id} className="p-3 rounded border text-sm" style={{backgroundColor: 'var(--bg-body)', borderColor: 'var(--border)', color: 'var(--text-main)'}}>{i.text}</div>)}</div></div>)}
+                        <div className="glass-card p-4 rounded-xl flex flex-col border-l-2" style={{borderLeftColor: 'var(--primary)'}}><h3 className="font-bold uppercase text-[10px] mb-4 flex justify-between" style={{color: 'var(--primary)'}}>Actions <button onClick={genActions} disabled={loadingAI} className="px-2 py-1 rounded text-[10px]" style={{backgroundColor: 'var(--primary-dim)', color: 'var(--primary)'}}>{loadingAI?"...":"✨ AI"}</button></h3><div className="overflow-y-auto space-y-3 flex-1">{board.actions.map(i=><div key={i.id} className="p-3 rounded border text-sm" style={{borderColor: 'var(--primary)', backgroundColor: 'var(--primary-dim)', color: 'var(--text-main)'}}>{i.text}</div>)}</div></div>
                     </div>
                 </div>
             );
         }
 
-        function RetroColumn({ title, items, onDel, col }) {
-            return (
-                <div className="glass-card p-4 rounded-xl flex flex-col overflow-hidden">
-                    <h3 className="font-bold uppercase text-[10px] mb-4 flex justify-between" style={{color: 'var(--text-muted)'}}>{title} <span>{items.length}</span></h3>
-                    <div className="overflow-y-auto space-y-3 flex-1 pr-2">
-                        <AnimatePresence>
-                            {items.map(i => (
-                                <motion.div key={i.id} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} className="p-3 rounded border text-sm relative group sticky-note" style={{backgroundColor: 'var(--bg-body)', borderColor: 'var(--border)', color: 'var(--text-main)'}}>
-                                    {i.text}
-                                    <button onClick={()=>onDel(col, i.id)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-[10px] hover:text-red-500 transition">✕</button>
-                                </motion.div>
-                            ))}
-                        </AnimatePresence>
-                    </div>
-                </div>
-            );
-        }
-
-        // --- EXTRAS ---
-        function InspectorDrawer({ task, onClose }) {
-            if (!task) return null;
-            return (
-                <>
-                    <div onClick={onClose} className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm transition-opacity"></div>
-                    <motion.div initial={{x:"100%"}} animate={{x:0}} className="fixed right-0 top-0 h-full w-96 z-50 p-6 shadow-2xl overflow-y-auto border-l" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)'}}>
-                        <div className="flex justify-between mb-8">
-                            <h2 className="text-xl font-bold" style={{color: 'var(--text-main)'}}>{task.key}</h2>
-                            <button onClick={onClose} style={{color: 'var(--text-muted)'}}>✕</button>
-                        </div>
-                        <div className="space-y-6">
-                            <div><label className="text-[10px] font-bold uppercase" style={{color: 'var(--text-muted)'}}>Summary</label><p className="font-medium text-lg mt-1" style={{color: 'var(--text-main)'}}>{task.summary}</p></div>
-                            <div className="glass-card p-5 space-y-4">
-                                <div><label className="text-[10px] font-bold uppercase block mb-1" style={{color: 'var(--primary)'}}>Due Date</label><input type="date" defaultValue={task.end} onChange={(e)=>secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'duedate', value:e.target.value})})} className="w-full p-2 rounded text-sm input-field" /></div>
-                                <div><label className="text-[10px] font-bold uppercase block mb-1" style={{color: 'var(--primary)'}}>Assignee</label><input placeholder="Type username..." onKeyDown={(e)=>{if(e.key==='Enter') secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'assignee', value:e.target.value})}).then(()=>alert('Updated!'))}} className="w-full p-2 rounded text-sm input-field" /></div>
-                            </div>
-                        </div>
-                    </motion.div>
-                </>
-            );
-        }
-
+        // --- CHAT BUBBLE ---
         function AIChatBubble({ isOpen, toggle, project }) {
-            const [input, setInput] = useState("");
-            const [msgs, setMsgs] = useState([{role:'ai', text:"I'm your Data Analyst. Ask me anything."}]);
+            const [input, setInput] = useState(""); const [msgs, setMsgs] = useState([{role:'ai', text:"I'm your Data Analyst. Ask me anything."}]);
             const ask = () => { if(!input) return; const q=input; setMsgs(p=>[...p,{role:'user', text:q}]); setInput(""); secureFetch('/chat/agent', {method:'POST', body:JSON.stringify({project, query:q})}).then(r=>r?.json()).then(d=>setMsgs(p=>[...p,{role:'ai', text:d.response}])); };
-            
-            const parseMarkdown = (text) => {
-                if(!text) return "";
-                return marked.parse(text); 
-            };
-
+            const parseMarkdown = (text) => text ? marked.parse(text) : "";
             return (
                 <div className="chat-bubble">
-                    <AnimatePresence>
-                        {isOpen && (
-                            <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} className="mb-4 w-96 glass-card flex flex-col overflow-hidden shadow-2xl border" style={{height:'500px', borderColor: 'var(--border)'}}>
-                                <div className="p-3 text-white font-bold flex justify-between text-sm" style={{backgroundColor: 'var(--primary)'}}><span>Analyst AI</span><button onClick={toggle}>✕</button></div>
-                                <div className="flex-1 p-4 overflow-y-auto space-y-3" style={{backgroundColor: 'var(--bg-body)'}}>
-                                    {msgs.map((m,i) => (
-                                        <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}>
-                                            <div 
-                                                className={`p-3 rounded-lg text-sm max-w-[85%] prose prose-invert`}
-                                                style={{
-                                                    backgroundColor: m.role==='user' ? 'var(--primary)' : 'var(--bg-card)',
-                                                    color: m.role==='user' ? 'white' : 'var(--text-main)',
-                                                    border: m.role==='bot' ? '1px solid var(--border)' : 'none'
-                                                }}
-                                                dangerouslySetInnerHTML={{ __html: parseMarkdown(m.text) }}
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="p-2 flex gap-2 border-t" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
-                                    <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} className="flex-1 rounded p-1.5 text-xs input-field" placeholder="Ask..." />
-                                    <button onClick={ask} className="font-bold text-xs px-2" style={{color: 'var(--primary)'}}><lucide.Send size={16}/></button>
-                                </div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                    <AnimatePresence>{isOpen && (
+                        <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} className="mb-4 w-96 glass-card flex flex-col overflow-hidden shadow-2xl border" style={{height:'500px', borderColor: 'var(--border)'}}>
+                            <div className="p-3 text-white font-bold flex justify-between text-sm" style={{backgroundColor: 'var(--primary)'}}><span>Analyst AI</span><button onClick={toggle}>✕</button></div>
+                            <div className="flex-1 p-4 overflow-y-auto space-y-3" style={{backgroundColor: 'var(--bg-body)'}}>{msgs.map((m,i) => <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}><div className={`p-3 rounded-lg text-sm max-w-[85%] prose prose-invert`} style={{backgroundColor: m.role==='user'?'var(--primary)':'var(--bg-card)', color: m.role==='user'?'white':'var(--text-main)', border: m.role==='bot'?'1px solid var(--border)':'none'}} dangerouslySetInnerHTML={{ __html: parseMarkdown(m.text) }} /></div>)}</div>
+                            <div className="p-2 flex gap-2 border-t" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} className="flex-1 rounded p-1.5 text-xs input-field" placeholder="Ask..." /><button onClick={ask} className="font-bold text-xs px-2" style={{color: 'var(--primary)'}}><lucide.Send size={16}/></button></div>
+                        </motion.div>
+                    )}</AnimatePresence>
                     <button onClick={toggle} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg transition hover:scale-110 text-white" style={{backgroundColor: 'var(--primary)'}}>✨</button>
                 </div>
             );
         }
 
-        function IGLogo() {
-            return (
-                <div className="flex gap-1">
-                    <div className="w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]"></div>
-                    <div className="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]"></div>
-                    <div className="w-3 h-3 rounded-full bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.5)]"></div>
-                </div>
-            );
-        }
-
-        // Placeholders
-        function BurndownView() { return <div className="text-center p-10 opacity-50">Burndown Chart Component</div> }
+        // --- HELPERS ---
+        function BurndownView() { return <div className="text-center p-10 opacity-50" style={{color: 'var(--text-muted)'}}>Burndown Chart Component</div> }
         function ReportsView({ project }) { 
             const [rep, setRep] = useState(null);
             useEffect(()=>{ secureFetch(`/reports/${project}/weekly`).then(r=>r?.json()).then(setRep) },[project]);
