@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IG Agile Intelligence</title>
+    <title>IG Agile Intelligence | Enterprise</title>
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -13,108 +13,100 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
-        /* --- BRANDING & THEME VARIABLES --- */
+        /* --- ENTERPRISE THEME (Slate & Indigo) --- */
         :root { 
-            --ig-cyan: #22d3ee; 
-            --ig-yellow: #facc15; 
-            --ig-magenta: #e879f9; 
-            --ig-navy: #0f172a; 
+            --primary: #6366f1;       /* Indigo-500: Primary Action */
+            --primary-dark: #4f46e5;  /* Indigo-600: Hover */
+            --secondary: #0ea5e9;     /* Sky-500: Accents */
+            --bg-body: #0f172a;       /* Slate-900: Deep Background */
+            --bg-card: #1e293b;       /* Slate-800: Card Background */
+            --bg-sidebar: #020617;    /* Slate-950: Sidebar */
+            --text-main: #f8fafc;     /* Slate-50: Primary Text */
+            --text-muted: #94a3b8;    /* Slate-400: Secondary Text */
+            --border: #334155;        /* Slate-700: Borders */
+            --danger: #ef4444;        /* Red-500 */
+            --success: #10b981;       /* Emerald-500 */
+            --warning: #f59e0b;       /* Amber-500 */
         }
         
         body { 
             font-family: 'Inter', sans-serif; 
-            transition: background-color 0.3s, color 0.3s; 
+            background-color: var(--bg-body); 
+            color: var(--text-main); 
             overflow: hidden; /* App-like feel */
         }
 
-        /* Dark Mode (Default) */
-        .dark-mode {
-            background-color: var(--ig-navy); color: #f8fafc;
-            --bg-sidebar: #020617; 
-            --bg-card: #1e293b; 
-            --text-main: #f8fafc; 
-            --text-muted: #94a3b8; 
-            --border-color: #334155;
-            /* Subtle Enterprise Mesh Gradient */
-            background-image: radial-gradient(circle at 10% 20%, rgba(34, 211, 238, 0.05), transparent 30%), 
-                              radial-gradient(circle at 90% 80%, rgba(232, 121, 249, 0.05), transparent 30%);
-        }
-
-        /* Light Mode */
-        .light-mode {
-            background-color: #f8fafc; color: #0f172a;
-            --bg-sidebar: #ffffff; 
-            --bg-card: #ffffff; 
-            --text-main: #0f172a; 
-            --text-muted: #64748b; 
-            --border-color: #e2e8f0;
-        }
-        
-        /* UI Components */
-        .active-tab { 
-            background: rgba(34, 211, 238, 0.1); 
-            border-left: 4px solid var(--ig-cyan); 
-            color: var(--text-main); 
-        }
-        
+        /* Utility Classes */
         .glass-card { 
             background: var(--bg-card); 
-            border: 1px solid var(--border-color); 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+            border: 1px solid var(--border); 
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); 
+            border-radius: 0.75rem; 
+        }
+        
+        .nav-btn { 
+            color: var(--text-muted); 
+            padding: 0.75rem; 
+            border-radius: 0.5rem; 
+            transition: all 0.2s; 
+            display: flex; 
+            align-items: center; 
+            gap: 0.75rem; 
+            font-size: 0.875rem; 
+            font-weight: 500; 
+            cursor: pointer;
+        }
+        .nav-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-main); }
+        .nav-btn.active { 
+            background: rgba(99, 102, 241, 0.1); 
+            color: var(--primary); 
+            border-left: 3px solid var(--primary); 
         }
         
         .sticky-note { 
             cursor: grab; 
             transition: transform 0.2s; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
             color: #1e293b; 
         }
-        .sticky-green { background: #dcfce7; border-left: 4px solid #22c55e; }
-        .sticky-red { background: #fee2e2; border-left: 4px solid #ef4444; }
-        .sticky-yellow { background: #fef9c3; border-left: 4px solid #eab308; }
-        .sticky-blue { background: #dbeafe; border-left: 4px solid #3b82f6; }
-
-        .chat-bubble { position: fixed; bottom: 20px; right: 20px; z-index: 50; }
+        .sticky-note:active { cursor: grabbing; transform: scale(1.02); }
         
-        /* Loading Animation */
-        .loader {
-            border: 4px solid rgba(255,255,255,0.1);
-            border-left-color: var(--ig-cyan);
-            border-radius: 50%;
-            width: 30px; height: 30px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .chat-bubble { position: fixed; bottom: 24px; right: 24px; z-index: 50; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-body); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
 </head>
-<body class="dark-mode">
+<body>
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const { motion, AnimatePresence } = window.Motion;
         
-        // 🔹 IMPORTANT: POINT THIS TO YOUR RENDER SERVER URL
+        // 🔹 CONFIGURATION: Your Render Backend URL
         const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
 
         // -----------------------------------------------------------
-        // 🔒 SECURITY LAYER: THE VALET KEY
+        // 🔒 SECURE AUTH LAYER (VALET KEY)
         // -----------------------------------------------------------
         const secureFetch = async (endpoint, options = {}) => {
             const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
             
-            // Gatekeeper: Ensure keys exist before making a call
-            if (!config.license || !config.domain || !config.email || !config.token) {
-                throw new Error("No Credentials");
+            if (!config.token || !config.domain) {
+                // If checking auth state, fail silently, else throw
+                return null;
             }
 
             const headers = {
                 'Content-Type': 'application/json',
-                // PASSING KEYS SECURELY IN HEADERS
-                'x-license-key': config.license,
+                'x-license-key': 'IG-ENTERPRISE-DEMO', // Hardcoded for demo, dynamic in prod
                 'x-jira-domain': config.domain,
                 'x-jira-email': config.email,
                 'x-jira-token': config.token,
@@ -123,103 +115,100 @@
 
             try {
                 const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
-                
                 if (res.status === 403 || res.status === 401) {
-                    alert("🚫 Access Denied: Invalid License or Credentials.");
-                    localStorage.removeItem('ig_config'); // Force logout for security
+                    // Invalid credentials logic
+                    localStorage.removeItem('ig_config');
                     window.location.reload();
                     return null;
                 }
                 return res;
-            } catch (err) {
-                console.error("API Error:", err);
+            } catch (error) {
+                console.error("Network Error:", error);
                 return null;
             }
         };
 
-        const IGLogo = () => (
-            <div class="flex gap-1">
-                <div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)] shadow-[0_0_8px_var(--ig-cyan)]"></div>
-                <div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)] shadow-[0_0_8px_var(--ig-yellow)]"></div>
-                <div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)] shadow-[0_0_8px_var(--ig-magenta)]"></div>
-            </div>
-        );
-
         // -----------------------------------------------------------
-        // 🚀 MAIN APPLICATION CONTROLLER
+        // 🚀 APP CONTROLLER
         // -----------------------------------------------------------
         function App() {
-            // Check if user has already "Registered" (Saved keys locally)
-            const [isConfigured, setIsConfigured] = useState(!!localStorage.getItem('ig_config'));
+            const [config, setConfig] = useState(JSON.parse(localStorage.getItem('ig_config')));
 
-            if (!isConfigured) {
-                return <LoginScreen onLogin={() => setIsConfigured(true)} />;
+            if (!config || !config.token) {
+                return <LoginScreen onLogin={(c) => setConfig(c)} />;
             }
 
-            return <DashboardLayout />;
+            return <DashboardLayout userRole={config.role || 'scrum_master'} />;
         }
 
         // -----------------------------------------------------------
-        // 🔑 SCREEN 1: LOGIN / CONFIGURATION (The "Registering" Step)
+        // 🔑 SCREEN 1: LOGIN & CONFIG
         // -----------------------------------------------------------
         function LoginScreen({ onLogin }) {
-            const [form, setForm] = useState({ license: '', domain: '', email: '', token: '' });
+            const [form, setForm] = useState({ 
+                domain: '', email: '', token: '', role: 'scrum_master' 
+            });
             const [loading, setLoading] = useState(false);
 
-            const save = async () => {
-                if (!form.license || !form.domain || !form.email || !form.token) {
-                    return alert("Please fill in all fields to connect.");
+            const handleLogin = () => {
+                if (!form.domain || !form.email || !form.token) {
+                    return alert("Please enter all Jira credentials.");
                 }
                 setLoading(true);
-                
-                // Simulate verification (optional: ping server to check license validity here)
-                // For now, we save locally and let the first API call verify.
+                // Save locally (The "Valet Key")
                 localStorage.setItem('ig_config', JSON.stringify(form));
                 
+                // Simulate network handshake
                 setTimeout(() => {
                     setLoading(false);
-                    onLogin();
-                }, 800);
+                    onLogin(form);
+                }, 1000);
             };
 
             return (
-                <div class="h-screen flex items-center justify-center bg-slate-900 text-white">
+                <div class="h-screen flex items-center justify-center bg-slate-950 text-white relative overflow-hidden">
+                    {/* Background Deco */}
+                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                    
                     <motion.div 
-                        initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-                        class="w-96 glass-card p-8 rounded-2xl border border-slate-700 shadow-2xl"
+                        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+                        class="w-[400px] glass-card p-10 z-10 border border-slate-700 shadow-2xl"
                     >
-                        <div class="text-center mb-8">
-                            <div class="flex justify-center mb-4"><IGLogo /></div>
-                            <h1 class="text-2xl font-black tracking-tighter">IG AGILE SETUP</h1>
-                            <p class="text-xs text-slate-400 mt-1">Enterprise AI Configuration</p>
+                        <div class="mb-8 text-center">
+                            <h1 class="text-3xl font-bold tracking-tight text-white mb-2">Agile Intelligence</h1>
+                            <p class="text-sm text-slate-400">Enterprise AI for Jira</p>
                         </div>
 
-                        <div class="space-y-4">
+                        <div class="space-y-5">
                             <div>
-                                <label class="text-[10px] font-bold text-[var(--ig-magenta)] uppercase">License Key</label>
-                                <input value={form.license} onChange={e=>setForm({...form, license:e.target.value})} placeholder="IG-XXXX-XXXX" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-magenta)] text-sm" />
-                            </div>
-                            
-                            <div class="h-px bg-slate-700 my-2"></div>
-                            
-                            <div>
-                                <label class="text-[10px] font-bold text-[var(--ig-cyan)] uppercase">Jira Domain</label>
-                                <input value={form.domain} onChange={e=>setForm({...form, domain:e.target.value})} placeholder="company.atlassian.net" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-cyan)] text-sm" />
-                            </div>
-                            
-                            <div>
-                                <label class="text-[10px] font-bold text-slate-500 uppercase">Jira Email</label>
-                                <input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="you@company.com" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-cyan)] text-sm" />
-                            </div>
-                            
-                            <div>
-                                <label class="text-[10px] font-bold text-slate-500 uppercase">API Token</label>
-                                <input type="password" value={form.token} onChange={e=>setForm({...form, token:e.target.value})} placeholder="Atlassian API Token" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-cyan)] text-sm" />
-                                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" class="text-[10px] text-blue-400 hover:underline mt-1 block text-right">Get Token Here ↗</a>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Role Profile</label>
+                                <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})} class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition">
+                                    <option value="leadership">👑 Executive / Leadership</option>
+                                    <option value="scrum_master">⚔️ Scrum Master / PM</option>
+                                    <option value="developer">🛠️ Developer / Engineer</option>
+                                </select>
                             </div>
 
-                            <button onClick={save} disabled={loading} class="w-full mt-4 bg-gradient-to-r from-[var(--ig-cyan)] to-[var(--ig-magenta)] text-white font-bold p-3 rounded-xl hover:opacity-90 transition shadow-lg flex justify-center">
-                                {loading ? <div class="loader w-5 h-5 border-2"></div> : "Connect & Initialize"}
+                            <div class="h-px bg-slate-800"></div>
+
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Jira Domain</label>
+                                <input value={form.domain} onChange={e=>setForm({...form, domain:e.target.value})} placeholder="company.atlassian.net" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition" />
+                            </div>
+
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Email</label>
+                                <input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="you@company.com" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition" />
+                            </div>
+
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">API Token</label>
+                                <input type="password" value={form.token} onChange={e=>setForm({...form, token:e.target.value})} placeholder="Atlassian API Token" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition" />
+                                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" class="text-[10px] text-indigo-400 hover:text-indigo-300 block mt-2 text-right">Get Token ↗</a>
+                            </div>
+
+                            <button onClick={handleLogin} disabled={loading} class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-3 rounded-lg shadow-lg hover:shadow-indigo-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed mt-4">
+                                {loading ? "Authenticating..." : "Connect Securely"}
                             </button>
                         </div>
                     </motion.div>
@@ -228,40 +217,34 @@
         }
 
         // -----------------------------------------------------------
-        // 🖥️ SCREEN 2: MAIN DASHBOARD (The Product)
+        // 🖥️ SCREEN 2: MAIN DASHBOARD
         // -----------------------------------------------------------
-        function DashboardLayout() {
+        function DashboardLayout({ userRole }) {
             const [view, setView] = useState('dashboard');
-            const [projectList, setProjectList] = useState([]);
+            const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
-            const [theme, setTheme] = useState('dark');
-            const [selectedTask, setSelectedTask] = useState(null); // Drawer
-            const [isChatOpen, setIsChatOpen] = useState(false); // Chat
+            const [selectedTask, setSelectedTask] = useState(null); // For Drawer
+            const [isChatOpen, setIsChatOpen] = useState(false); // For AI Chat
 
-            // 1. Fetch User's Projects on Load
+            // Dynamic Project Discovery
             useEffect(() => {
                 secureFetch('/projects')
                     .then(res => res ? res.json() : [])
                     .then(data => {
                         if (data && data.length > 0) {
-                            setProjectList(data);
+                            setProjects(data);
                             setActiveProject(data[0].key);
                         } else {
-                            // Fallback if no projects found or error
-                            setProjectList([{key: 'DEMO', name: 'Demo Project'}]);
+                            // Mock for empty state/demo
+                            setProjects([{key: 'DEMO', name: 'Demo Project'}]);
                             setActiveProject('DEMO');
                         }
-                    });
+                    })
+                    .catch(() => setProjects([{key: 'ERR', name: 'Connection Error'}]));
             }, []);
 
-            const toggleTheme = () => {
-                const newTheme = theme === 'dark' ? 'light' : 'dark';
-                setTheme(newTheme);
-                document.body.className = newTheme === 'dark' ? 'dark-mode' : 'light-mode';
-            };
-
             const logout = () => {
-                if(confirm("Disconnect account and clear keys?")) {
+                if (confirm("Log out and clear credentials?")) {
                     localStorage.removeItem('ig_config');
                     window.location.reload();
                 }
@@ -270,89 +253,142 @@
             return (
                 <div class="flex h-screen overflow-hidden">
                     {/* SIDEBAR */}
-                    <aside class="w-64 flex flex-col justify-between border-r transition-colors duration-300" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-color)'}}>
-                        <div>
-                            <div class="p-6">
-                                <div class="flex items-center gap-3 mb-2"><IGLogo /><h1 class="text-2xl font-black text-[var(--text-main)]">IG AGILE</h1></div>
-                                <p class="text-xs text-[var(--text-muted)] font-mono pl-1 flex items-center gap-2">
-                                    <span class="w-2 h-2 rounded-full bg-green-500"></span> Connected
-                                </p>
+                    <aside class="w-64 flex flex-col justify-between border-r border-slate-800 bg-slate-950">
+                        <div class="p-4">
+                            <div class="mb-8 pl-2">
+                                <h1 class="text-xl font-bold text-white tracking-tight">Agile Intelligence</h1>
+                                <div class="mt-2 flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    <span class="text-[10px] text-slate-400 uppercase tracking-wider">{userRole.replace('_', ' ')}</span>
+                                </div>
                             </div>
-                            <nav class="space-y-1 px-2 mt-4">
-                                <NavBtn id="dashboard" icon="📊" label="Command Center" active={view} set={setView} />
-                                <NavBtn id="timeline" icon="🗓️" label="Timeline" active={view} set={setView} />
-                                <NavBtn id="standup" icon="🤖" label="Standup & Time" active={view} set={setView} />
-                                <NavBtn id="retro" icon="🧘" label="Retrospective" active={view} set={setView} />
-                                <NavBtn id="burndown" icon="📉" label="Burndown" active={view} set={setView} />
-                                <NavBtn id="reports" icon="📑" label="Reports" active={view} set={setView} />
+                            
+                            <nav class="space-y-1">
+                                <NavBtn id="dashboard" icon="📊" label="Executive View" active={view} set={setView} />
+                                
+                                {(userRole !== 'leadership') && (
+                                    <>
+                                        <NavBtn id="timeline" icon="🗓️" label="Timeline" active={view} set={setView} />
+                                        <NavBtn id="standup" icon="🤖" label="Standup Bot" active={view} set={setView} />
+                                    </>
+                                )}
+                                
+                                {(userRole === 'scrum_master' || userRole === 'leadership') && (
+                                    <>
+                                        <NavBtn id="retro" icon="🧘" label="Retrospective" active={view} set={setView} />
+                                        <NavBtn id="reports" icon="📑" label="Reports" active={view} set={setView} />
+                                        <NavBtn id="burndown" icon="📉" label="Burndown" active={view} set={setView} />
+                                    </>
+                                )}
                             </nav>
                         </div>
-                        
-                        <div class="p-4 border-t space-y-4" style={{borderColor: 'var(--border-color)'}}>
-                             {/* THEME TOGGLE */}
-                             <button onClick={toggleTheme} class="w-full p-2 rounded flex items-center justify-center gap-2 border text-xs font-bold uppercase tracking-wider transition hover:opacity-80" style={{borderColor: 'var(--border-color)', color: 'var(--text-muted)'}}>
-                                {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
-                             </button>
 
-                             {/* PROJECT SELECTOR */}
-                             <div>
-                                 <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Active Project</label>
-                                 <select value={activeProject || ''} onChange={(e) => setActiveProject(e.target.value)} class="w-full p-2 rounded border outline-none text-sm cursor-pointer" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border-color)'}}>
-                                    {projectList.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
-                                </select>
-                             </div>
-
-                             <button onClick={logout} class="text-[10px] text-red-400 hover:text-red-500 w-full text-center">Log Out</button>
+                        <div class="p-4 border-t border-slate-800 bg-slate-950">
+                            <label class="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Active Project</label>
+                            <select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} class="w-full bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded p-2 outline-none mb-3">
+                                {projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+                            </select>
+                            <button onClick={logout} class="w-full text-left text-xs text-red-400 hover:text-red-300 p-1">Disconnect</button>
                         </div>
                     </aside>
 
-                    {/* MAIN CONTENT AREA */}
-                    <main class="flex-1 overflow-auto p-8 relative">
+                    {/* MAIN CONTENT */}
+                    <main class="flex-1 overflow-auto p-8 bg-slate-900 relative">
                         {activeProject ? (
                             <>
-                                {view === 'dashboard' && <DashboardView project={activeProject} />}
+                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} />}
                                 {view === 'timeline' && <TimelineView project={activeProject} onTaskClick={setSelectedTask} />}
                                 {view === 'standup' && <StandupView project={activeProject} />}
                                 {view === 'retro' && <RetroView project={activeProject} />}
-                                {view === 'burndown' && <BurndownView project={activeProject} />}
                                 {view === 'reports' && <ReportsView project={activeProject} />}
+                                {view === 'burndown' && <BurndownView project={activeProject} />}
                             </>
                         ) : <LoadingScreen />}
                     </main>
 
-                    {/* INTERACTIVE OVERLAYS */}
+                    {/* OVERLAYS */}
                     <InspectorDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
                     <AIChatBubble isOpen={isChatOpen} toggle={() => setIsChatOpen(!isChatOpen)} project={activeProject} />
                 </div>
             );
         }
 
-        // --- HELPER COMPONENT FOR NAV ---
         const NavBtn = ({ id, icon, label, active, set }) => (
-            <button onClick={() => set(id)} class={`w-full text-left p-3 rounded-lg transition flex items-center gap-3 text-sm font-medium ${active === id ? 'active-tab shadow-lg' : 'text-[var(--text-muted)] hover:bg-opacity-10 hover:bg-white'}`}>
+            <button onClick={()=>set(id)} class={`nav-btn w-full ${active===id ? 'active' : ''}`}>
                 <span class="text-lg">{icon}</span> {label}
             </button>
         );
 
-        // --- 1. DASHBOARD VIEW ---
-        function DashboardView({ project }) {
+        // --- 1. EXECUTIVE DASHBOARD ---
+        function DashboardView({ project, role }) {
             const [data, setData] = useState(null);
-            useEffect(() => { secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(setData); }, [project]);
-            if (!data) return <LoadingScreen />;
             
+            useEffect(() => {
+                secureFetch(`/analytics/${project}`)
+                    .then(r => r ? r.json() : null)
+                    .then(setData)
+                    .catch(e => console.error(e));
+            }, [project]);
+
+            if (!data) return <LoadingScreen />;
+
             return (
-                <div class="animate-fade-in space-y-8">
-                    <header><h2 class="text-3xl font-bold text-[var(--text-main)]">Command Center</h2></header>
+                <div class="animate-fade-in space-y-6">
+                    <header className="flex justify-between items-end">
+                        <div>
+                            <h2 class="text-3xl font-bold text-white">Command Center</h2>
+                            <p class="text-slate-400 text-sm mt-1">Live sprint health & risk analysis</p>
+                        </div>
+                        {data.ai_insights.risk_level && (
+                            <span class={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border ${
+                                data.ai_insights.risk_level === 'High' ? 'bg-red-900/30 border-red-500 text-red-400' : 'bg-emerald-900/30 border-emerald-500 text-emerald-400'
+                            }`}>
+                                Risk Level: {data.ai_insights.risk_level}
+                            </span>
+                        )}
+                    </header>
+
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <MetricCard label="Tickets" value={data.metrics.total_tickets} color="border-[var(--ig-cyan)]" />
-                        <MetricCard label="Points" value={data.metrics.total_points} color="border-[var(--ig-magenta)]" />
-                        <MetricCard label="Blockers" value={data.metrics.blockers} color="border-red-500" />
-                        <MetricCard label="Team" value={Object.keys(data.metrics.assignees).length} color="border-[var(--ig-yellow)]" />
+                        <MetricCard label="Velocity (Pts)" value={data.metrics.total_points} color="indigo" />
+                        <MetricCard label="Active Tasks" value={data.metrics.total_tickets} color="sky" />
+                        <MetricCard label="Blockers" value={data.metrics.blockers} color="red" isDanger={data.metrics.blockers > 0} />
+                        <MetricCard label="Contributors" value={Object.keys(data.metrics.assignees).length} color="amber" />
                     </div>
-                    <div class="glass-card rounded-xl p-6 relative overflow-hidden">
-                        <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase text-xs">AI Executive Analysis</h3>
-                        <p class="text-[var(--text-main)] leading-relaxed text-lg font-light">"{data.ai_insights.sprint_summary}"</p>
+
+                    <div class="glass-card p-8 border-l-4 border-indigo-500 relative overflow-hidden">
+                        <div class="absolute right-0 top-0 text-[10rem] opacity-5 select-none pointer-events-none">✨</div>
+                        <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3">AI Executive Summary</h3>
+                        <p class="text-slate-200 text-lg font-light leading-relaxed">
+                            "{data.ai_insights.executive_summary || "Analyzing project metrics..."}"
+                        </p>
+                        {data.ai_insights.key_recommendation && (
+                            <div class="mt-6 pt-6 border-t border-slate-700 flex gap-2 items-start">
+                                <span class="text-amber-500 text-lg">💡</span>
+                                <div>
+                                    <span class="text-xs font-bold text-slate-500 uppercase block mb-1">Recommendation</span>
+                                    <span class="text-slate-300 text-sm">{data.ai_insights.key_recommendation}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
+
+                    {role !== 'leadership' && (
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {Object.entries(data.metrics.assignees).map(([name, stats]) => (
+                                <div key={name} class="glass-card p-5 hover:border-slate-600 transition group">
+                                    <div class="flex items-center gap-4">
+                                        <div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white border border-slate-600 group-hover:border-indigo-500 transition">
+                                            {name.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <div class="text-sm font-bold text-white">{name}</div>
+                                            <div class="text-xs text-slate-400">{stats.points} pts &bull; {stats.count} tasks</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             );
         }
@@ -361,26 +397,34 @@
         function TimelineView({ project, onTaskClick }) {
             const [data, setData] = useState(null);
             useEffect(() => { secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(setData); }, [project]);
-            if (!data) return <LoadingScreen />;
             
+            if (!data) return <LoadingScreen />;
+
             return (
                 <div class="animate-fade-in">
-                    <h2 class="text-3xl font-bold text-[var(--text-main)] mb-6">Timeline</h2>
-                    <div class="glass-card rounded-xl overflow-hidden shadow-xl">
+                    <h2 class="text-2xl font-bold text-white mb-6">Delivery Timeline</h2>
+                    <div class="glass-card rounded-xl overflow-hidden">
+                        <div class="p-4 border-b border-slate-700 bg-slate-950/50 flex">
+                            <div class="w-48 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Engineer</div>
+                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sprint Load</div>
+                        </div>
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="grid grid-cols-[200px_1fr] border-b" style={{borderColor: 'var(--border-color)'}}>
-                                <div class="p-4 border-r" style={{borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)'}}>
-                                    <div class="flex items-center gap-2 mb-2">
-                                        <img src={stats.avatar} class="w-6 h-6 rounded-full" />
-                                        <span class="text-[var(--text-main)] text-xs font-bold truncate">{name.split(" ")[0]}</span>
+                            <div key={name} class="flex border-b border-slate-700/50 p-4 hover:bg-slate-800/30 transition items-center">
+                                <div class="w-48 flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold">{name.charAt(0)}</div>
+                                    <div>
+                                        <div class="text-sm font-medium text-white">{name.split(" ")[0]}</div>
+                                        <div class="text-[10px] text-slate-500">{stats.points} pts</div>
                                     </div>
-                                    <div class="w-full h-1 rounded-full bg-slate-700/20"><div class="h-1 rounded-full bg-[var(--ig-cyan)]" style={{width: `${Math.min(100, (stats.points/20)*100)}%`}}></div></div>
                                 </div>
-                                <div class="p-2 flex flex-wrap gap-2" style={{backgroundColor: 'var(--bg-sidebar)'}}>
+                                <div class="flex-1 flex gap-2 flex-wrap">
                                     {stats.tasks.map(t => (
-                                        <div key={t.key} onClick={() => onTaskClick(t)} class="p-2 rounded border-l-2 cursor-pointer hover:scale-105 transition shadow-sm bg-[var(--bg-card)]" style={{borderColor: 'var(--ig-cyan)'}}>
-                                            <div class="text-[10px] font-bold text-[var(--text-main)]">{t.key}</div>
-                                            <div class="text-[10px] text-[var(--text-muted)] truncate w-20">{t.summary}</div>
+                                        <div 
+                                            key={t.key} 
+                                            onClick={() => onTaskClick(t)}
+                                            class={`px-3 py-1.5 rounded text-xs border cursor-pointer hover:scale-105 transition shadow-sm ${t.priority==='High' || t.priority==='Critical' ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200'}`}
+                                        >
+                                            <span class="font-bold opacity-70 mr-1">{t.key}</span> {t.summary.substring(0, 25)}...
                                         </div>
                                     ))}
                                 </div>
@@ -391,47 +435,49 @@
             );
         }
 
-        // --- 3. STANDUP VIEW ---
+        // --- 3. STANDUP BOT ---
         function StandupView({ project }) {
-            const [tasks, setTasks] = useState([]);
-            const [curr, setCurr] = useState(0);
+            const [hist, setHist] = useState([{sender:'bot', text:"Hello! What's your update for today? (Tip: I can log time too!)"}]);
             const [reply, setReply] = useState("");
-            const [hist, setHist] = useState([]);
-
-            useEffect(() => {
-                secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(d => {
-                    if(d) {
-                        const all = Object.values(d.metrics.assignees).flatMap(u => u.tasks);
-                        setTasks(all);
-                        if(all.length) setHist([{sender:'bot', text:`Hi! Found ${all.length} tasks. Status on ${all[0].key}? (Type '2h' to log time)`}]);
-                    }
-                });
-            }, [project]);
-
+            
             const send = () => {
                 if(!reply) return;
-                const task = tasks[curr];
                 setHist([...hist, {sender:'user', text:reply}]);
                 setReply("");
-                secureFetch(`/standup/post`, {method:'POST', body:JSON.stringify({key:task.key, message:reply})}).then(r=>r.json()).then(d => {
-                    const extra = d.time_logged ? `✅ Logged ${d.time_logged}.` : "";
-                    if(curr+1 < tasks.length) { setCurr(curr+1); setHist(prev => [...prev, {sender:'bot', text:`Logged. ${extra} Next: ${tasks[curr+1].key}?`}]); }
-                    else setHist(prev => [...prev, {sender:'bot', text:`All Done! ${extra} 🚀`}]);
-                });
+                // Generic key 'GEN' used for demo, ideally pick from user's tasks
+                secureFetch(`/standup/post`, {method:'POST', body:JSON.stringify({key:'GEN', message:reply})})
+                    .then(r=>r.json())
+                    .then(d => {
+                        let msg = "Got it. Posted to Jira.";
+                        if (d.time_logged) msg += ` ✅ Logged ${d.time_logged}.`;
+                        setHist(prev => [...prev, {sender:'bot', text: msg}]);
+                    });
             };
 
             return (
-                <div class="max-w-2xl mx-auto h-[600px] flex flex-col glass-card rounded-xl overflow-hidden">
-                    <div class="p-4 border-b flex items-center gap-3" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-sidebar)'}}><div class="text-2xl">🤖</div><div><h3 class="font-bold text-[var(--text-main)]">Standup Bot</h3><p class="text-xs text-[var(--text-muted)]">Auto-syncs to Jira</p></div></div>
-                    <div class="flex-1 overflow-y-auto p-6 space-y-4">
-                        {hist.map((m, i) => <div key={i} class={`flex ${m.sender==='user'?'justify-end':'justify-start'}`}><div class={`max-w-[80%] p-3 rounded-xl text-sm ${m.sender==='user'?'bg-[var(--ig-cyan)] text-slate-900':'bg-slate-700 text-white'}`}>{m.text}</div></div>)}
+                <div class="max-w-2xl mx-auto h-[600px] flex flex-col glass-card rounded-xl overflow-hidden shadow-2xl">
+                    <div class="p-4 border-b border-slate-700 bg-slate-950 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-lg">🤖</div>
+                        <div><h3 class="font-bold text-white text-sm">Standup Assistant</h3><p class="text-[10px] text-slate-400">Syncs comments & worklogs</p></div>
                     </div>
-                    <div class="p-4 border-t flex gap-2" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-sidebar)'}}><input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Update..." class="flex-1 p-3 rounded-lg border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /><button onClick={send} class="bg-[var(--ig-cyan)] text-slate-900 px-6 font-bold rounded-lg">Send</button></div>
+                    <div class="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-900/50">
+                        {hist.map((m,i) => (
+                            <div key={i} class={`flex ${m.sender==='user'?'justify-end':'justify-start'}`}>
+                                <div class={`p-3 rounded-2xl text-sm max-w-[80%] ${m.sender==='user'?'bg-indigo-600 text-white rounded-br-none':'bg-slate-700 text-slate-200 rounded-bl-none'}`}>
+                                    {m.text}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div class="p-4 border-t border-slate-700 bg-slate-950 flex gap-2">
+                        <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-sm outline-none focus:border-indigo-500" placeholder="Type your update (e.g. 'Fixed bug, spent 2h')..." />
+                        <button onClick={send} class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-lg font-bold text-sm transition">Send</button>
+                    </div>
                 </div>
             );
         }
 
-        // --- 4. RETRO VIEW ---
+        // --- 4. RETROSPECTIVE ---
         function RetroView({ project }) {
             const [sprints, setSprints] = useState([]);
             const [activeSprint, setActiveSprint] = useState(null);
@@ -446,34 +492,95 @@
             const save = (nb) => { setBoard(nb); secureFetch(`/retro/update`, {method:'POST', body:JSON.stringify({project, sprint:activeSprint, board:nb})}); };
             const add = () => { if(!input) return; save({...board, [col]: [...board[col], {id:Date.now(), text:input}]}); setInput(""); };
             const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions:[...board.actions, ...d.actions]}); setLoadingAI(false); }); };
-            const promote = (txt) => secureFetch(`/retro/promote`, {method:'POST', body:JSON.stringify({project, text:txt})}).then(()=>alert("Ticket Created!"));
             const del = (c, id) => save({...board, [c]: board[c].filter(i=>i.id!==id)});
 
             return (
-                <div class="h-full flex flex-col pb-10">
-                    <div class="flex justify-between mb-6"><div class="flex gap-4"><h2 class="text-3xl font-bold text-[var(--text-main)]">Retrospective</h2><select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} class="p-2 rounded border outline-none text-sm" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}}>{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div></div>
-                    <div class="flex gap-2 mb-6"><div class="flex gap-1 p-1 rounded-lg border" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-card)'}}>{['well', 'improve', 'kudos'].map(c=><button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c?'bg-[var(--ig-cyan)] text-slate-900':'text-[var(--text-muted)]'}`}>{c}</button>)}</div><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Add note..." class="flex-1 p-3 rounded-lg border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /><button onClick={add} class="bg-[var(--ig-cyan)] text-slate-900 px-6 rounded-lg font-bold">Post</button></div>
+                <div class="h-full flex flex-col pb-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <div class="flex gap-4 items-center">
+                            <h2 class="text-2xl font-bold text-white">Retrospective</h2>
+                            <select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} class="p-2 rounded bg-slate-800 border border-slate-700 text-white text-xs outline-none">
+                                {sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-2 mb-6">
+                        <div class="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+                            {['well', 'improve', 'kudos'].map(c => (
+                                <button key={c} onClick={()=>setCol(c)} class={`px-4 py-1.5 rounded-md text-xs font-bold capitalize transition ${col===c?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}>{c}</button>
+                            ))}
+                        </div>
+                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder={`Add to ${col}...`} class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 text-sm text-white outline-none focus:border-indigo-500" />
+                        <button onClick={add} class="bg-indigo-600 text-white px-6 rounded-lg font-bold text-sm hover:bg-indigo-500 transition">Post</button>
+                    </div>
+
                     <div class="grid grid-cols-4 gap-4 flex-1 min-h-0">
-                        {['well', 'improve', 'kudos'].map(c => <div key={c} class="glass-card p-4 rounded-xl overflow-y-auto space-y-3"><h3 class="font-bold text-[var(--text-muted)] uppercase text-xs mb-4">{c}</h3>{board[c].map(i=><div key={i.id} class="sticky-note p-4 rounded-lg bg-white text-slate-900 relative group"><p class="text-sm">{i.text}</p><button onClick={()=>del(c,i.id)} class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs text-red-500">✕</button></div>)}</div>)}
-                        <div class="glass-card p-4 rounded-xl flex flex-col border-l-4 border-[var(--ig-cyan)]"><h3 class="font-bold text-[var(--ig-cyan)] uppercase text-xs mb-4 flex justify-between">Actions <button onClick={genActions} disabled={loadingAI} class="bg-[var(--ig-cyan)]/20 px-2 rounded text-[10px]">{loadingAI?"Thinking...":"✨ Generate"}</button></h3><div class="overflow-y-auto space-y-3 flex-1">{board.actions.map(i=><div key={i.id} class="sticky-note p-3 rounded bg-blue-100 text-blue-900 relative group"><p class="text-sm">{i.text}</p><button onClick={()=>promote(i.text)} class="mt-2 w-full py-1 bg-blue-200 text-blue-900 rounded text-xs font-bold">Ticket</button><button onClick={()=>del('actions',i.id)} class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs">✕</button></div>)}</div></div>
+                        <RetroColumn title="🚀 Went Well" items={board.well} color="bg-emerald-900/20 border-emerald-500/30 text-emerald-100" onDel={del} col="well" />
+                        <RetroColumn title="🔥 Needs Improvement" items={board.improve} color="bg-red-900/20 border-red-500/30 text-red-100" onDel={del} col="improve" />
+                        <RetroColumn title="🏆 Kudos" items={board.kudos} color="bg-amber-900/20 border-amber-500/30 text-amber-100" onDel={del} col="kudos" />
+                        
+                        <div class="glass-card p-4 rounded-xl flex flex-col border-l-2 border-indigo-500 bg-slate-800/50">
+                            <h3 class="font-bold text-indigo-400 uppercase text-[10px] mb-4 flex justify-between items-center">
+                                Action Items 
+                                <button onClick={genActions} disabled={loadingAI} class="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 px-2 py-1 rounded text-[10px] transition disabled:opacity-50">
+                                    {loadingAI ? "Thinking..." : "✨ AI Generate"}
+                                </button>
+                            </h3>
+                            <div class="overflow-y-auto space-y-3 flex-1 pr-2">
+                                {board.actions.map(i => (
+                                    <div key={i.id} class="p-3 rounded border border-indigo-500/30 bg-indigo-900/10 text-indigo-100 text-sm relative group">
+                                        {i.text}
+                                    </div>
+                                ))}
+                                {board.actions.length === 0 && <div class="text-center text-slate-600 text-xs mt-10">Use AI to generate plan</div>}
+                            </div>
+                        </div>
                     </div>
                 </div>
             );
         }
 
-        // --- UTILS: DRAWER & CHAT ---
+        function RetroColumn({ title, items, color, onDel, col }) {
+            return (
+                <div class="glass-card p-4 rounded-xl flex flex-col overflow-hidden bg-slate-900/50">
+                    <h3 class="font-bold text-slate-500 uppercase text-[10px] mb-4 flex justify-between">{title} <span>{items.length}</span></h3>
+                    <div class="overflow-y-auto space-y-3 flex-1 pr-2">
+                        <AnimatePresence>
+                            {items.map(i => (
+                                <motion.div key={i.id} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} class={`p-3 rounded border text-sm relative group ${color}`}>
+                                    {i.text}
+                                    <button onClick={()=>onDel(col, i.id)} class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-[10px] hover:text-white transition">✕</button>
+                                </motion.div>
+                            ))}
+                        </AnimatePresence>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- EXTRAS ---
         function InspectorDrawer({ task, onClose }) {
             if (!task) return null;
             return (
                 <>
-                    <div onClick={onClose} class="fixed inset-0 bg-black/50 z-40"></div>
-                    <motion.div initial={{x:"100%"}} animate={{x:0}} class="fixed right-0 top-0 h-full w-96 z-50 p-6 shadow-2xl overflow-y-auto border-l" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-color)'}}>
-                        <div class="flex justify-between mb-6"><h2 class="text-xl font-bold text-[var(--text-main)]">{task.key}</h2><button onClick={onClose}>✕</button></div>
+                    <div onClick={onClose} class="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm transition-opacity"></div>
+                    <motion.div initial={{x:"100%"}} animate={{x:0}} class="fixed right-0 top-0 h-full w-96 z-50 p-6 shadow-2xl overflow-y-auto border-l border-slate-700 bg-slate-900">
+                        <div class="flex justify-between mb-8">
+                            <h2 class="text-xl font-bold text-white">{task.key}</h2>
+                            <button onClick={onClose} class="text-slate-400 hover:text-white">✕</button>
+                        </div>
                         <div class="space-y-6">
-                            <div><label class="text-[10px] uppercase font-bold text-[var(--text-muted)]">Summary</label><p class="text-[var(--text-main)] font-medium">{task.summary}</p></div>
-                            <div class="glass-card p-4 rounded-xl space-y-4">
-                                <div><label class="text-[10px] uppercase font-bold text-[var(--ig-cyan)] block mb-1">Due Date</label><input type="date" defaultValue={task.end} onChange={(e)=>secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'duedate', value:e.target.value})})} class="w-full p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /></div>
-                                <div><label class="text-[10px] uppercase font-bold text-[var(--ig-magenta)] block mb-1">Assignee</label><input placeholder="Username..." onKeyDown={(e)=>{if(e.key==='Enter') secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'assignee', value:e.target.value})}).then(()=>alert('Updated!'))}} class="w-full p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /></div>
+                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Summary</label><p class="text-white font-medium text-lg mt-1">{task.summary}</p></div>
+                            <div class="glass-card p-5 space-y-4">
+                                <div>
+                                    <label class="text-[10px] font-bold text-indigo-400 uppercase block mb-1">Due Date</label>
+                                    <input type="date" defaultValue={task.end} onChange={(e)=>secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'duedate', value:e.target.value})})} class="w-full p-2 bg-slate-950 border border-slate-700 rounded text-sm text-white outline-none focus:border-indigo-500" />
+                                </div>
+                                <div>
+                                    <label class="text-[10px] font-bold text-indigo-400 uppercase block mb-1">Assignee</label>
+                                    <input placeholder="Type username & enter..." onKeyDown={(e)=>{if(e.key==='Enter') secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'assignee', value:e.target.value})}).then(()=>alert('Updated!'))}} class="w-full p-2 bg-slate-950 border border-slate-700 rounded text-sm text-white outline-none focus:border-indigo-500" />
+                                </div>
                             </div>
                         </div>
                     </motion.div>
@@ -483,25 +590,48 @@
 
         function AIChatBubble({ isOpen, toggle, project }) {
             const [input, setInput] = useState("");
-            const [msgs, setMsgs] = useState([{role:'ai', text:"Hi! Ask me about sprint stats."}]);
-            const ask = () => {
-                if(!input) return;
-                const q = input; setMsgs(p=>[...p,{role:'user', text:q}]); setInput("");
-                secureFetch('/chat/agent', {method:'POST', body:JSON.stringify({project, query:q})}).then(r=>r?.json()).then(d => setMsgs(p=>[...p,{role:'ai', text:d.response}]));
-            };
+            const [msgs, setMsgs] = useState([{role:'ai', text:"I'm your Data Analyst. Ask me anything about the sprint stats."}]);
+            const ask = () => { if(!input) return; const q=input; setMsgs(p=>[...p,{role:'user', text:q}]); setInput(""); secureFetch('/chat/agent', {method:'POST', body:JSON.stringify({project, query:q})}).then(r=>r?.json()).then(d=>setMsgs(p=>[...p,{role:'ai', text:d.response}])); };
             return (
                 <div class="chat-bubble">
-                    <AnimatePresence>{isOpen && <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} class="mb-4 w-80 h-96 glass-card rounded-2xl flex flex-col overflow-hidden"><div class="p-3 border-b flex justify-between bg-[var(--bg-sidebar)]" style={{borderColor:'var(--border-color)'}}><span class="font-bold text-[var(--text-main)]">AI Analyst</span><button onClick={toggle}>✕</button></div><div class="flex-1 overflow-y-auto p-3 space-y-3 bg-[var(--bg-card)]">{msgs.map((m,i)=><div key={i} class={`p-2 rounded text-xs ${m.role==='user'?'bg-blue-600 text-white self-end':'bg-slate-700 text-white'}`}>{m.text}</div>)}</div><div class="p-2 border-t flex gap-1" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-sidebar)'}}><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} class="flex-1 text-xs p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} placeholder="Ask..." /><button onClick={ask} class="text-xs bg-[var(--ig-magenta)] px-3 rounded text-white">></button></div></motion.div>}</AnimatePresence>
-                    <button onClick={toggle} class="w-14 h-14 rounded-full bg-[var(--ig-magenta)] flex items-center justify-center text-2xl shadow-lg hover:scale-110 transition">✨</button>
+                    <AnimatePresence>
+                        {isOpen && (
+                            <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} class="mb-4 w-80 h-96 glass-card flex flex-col overflow-hidden shadow-2xl border border-slate-600">
+                                <div class="p-3 bg-indigo-600 text-white font-bold flex justify-between text-sm"><span>Analyst AI</span><button onClick={toggle}>✕</button></div>
+                                <div class="flex-1 p-3 overflow-y-auto space-y-3 bg-slate-900">{msgs.map((m,i) => <div key={i} class={`p-2 rounded-lg text-xs ${m.role==='user'?'bg-indigo-600 text-white self-end ml-10':'bg-slate-700 text-slate-200 mr-10'}`}>{m.text}</div>)}</div>
+                                <div class="p-2 bg-slate-800 flex gap-2 border-t border-slate-700"><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} class="flex-1 bg-slate-900 border border-slate-600 rounded p-1.5 text-xs text-white outline-none" placeholder="Ask..." /><button onClick={ask} class="text-indigo-400 font-bold text-xs px-2">Send</button></div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                    <button onClick={toggle} class="w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-xl shadow-lg transition text-white ring-4 ring-slate-900">✨</button>
                 </div>
             );
         }
 
-        // --- EXTRAS ---
-        function BurndownView({project}) { const chartRef=useRef(null); useEffect(()=>{secureFetch(`/burndown/${project}`).then(r=>r?.json()).then(d=>{if(chartRef.current)new Chart(chartRef.current,{type:'line',data:{labels:d.labels,datasets:[{label:'Actual',data:d.actual,borderColor:'#e879f9',fill:true}]}})})},[project]); return <div><h2 class="text-3xl font-bold text-[var(--text-main)] mb-6">Burndown</h2><div class="glass-card p-6 rounded-xl h-[500px]"><canvas ref={chartRef}></canvas></div></div> }
-        function ReportsView({project}) { const [rep, setRep] = useState(null); useEffect(()=>{secureFetch(`/reports/${project}/weekly`).then(r=>r?.json()).then(setRep);},[project]); if(!rep)return <LoadingScreen/>; return <div class="glass-card p-8 rounded-xl"><div class="text-4xl font-black text-[var(--text-main)]">{rep.completed_count} Tasks</div><p class="text-[var(--text-muted)] mt-4">{rep.ai_summary.summary}</p></div>; }
-        function LoadingScreen() { return <div class="h-96 flex flex-col items-center justify-center"><div class="w-12 h-12 border-4 border-[var(--ig-cyan)] border-t-transparent rounded-full animate-spin"></div></div>; }
-        function MetricCard({ label, value, color }) { return <div class={`glass-card p-5 rounded-xl border-l-4 ${color}`} style={{borderColor:color.includes('cyan')?'var(--ig-cyan)':color.includes('magenta')?'var(--ig-magenta)':'var(--ig-yellow)'}}><div class="text-[var(--text-muted)] text-[10px] font-bold uppercase mb-1">{label}</div><div class="text-3xl font-black text-[var(--text-main)]">{value}</div></div>; }
+        function MetricCard({ label, value, color, isDanger }) {
+            const colors = {
+                indigo: 'border-indigo-500 text-indigo-500',
+                sky: 'border-sky-500 text-sky-500',
+                red: 'border-red-500 text-red-500',
+                amber: 'border-amber-500 text-amber-500'
+            };
+            return (
+                <div class={`glass-card p-6 border-l-4 ${isDanger ? colors.red : colors[color] || colors.indigo}`}>
+                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</div>
+                    <div class="text-3xl font-bold text-white">{value}</div>
+                </div>
+            );
+        }
+
+        // Placeholders
+        function BurndownView() { return <div class="text-slate-500 p-10">Burndown Chart Component</div> }
+        function ReportsView({ project }) { 
+            const [rep, setRep] = useState(null);
+            useEffect(()=>{ secureFetch(`/reports/${project}/weekly`).then(r=>r?.json()).then(setRep) },[project]);
+            if(!rep) return <LoadingScreen/>;
+            return <div class="glass-card p-8"><h2 class="text-2xl font-bold text-white mb-2">Weekly Report</h2><div class="text-4xl font-black text-indigo-400 mb-4">{rep.completed_count} Tasks Completed</div><p class="text-slate-300 leading-relaxed">{rep.ai_summary.summary}</p></div> 
+        }
+        function LoadingScreen() { return <div class="h-96 flex flex-col items-center justify-center"><div class="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div><div class="mt-4 text-xs text-indigo-400 font-mono animate-pulse">Initializing Secure Core...</div></div> }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);

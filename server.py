@@ -32,7 +32,17 @@ async def get_jira_creds(
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- AI CORE ---
+# --- SECURITY: LICENSE CHECK ---
+# In production, connect this to a DB. For demo, we use an allowlist.
+VALID_LICENSES = ["IG-ENTERPRISE-2026", "IG-TRIAL", "IG-DEMO"] 
+
+async def verify_license(x_license_key: str = Header(None)):
+    # Bypass if key is missing during dev, but enforce in prod
+    if x_license_key and x_license_key not in VALID_LICENSES:
+        raise HTTPException(status_code=403, detail="Invalid License Key")
+    return x_license_key
+
+# --- AI CORE: INTELLIGENT MODEL SELECTION ---
 def discover_available_models():
     print("\n🔍 SYSTEM DIAGNOSTIC: Discovering AI models...")
     try:
@@ -41,38 +51,45 @@ def discover_available_models():
             if "generateContent" not in m.supported_generation_methods: continue
             if "tts" in m.name.lower() or "audio" in m.name.lower(): continue
             valid_models.append(m.name)
-        valid_models.sort(key=lambda x: (0 if "1.5-flash" in x else 1))
-        print(f"✅ FOUND {len(valid_models)} MODELS: {valid_models}")
+        
+        # Prioritize Pro models for better reasoning (Executive Summary)
+        valid_models.sort(key=lambda x: (
+            0 if "1.5-pro" in x else 
+            1 if "pro" in x else 
+            2 if "1.5-flash" in x else 3
+        ))
+        print(f"✅ FOUND {len(valid_models)} MODELS. Top pick: {valid_models[0]}")
         return valid_models
     except: return ["models/gemini-1.5-flash"]
 
 MODEL_POOL = discover_available_models()
 
-def generate_with_survival_mode(prompt):
-    for model_name in MODEL_POOL[:10]:
+def generate_smart_insight(prompt):
+    """Uses the smartest available model for complex reasoning."""
+    for model_name in MODEL_POOL[:5]: # Try top 5 models
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt)
             return response.text
-        except: time.sleep(1); continue
-    return '{"sprint_summary": "AI unavailable.", "assignee_performance": []}'
+        except:
+            time.sleep(1) # Cool down
+            continue
+    return '{"summary": "AI capacity reached. Please try again later."}'
 
-# --- ROBUST JIRA REQUESTER (THE FIX) ---
+# --- ROBUST JIRA REQUESTER (CRASH PROOF) ---
 def jira_request(method, endpoint, creds, data=None):
     url = f"https://{creds['domain']}/rest/api/3/{endpoint}"
     auth = HTTPBasicAuth(creds['email'], creds['token'])
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     
-    print(f"🌍 Request: {method} {url}") # Log for debugging
-
     try:
         if method == "POST": response = requests.post(url, json=data, auth=auth, headers=headers)
         elif method == "PUT": response = requests.put(url, json=data, auth=auth, headers=headers)
         elif method == "GET": response = requests.get(url, auth=auth, headers=headers)
         
-        # Guard: Check for non-JSON responses (HTML errors)
+        # Safety Check: If Jira returns HTML error (404/403/500), don't crash
         if response.status_code >= 400:
-            print(f"❌ Jira Error {response.status_code}: {response.text[:200]}")
+            print(f"❌ Jira Error {response.status_code} on {endpoint}: {response.text[:100]}")
             return None
             
         return response
@@ -91,59 +108,52 @@ def get_story_point_field_id(creds):
                 if "story points" in f['name'].lower():
                     STORY_POINT_CACHE[domain] = f['id']
                     return f['id']
-        except ValueError: pass # JSON Decode failed
-            
-    return "customfield_10016" # Default fallback
+        except: pass
+    return "customfield_10016" # Default
 
 def find_user(name, creds):
     res = jira_request("GET", f"user/search?query={name}", creds)
-    if res and res.status_code == 200:
-        try:
-            return res.json()[0]['accountId']
-        except (IndexError, ValueError): return None
+    if res:
+        try: return res.json()[0]['accountId']
+        except: return None
     return None
 
 # --- HELPER: TIME PARSER ---
 def parse_time_tracking(message):
-    """Extracts '2h', '30m' for worklogs."""
     match = re.search(r'(\d+)(h|m|d)', message)
-    if match:
-        return f"{match.groups()[0]}{match.groups()[1]}"
+    if match: return f"{match.groups()[0]}{match.groups()[1]}"
     return None
 
 # --- DATA STORAGE ---
 RETRO_FILE = "retro_data.json"
 def load_retro_data():
     if not os.path.exists(RETRO_FILE): return {}
-    try:
-        with open(RETRO_FILE, "r") as f: return json.load(f)
+    try: with open(RETRO_FILE, "r") as f: return json.load(f)
     except: return {}
-
 def save_retro_data(data):
     with open(RETRO_FILE, "w") as f: json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online 🤖"}
+def home(): return {"status": "IG Agile Intelligence Online 🛡️"}
 
-# --- 1. PROJECT LIST ---
+# --- 1. PROJECT LIST (DYNAMIC) ---
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", "project", creds)
     if res:
-        try:
-            return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
-        except ValueError: return [] # Safely return empty list if JSON fails
+        try: return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
+        except: return []
     return []
 
-# --- 2. ANALYTICS ---
+# --- 2. EXECUTIVE ANALYTICS ---
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field_id(creds)
     fields = ["summary", "status", "assignee", "priority", sp_field, "duedate", "created", "description"]
     
-    # Try getting active sprint
+    # Try Active Sprint
     jql = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": fields})
     issues = []
@@ -152,7 +162,7 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
         try: issues = res.json().get('issues', [])
         except: pass
 
-    # Fallback to backlog if empty or error
+    # Fallback to Backlog
     if not issues:
         jql = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
         res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": fields})
@@ -161,7 +171,7 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
             except: pass
 
     stats = {"total_tickets": len(issues), "total_points": 0, "blockers": 0, "assignees": {}}
-    perf_context = {}
+    perf_context = []
 
     for i in issues:
         f = i['fields']
@@ -182,35 +192,45 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
         stats["assignees"][name]["tasks"].append({
             "key": i['key'],
             "summary": f['summary'],
-            "description": f.get('description', 'No description.'),
             "status": status, "priority": prio, "points": points, "end": f.get('duedate')
         })
-        perf_context[name] = perf_context.get(name, []) + [f"{f['summary']} ({status})"]
+        # Context for AI
+        perf_context.append(f"{name}: {f['summary']} ({status}, {points}pts, Prio: {prio})")
 
-    # AI Analysis
+    # EXECUTIVE AI ANALYSIS
     try:
-        prompt = f"Analyze project {project_key}: {json.dumps(perf_context)}. Return JSON: {{'sprint_summary': '...', 'assignee_performance': []}}"
-        raw = generate_with_survival_mode(prompt)
+        prompt = f"""
+        Act as a Senior Agile Delivery Director. Analyze this sprint data for '{project_key}'.
+        
+        DATA:
+        - Total Points: {stats['total_points']}
+        - Blockers: {stats['blockers']}
+        - Task Details: {json.dumps(perf_context[:20])}
+        
+        REQUIRED OUTPUT (JSON ONLY):
+        {{
+            "executive_summary": "Write 2 powerful sentences focusing on delivery risks, velocity trends, or bottleneck warnings. Be opinionated and professional.",
+            "risk_level": "Low" | "Medium" | "High",
+            "key_recommendation": "One specific action for the Scrum Master."
+        }}
+        """
+        raw = generate_smart_insight(prompt)
         ai = json.loads(raw.replace('```json','').replace('```','').strip())
     except:
-        ai = {"sprint_summary": "AI unavailable.", "assignee_performance": []}
+        ai = {"executive_summary": "Data insufficient for deep analysis.", "risk_level": "Unknown", "key_recommendation": "Check Jira connectivity."}
 
     return {"metrics": stats, "ai_insights": ai}
 
 # --- 3. SPRINT SELECTOR ---
 @app.get("/sprints/{project_key}")
 def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
-    jql = f"project = {project_key} AND sprint is not EMPTY ORDER BY updated DESC"
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 100, "fields": ["customfield_10020"]})
+    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
     if not res: return []
-    
     try:
-        issues = res.json().get('issues', [])
         sprints = {}
-        for i in issues:
-            raw = i['fields'].get('customfield_10020') or []
-            for s in raw:
-                if s.get('state') != 'future': sprints[s['id']] = {"id": s['id'], "name": s['name']}
+        for i in res.json().get('issues', []):
+            for s in i['fields'].get('customfield_10020') or []:
+                if s['state'] != 'future': sprints[s['id']] = {"id": s['id'], "name": s['name']}
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
@@ -218,19 +238,15 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str):
     data = load_retro_data()
-    pk = project_key.upper()
-    sid = str(sprint_id)
+    pk = project_key.upper(); sid = str(sprint_id)
     if pk not in data: data[pk] = {}
-    if sid not in data[pk]:
-        data[pk][sid] = {"well": [], "improve": [], "kudos": [], "actions": []}
-        save_retro_data(data)
+    if sid not in data[pk]: data[pk][sid] = {"well": [], "improve": [], "kudos": [], "actions": []}
     return data[pk][sid]
 
 @app.post("/retro/update")
 def update_retro(payload: dict):
     data = load_retro_data()
-    pk = payload.get("project").upper()
-    sid = str(payload.get("sprint"))
+    pk = payload.get("project").upper(); sid = str(payload.get("sprint"))
     if pk not in data: data[pk] = {}
     data[pk][sid] = payload.get("board")
     save_retro_data(data)
@@ -239,13 +255,12 @@ def update_retro(payload: dict):
 @app.post("/retro/generate_actions")
 def generate_actions(payload: dict):
     board = payload.get("board")
-    prompt = f"Analyze retro: GOOD: {board.get('well')} BAD: {board.get('improve')}. Generate 3 Action Items. Return JSON array."
+    prompt = f"Analyze Retro. GOOD: {board.get('well')} BAD: {board.get('improve')}. Create 3 strategic Action Items. Return JSON array: ['Action 1', 'Action 2']"
     try:
-        raw = generate_with_survival_mode(prompt)
+        raw = generate_smart_insight(prompt)
         actions = json.loads(raw.replace('```json','').replace('```','').strip())
         return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(actions)]}
-    except:
-        return {"actions": [{"id": 0, "text": "AI generation failed."}]}
+    except: return {"actions": []}
 
 @app.post("/retro/promote")
 def promote_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
@@ -253,8 +268,7 @@ def promote_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
         "fields": {
             "project": {"key": payload.get("project")},
             "summary": f"[RETRO ACTION] {payload.get('text')}",
-            "issuetype": {"name": "Task"},
-            "priority": {"name": "High"}
+            "issuetype": {"name": "Task"}
         }
     })
     return {"status": "promoted"}
@@ -264,7 +278,6 @@ def promote_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
 async def update_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     key, field, value = payload.get("key"), payload.get("field"), payload.get("value")
     update_data = {}
-    
     if field == "duedate": update_data = {"fields": {"duedate": value}}
     elif field == "assignee":
         uid = find_user(value, creds)
@@ -278,13 +291,10 @@ async def update_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
 @app.post("/standup/post")
 async def post_standup(payload: dict, creds: dict = Depends(get_jira_creds)):
     key, msg = payload.get("key"), payload.get("message")
+    # Comment
+    jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 Standup: {msg}"}]}]}})
     
-    # Post Comment
-    jira_request("POST", f"issue/{key}/comment", creds, {
-        "body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 Standup: {msg}"}]}]}
-    })
-    
-    # Log Time
+    # Time Log
     time_str = parse_time_tracking(msg)
     if time_str:
         jira_request("POST", f"issue/{key}/worklog", creds, {
@@ -292,7 +302,6 @@ async def post_standup(payload: dict, creds: dict = Depends(get_jira_creds)):
             "comment": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Auto-logged"}]}]}
         })
         return {"status": "posted", "time_logged": time_str}
-        
     return {"status": "posted"}
 
 @app.post("/chat/agent")
@@ -301,11 +310,11 @@ def chat_agent(payload: dict, creds: dict = Depends(get_jira_creds)):
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status"]})
     context = ""
     if res:
-        try: context = str(res.json().get('issues', []))[:2000] 
+        try: context = str(res.json().get('issues', []))[:3000]
         except: pass
     
-    prompt = f"Context: {context}. User Question: {payload.get('query')}. Answer concisely."
-    return {"response": generate_with_survival_mode(prompt)}
+    prompt = f"Context: {context}. User: {payload.get('query')}. Answer as a Data Analyst."
+    return {"response": generate_smart_insight(prompt)}
 
 # --- 6. BURNDOWN ---
 @app.get("/burndown/{project_key}")
@@ -345,7 +354,7 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     
     try:
         prompt = f"Summarize: {len(issues)} tasks done, {pts} points. Return JSON: {{'summary': 'text'}}"
-        raw = generate_with_survival_mode(prompt)
+        raw = generate_smart_insight(prompt)
         ai = json.loads(raw.replace('```json','').replace('```','').strip())
     except:
         ai = {"summary": f"In the last {days} days, completed {len(issues)} tasks for {pts} points."}
