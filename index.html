@@ -12,79 +12,109 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/lucide.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
-    
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
-        /* --- ENTERPRISE THEME (Slate & Indigo) --- */
-        :root { 
-            --primary: #6366f1;       /* Indigo-500: Primary Action */
-            --primary-dark: #4f46e5;  /* Indigo-600: Hover */
-            --secondary: #0ea5e9;     /* Sky-500: Accents */
-            --bg-body: #0f172a;       /* Slate-900: Deep Background */
-            --bg-card: #1e293b;       /* Slate-800: Card Background */
-            --bg-sidebar: #020617;    /* Slate-950: Sidebar */
-            --text-main: #f8fafc;     /* Slate-50: Primary Text */
-            --text-muted: #94a3b8;    /* Slate-400: Secondary Text */
-            --border: #334155;        /* Slate-700: Borders */
+        /* --- ENTERPRISE THEME VARIABLES --- */
+        :root {
+            --transition-speed: 0.3s;
+        }
+
+        /* DARK MODE (Professional Slate/Indigo) */
+        .dark-mode {
+            --bg-body: #0f172a;       /* Slate-900 */
+            --bg-sidebar: #020617;    /* Slate-950 */
+            --bg-card: #1e293b;       /* Slate-800 */
+            --bg-hover: #334155;      /* Slate-700 */
+            --text-main: #f8fafc;     /* Slate-50 */
+            --text-muted: #94a3b8;    /* Slate-400 */
+            --border: #334155;        /* Slate-700 */
+            --primary: #6366f1;       /* Indigo-500 */
+            --primary-dim: rgba(99, 102, 241, 0.1);
             --danger: #ef4444;        /* Red-500 */
             --success: #10b981;       /* Emerald-500 */
             --warning: #f59e0b;       /* Amber-500 */
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+
+        /* LIGHT MODE (Clean Jira-like) */
+        .light-mode {
+            --bg-body: #f1f5f9;       /* Slate-100 */
+            --bg-sidebar: #ffffff;    /* White */
+            --bg-card: #ffffff;       /* White */
+            --bg-hover: #f8fafc;      /* Slate-50 */
+            --text-main: #0f172a;     /* Slate-900 */
+            --text-muted: #64748b;    /* Slate-500 */
+            --border: #e2e8f0;        /* Slate-200 */
+            --primary: #4f46e5;       /* Indigo-600 */
+            --primary-dim: rgba(79, 70, 229, 0.05);
+            --danger: #dc2626;        /* Red-600 */
+            --success: #059669;       /* Emerald-600 */
+            --warning: #d97706;       /* Amber-600 */
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
         }
         
         body { 
             font-family: 'Inter', sans-serif; 
             background-color: var(--bg-body); 
             color: var(--text-main); 
-            overflow: hidden; /* App-like feel */
+            transition: background-color var(--transition-speed), color var(--transition-speed);
+            overflow: hidden; 
         }
 
-        /* Utility Classes */
+        /* Reusable Components */
         .glass-card { 
             background: var(--bg-card); 
             border: 1px solid var(--border); 
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); 
-            border-radius: 0.75rem; 
+            box-shadow: var(--shadow); 
+            border-radius: 0.5rem; 
         }
         
         .nav-btn { 
             color: var(--text-muted); 
             padding: 0.75rem; 
-            border-radius: 0.5rem; 
+            border-radius: 0.375rem; 
             transition: all 0.2s; 
-            display: flex; 
-            align-items: center; 
-            gap: 0.75rem; 
-            font-size: 0.875rem; 
-            font-weight: 500; 
-            cursor: pointer;
+            display: flex; align-items: center; gap: 0.75rem; 
+            font-size: 0.875rem; font-weight: 500; cursor: pointer; 
         }
-        .nav-btn:hover { background: rgba(255,255,255,0.05); color: var(--text-main); }
+        .nav-btn:hover { background: var(--bg-hover); color: var(--text-main); }
         .nav-btn.active { 
-            background: rgba(99, 102, 241, 0.1); 
+            background: var(--primary-dim); 
             color: var(--primary); 
             border-left: 3px solid var(--primary); 
         }
         
+        .input-field {
+            background-color: var(--bg-body);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-field:focus { border-color: var(--primary); }
+
         .sticky-note { 
-            cursor: grab; 
-            transition: transform 0.2s; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-            color: #1e293b; 
+            cursor: grab; transition: transform 0.2s; 
+            box-shadow: var(--shadow); 
         }
         .sticky-note:active { cursor: grabbing; transform: scale(1.02); }
         
         .chat-bubble { position: fixed; bottom: 24px; right: 24px; z-index: 50; }
         
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: var(--bg-body); }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        /* Markdown Styles for Chat */
+        .prose strong { color: var(--primary); font-weight: 700; }
+        .prose ul { list-style-type: disc; padding-left: 1.2rem; }
+        .prose li { margin-bottom: 0.25rem; }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
     </style>
 </head>
-<body>
-    <div id="root"></div>
+<body class="dark-mode"> <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
@@ -99,14 +129,11 @@
         const secureFetch = async (endpoint, options = {}) => {
             const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
             
-            if (!config.token || !config.domain) {
-                // If checking auth state, fail silently, else throw
-                return null;
-            }
+            if (!config.token || !config.domain) return null;
 
             const headers = {
                 'Content-Type': 'application/json',
-                'x-license-key': 'IG-ENTERPRISE-DEMO', // Hardcoded for demo, dynamic in prod
+                'x-license-key': 'IG-ENTERPRISE-DEMO',
                 'x-jira-domain': config.domain,
                 'x-jira-email': config.email,
                 'x-jira-token': config.token,
@@ -116,7 +143,6 @@
             try {
                 const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
                 if (res.status === 403 || res.status === 401) {
-                    // Invalid credentials logic
                     localStorage.removeItem('ig_config');
                     window.location.reload();
                     return null;
@@ -133,21 +159,25 @@
         // -----------------------------------------------------------
         function App() {
             const [config, setConfig] = useState(JSON.parse(localStorage.getItem('ig_config')));
+            const [theme, setTheme] = useState('dark');
+
+            // Apply Theme to Body
+            useEffect(() => {
+                document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode';
+            }, [theme]);
 
             if (!config || !config.token) {
-                return <LoginScreen onLogin={(c) => setConfig(c)} />;
+                return <LoginScreen onLogin={(c) => setConfig(c)} theme={theme} setTheme={setTheme} />;
             }
 
-            return <DashboardLayout userRole={config.role || 'scrum_master'} />;
+            return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
         }
 
         // -----------------------------------------------------------
         // 🔑 SCREEN 1: LOGIN & CONFIG
         // -----------------------------------------------------------
-        function LoginScreen({ onLogin }) {
-            const [form, setForm] = useState({ 
-                domain: '', email: '', token: '', role: 'scrum_master' 
-            });
+        function LoginScreen({ onLogin, theme, setTheme }) {
+            const [form, setForm] = useState({ domain: '', email: '', token: '', role: 'scrum_master' });
             const [loading, setLoading] = useState(false);
 
             const handleLogin = () => {
@@ -155,10 +185,7 @@
                     return alert("Please enter all Jira credentials.");
                 }
                 setLoading(true);
-                // Save locally (The "Valet Key")
                 localStorage.setItem('ig_config', JSON.stringify(form));
-                
-                // Simulate network handshake
                 setTimeout(() => {
                     setLoading(false);
                     onLogin(form);
@@ -166,49 +193,50 @@
             };
 
             return (
-                <div class="h-screen flex items-center justify-center bg-slate-950 text-white relative overflow-hidden">
-                    {/* Background Deco */}
-                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                <div className="h-screen flex items-center justify-center relative overflow-hidden transition-colors duration-300">
+                    <div className="absolute top-4 right-4">
+                        <ThemeToggle theme={theme} setTheme={setTheme} />
+                    </div>
                     
                     <motion.div 
                         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                        class="w-[400px] glass-card p-10 z-10 border border-slate-700 shadow-2xl"
+                        className="w-[400px] glass-card p-10 z-10 shadow-2xl"
                     >
-                        <div class="mb-8 text-center">
-                            <h1 class="text-3xl font-bold tracking-tight text-white mb-2">Agile Intelligence</h1>
-                            <p class="text-sm text-slate-400">Enterprise AI for Jira</p>
+                        <div className="mb-8 text-center">
+                            <div className="flex justify-center mb-4"><IGLogo /></div>
+                            <h1 className="text-2xl font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Agile Intelligence</h1>
+                            <p className="text-sm" style={{color: 'var(--text-muted)'}}>Enterprise Connection</p>
                         </div>
 
-                        <div class="space-y-5">
+                        <div className="space-y-5">
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Role Profile</label>
-                                <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})} class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition">
+                                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>Role Profile</label>
+                                <select value={form.role} onChange={e=>setForm({...form, role:e.target.value})} className="w-full p-3 rounded-lg text-sm input-field cursor-pointer">
                                     <option value="leadership">👑 Executive / Leadership</option>
                                     <option value="scrum_master">⚔️ Scrum Master / PM</option>
                                     <option value="developer">🛠️ Developer / Engineer</option>
                                 </select>
                             </div>
 
-                            <div class="h-px bg-slate-800"></div>
+                            <div className="h-px bg-slate-700/50"></div>
 
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Jira Domain</label>
-                                <input value={form.domain} onChange={e=>setForm({...form, domain:e.target.value})} placeholder="company.atlassian.net" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition" />
+                                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>Jira Domain</label>
+                                <input value={form.domain} onChange={e=>setForm({...form, domain:e.target.value})} placeholder="company.atlassian.net" className="w-full p-3 rounded-lg text-sm input-field" />
                             </div>
 
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Email</label>
-                                <input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="you@company.com" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition" />
+                                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>Email</label>
+                                <input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="you@company.com" className="w-full p-3 rounded-lg text-sm input-field" />
                             </div>
 
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">API Token</label>
-                                <input type="password" value={form.token} onChange={e=>setForm({...form, token:e.target.value})} placeholder="Atlassian API Token" class="w-full p-3 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white outline-none focus:border-indigo-500 transition" />
-                                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" class="text-[10px] text-indigo-400 hover:text-indigo-300 block mt-2 text-right">Get Token ↗</a>
+                                <label className="text-[10px] font-bold uppercase tracking-wider mb-1 block" style={{color: 'var(--text-muted)'}}>API Token</label>
+                                <input type="password" value={form.token} onChange={e=>setForm({...form, token:e.target.value})} placeholder="Atlassian API Token" className="w-full p-3 rounded-lg text-sm input-field" />
                             </div>
 
-                            <button onClick={handleLogin} disabled={loading} class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold p-3 rounded-lg shadow-lg hover:shadow-indigo-500/20 transition disabled:opacity-50 disabled:cursor-not-allowed mt-4">
-                                {loading ? "Authenticating..." : "Connect Securely"}
+                            <button onClick={handleLogin} disabled={loading} className="w-full text-white font-bold p-3 rounded-lg shadow-lg transition disabled:opacity-50 mt-4 flex justify-center items-center gap-2" style={{backgroundColor: 'var(--primary)'}}>
+                                {loading ? <span className="loader"></span> : "Connect Securely"}
                             </button>
                         </div>
                     </motion.div>
@@ -219,12 +247,12 @@
         // -----------------------------------------------------------
         // 🖥️ SCREEN 2: MAIN DASHBOARD
         // -----------------------------------------------------------
-        function DashboardLayout({ userRole }) {
+        function DashboardLayout({ userRole, theme, setTheme }) {
             const [view, setView] = useState('dashboard');
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
-            const [selectedTask, setSelectedTask] = useState(null); // For Drawer
-            const [isChatOpen, setIsChatOpen] = useState(false); // For AI Chat
+            const [selectedTask, setSelectedTask] = useState(null);
+            const [isChatOpen, setIsChatOpen] = useState(false);
 
             // Dynamic Project Discovery
             useEffect(() => {
@@ -235,7 +263,6 @@
                             setProjects(data);
                             setActiveProject(data[0].key);
                         } else {
-                            // Mock for empty state/demo
                             setProjects([{key: 'DEMO', name: 'Demo Project'}]);
                             setActiveProject('DEMO');
                         }
@@ -251,49 +278,53 @@
             };
 
             return (
-                <div class="flex h-screen overflow-hidden">
+                <div className="flex h-screen overflow-hidden">
                     {/* SIDEBAR */}
-                    <aside class="w-64 flex flex-col justify-between border-r border-slate-800 bg-slate-950">
-                        <div class="p-4">
-                            <div class="mb-8 pl-2">
-                                <h1 class="text-xl font-bold text-white tracking-tight">Agile Intelligence</h1>
-                                <div class="mt-2 flex items-center gap-2">
-                                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                                    <span class="text-[10px] text-slate-400 uppercase tracking-wider">{userRole.replace('_', ' ')}</span>
+                    <aside className="w-64 flex flex-col justify-between border-r transition-colors duration-300" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)'}}>
+                        <div className="p-4">
+                            <div className="mb-8 pl-2 flex items-center gap-2">
+                                <IGLogo />
+                                <div>
+                                    <h1 className="text-lg font-bold tracking-tight" style={{color: 'var(--text-main)'}}>IG AGILE</h1>
+                                    <p className="text-[10px] uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>{userRole.replace('_', ' ')}</p>
                                 </div>
                             </div>
                             
-                            <nav class="space-y-1">
-                                <NavBtn id="dashboard" icon="📊" label="Executive View" active={view} set={setView} />
+                            <nav className="space-y-1">
+                                <NavBtn id="dashboard" icon={<lucide.BarChart2 size={18}/>} label="Executive View" active={view} set={setView} />
                                 
                                 {(userRole !== 'leadership') && (
                                     <>
-                                        <NavBtn id="timeline" icon="🗓️" label="Timeline" active={view} set={setView} />
-                                        <NavBtn id="standup" icon="🤖" label="Standup Bot" active={view} set={setView} />
+                                        <NavBtn id="timeline" icon={<lucide.Calendar size={18}/>} label="Timeline" active={view} set={setView} />
+                                        <NavBtn id="standup" icon={<lucide.MessageSquare size={18}/>} label="Standup Bot" active={view} set={setView} />
                                     </>
                                 )}
                                 
                                 {(userRole === 'scrum_master' || userRole === 'leadership') && (
                                     <>
-                                        <NavBtn id="retro" icon="🧘" label="Retrospective" active={view} set={setView} />
-                                        <NavBtn id="reports" icon="📑" label="Reports" active={view} set={setView} />
-                                        <NavBtn id="burndown" icon="📉" label="Burndown" active={view} set={setView} />
+                                        <NavBtn id="retro" icon={<lucide.RefreshCcw size={18}/>} label="Retrospective" active={view} set={setView} />
+                                        <NavBtn id="reports" icon={<lucide.FileText size={18}/>} label="Reports" active={view} set={setView} />
+                                        <NavBtn id="burndown" icon={<lucide.TrendingDown size={18}/>} label="Burndown" active={view} set={setView} />
                                     </>
                                 )}
                             </nav>
                         </div>
 
-                        <div class="p-4 border-t border-slate-800 bg-slate-950">
-                            <label class="text-[10px] font-bold text-slate-500 uppercase mb-2 block">Active Project</label>
-                            <select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} class="w-full bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded p-2 outline-none mb-3">
-                                {projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
-                            </select>
-                            <button onClick={logout} class="w-full text-left text-xs text-red-400 hover:text-red-300 p-1">Disconnect</button>
+                        <div className="p-4 border-t space-y-4" style={{borderColor: 'var(--border)'}}>
+                            <ThemeToggle theme={theme} setTheme={setTheme} fullWidth />
+                            
+                            <div>
+                                <label className="text-[10px] font-bold uppercase mb-2 block" style={{color: 'var(--text-muted)'}}>Active Project</label>
+                                <select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} className="w-full p-2 rounded border text-sm input-field cursor-pointer">
+                                    {projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+                                </select>
+                            </div>
+                            <button onClick={logout} className="w-full text-left text-xs p-1 hover:underline" style={{color: 'var(--danger)'}}>Sign Out</button>
                         </div>
                     </aside>
 
                     {/* MAIN CONTENT */}
-                    <main class="flex-1 overflow-auto p-8 bg-slate-900 relative">
+                    <main className="flex-1 overflow-auto p-8 relative transition-colors duration-300">
                         {activeProject ? (
                             <>
                                 {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} />}
@@ -313,76 +344,93 @@
             );
         }
 
+        // --- COMPONENTS ---
+
+        function ThemeToggle({ theme, setTheme, fullWidth }) {
+            return (
+                <button 
+                    onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                    className={`p-2 rounded border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition hover:opacity-80 ${fullWidth ? 'w-full' : ''}`}
+                    style={{borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-card)'}}
+                >
+                    {theme === 'dark' ? <lucide.Sun size={14}/> : <lucide.Moon size={14}/>}
+                    {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                </button>
+            );
+        }
+
         const NavBtn = ({ id, icon, label, active, set }) => (
-            <button onClick={()=>set(id)} class={`nav-btn w-full ${active===id ? 'active' : ''}`}>
-                <span class="text-lg">{icon}</span> {label}
+            <button onClick={()=>set(id)} className={`nav-btn w-full ${active===id ? 'active' : ''}`}>
+                {icon} {label}
             </button>
         );
+
+        function MetricCard({ label, value, color, isDanger }) {
+            return (
+                <div className="glass-card p-6 border-l-4" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}>
+                    <div className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{color: 'var(--text-muted)'}}>{label}</div>
+                    <div className="text-3xl font-bold" style={{color: 'var(--text-main)'}}>{value}</div>
+                </div>
+            );
+        }
 
         // --- 1. EXECUTIVE DASHBOARD ---
         function DashboardView({ project, role }) {
             const [data, setData] = useState(null);
+            useEffect(() => { secureFetch(`/analytics/${project}`).then(r => r ? r.json() : null).then(setData); }, [project]);
             
-            useEffect(() => {
-                secureFetch(`/analytics/${project}`)
-                    .then(r => r ? r.json() : null)
-                    .then(setData)
-                    .catch(e => console.error(e));
-            }, [project]);
-
             if (!data) return <LoadingScreen />;
 
             return (
-                <div class="animate-fade-in space-y-6">
+                <div className="animate-fade-in space-y-6">
                     <header className="flex justify-between items-end">
                         <div>
-                            <h2 class="text-3xl font-bold text-white">Command Center</h2>
-                            <p class="text-slate-400 text-sm mt-1">Live sprint health & risk analysis</p>
+                            <h2 className="text-3xl font-bold" style={{color: 'var(--text-main)'}}>Command Center</h2>
+                            <p className="text-sm mt-1" style={{color: 'var(--text-muted)'}}>Live sprint health & risk analysis</p>
                         </div>
                         {data.ai_insights.risk_level && (
-                            <span class={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border ${
-                                data.ai_insights.risk_level === 'High' ? 'bg-red-900/30 border-red-500 text-red-400' : 'bg-emerald-900/30 border-emerald-500 text-emerald-400'
+                            <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border ${
+                                data.ai_insights.risk_level === 'High' ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-emerald-500/10 border-emerald-500 text-emerald-500'
                             }`}>
-                                Risk Level: {data.ai_insights.risk_level}
+                                Risk: {data.ai_insights.risk_level}
                             </span>
                         )}
                     </header>
 
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <MetricCard label="Velocity (Pts)" value={data.metrics.total_points} color="indigo" />
-                        <MetricCard label="Active Tasks" value={data.metrics.total_tickets} color="sky" />
-                        <MetricCard label="Blockers" value={data.metrics.blockers} color="red" isDanger={data.metrics.blockers > 0} />
-                        <MetricCard label="Contributors" value={Object.keys(data.metrics.assignees).length} color="amber" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <MetricCard label="Velocity (Pts)" value={data.metrics.total_points} color="primary" />
+                        <MetricCard label="Active Tasks" value={data.metrics.total_tickets} color="success" />
+                        <MetricCard label="Blockers" value={data.metrics.blockers} color="danger" isDanger={data.metrics.blockers > 0} />
+                        <MetricCard label="Contributors" value={Object.keys(data.metrics.assignees).length} color="warning" />
                     </div>
 
-                    <div class="glass-card p-8 border-l-4 border-indigo-500 relative overflow-hidden">
-                        <div class="absolute right-0 top-0 text-[10rem] opacity-5 select-none pointer-events-none">✨</div>
-                        <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-3">AI Executive Summary</h3>
-                        <p class="text-slate-200 text-lg font-light leading-relaxed">
+                    <div className="glass-card p-8 border-l-4 relative overflow-hidden" style={{borderLeftColor: 'var(--primary)'}}>
+                        <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{color: 'var(--primary)'}}>AI Executive Summary</h3>
+                        <p className="text-lg font-light leading-relaxed" style={{color: 'var(--text-main)'}}>
                             "{data.ai_insights.executive_summary || "Analyzing project metrics..."}"
                         </p>
                         {data.ai_insights.key_recommendation && (
-                            <div class="mt-6 pt-6 border-t border-slate-700 flex gap-2 items-start">
-                                <span class="text-amber-500 text-lg">💡</span>
+                            <div className="mt-6 pt-6 border-t flex gap-2 items-start" style={{borderColor: 'var(--border)'}}>
+                                <span style={{color: 'var(--warning)'}}>💡</span>
                                 <div>
-                                    <span class="text-xs font-bold text-slate-500 uppercase block mb-1">Recommendation</span>
-                                    <span class="text-slate-300 text-sm">{data.ai_insights.key_recommendation}</span>
+                                    <span className="text-xs font-bold uppercase block mb-1" style={{color: 'var(--text-muted)'}}>Recommendation</span>
+                                    <span className="text-sm" style={{color: 'var(--text-main)'}}>{data.ai_insights.key_recommendation}</span>
                                 </div>
                             </div>
                         )}
                     </div>
 
                     {role !== 'leadership' && (
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                                <div key={name} class="glass-card p-5 hover:border-slate-600 transition group">
-                                    <div class="flex items-center gap-4">
-                                        <div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-white border border-slate-600 group-hover:border-indigo-500 transition">
+                                <div key={name} className="glass-card p-5 transition hover:shadow-md">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white shadow-sm" style={{backgroundColor: 'var(--border)'}}>
                                             {name.charAt(0)}
                                         </div>
                                         <div>
-                                            <div class="text-sm font-bold text-white">{name}</div>
-                                            <div class="text-xs text-slate-400">{stats.points} pts &bull; {stats.count} tasks</div>
+                                            <div className="text-sm font-bold" style={{color: 'var(--text-main)'}}>{name}</div>
+                                            <div className="text-xs" style={{color: 'var(--text-muted)'}}>{stats.points} pts &bull; {stats.count} tasks</div>
                                         </div>
                                     </div>
                                 </div>
@@ -397,34 +445,38 @@
         function TimelineView({ project, onTaskClick }) {
             const [data, setData] = useState(null);
             useEffect(() => { secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(setData); }, [project]);
-            
             if (!data) return <LoadingScreen />;
 
             return (
-                <div class="animate-fade-in">
-                    <h2 class="text-2xl font-bold text-white mb-6">Delivery Timeline</h2>
-                    <div class="glass-card rounded-xl overflow-hidden">
-                        <div class="p-4 border-b border-slate-700 bg-slate-950/50 flex">
-                            <div class="w-48 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Engineer</div>
-                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Sprint Load</div>
+                <div className="animate-fade-in">
+                    <h2 className="text-2xl font-bold mb-6" style={{color: 'var(--text-main)'}}>Delivery Timeline</h2>
+                    <div className="glass-card rounded-xl overflow-hidden">
+                        <div className="p-4 border-b flex" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
+                            <div className="w-48 text-[10px] font-bold uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>Engineer</div>
+                            <div className="text-[10px] font-bold uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>Sprint Load</div>
                         </div>
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} class="flex border-b border-slate-700/50 p-4 hover:bg-slate-800/30 transition items-center">
-                                <div class="w-48 flex items-center gap-3">
-                                    <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs font-bold">{name.charAt(0)}</div>
+                            <div key={name} className="flex border-b p-4 transition items-center hover:bg-opacity-50" style={{borderColor: 'var(--border)'}}>
+                                <div className="w-48 flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{backgroundColor: 'var(--border)'}}>{name.charAt(0)}</div>
                                     <div>
-                                        <div class="text-sm font-medium text-white">{name.split(" ")[0]}</div>
-                                        <div class="text-[10px] text-slate-500">{stats.points} pts</div>
+                                        <div className="text-sm font-medium" style={{color: 'var(--text-main)'}}>{name.split(" ")[0]}</div>
+                                        <div className="text-[10px]" style={{color: 'var(--text-muted)'}}>{stats.points} pts</div>
                                     </div>
                                 </div>
-                                <div class="flex-1 flex gap-2 flex-wrap">
+                                <div className="flex-1 flex gap-2 flex-wrap">
                                     {stats.tasks.map(t => (
                                         <div 
                                             key={t.key} 
                                             onClick={() => onTaskClick(t)}
-                                            class={`px-3 py-1.5 rounded text-xs border cursor-pointer hover:scale-105 transition shadow-sm ${t.priority==='High' || t.priority==='Critical' ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-indigo-500/30 bg-indigo-500/10 text-indigo-200'}`}
+                                            className="px-3 py-1.5 rounded text-xs border cursor-pointer hover:scale-105 transition shadow-sm"
+                                            style={{
+                                                borderColor: t.priority==='High' ? 'var(--danger)' : 'var(--primary)',
+                                                backgroundColor: 'var(--bg-body)',
+                                                color: 'var(--text-main)'
+                                            }}
                                         >
-                                            <span class="font-bold opacity-70 mr-1">{t.key}</span> {t.summary.substring(0, 25)}...
+                                            <span className="font-bold opacity-70 mr-1">{t.key}</span> {t.summary.substring(0, 25)}...
                                         </div>
                                     ))}
                                 </div>
@@ -437,14 +489,13 @@
 
         // --- 3. STANDUP BOT ---
         function StandupView({ project }) {
-            const [hist, setHist] = useState([{sender:'bot', text:"Hello! What's your update for today? (Tip: I can log time too!)"}]);
+            const [hist, setHist] = useState([{sender:'bot', text:"Hello! What's your update for today? (I can log time if you say '2h')"}]);
             const [reply, setReply] = useState("");
             
             const send = () => {
                 if(!reply) return;
                 setHist([...hist, {sender:'user', text:reply}]);
                 setReply("");
-                // Generic key 'GEN' used for demo, ideally pick from user's tasks
                 secureFetch(`/standup/post`, {method:'POST', body:JSON.stringify({key:'GEN', message:reply})})
                     .then(r=>r.json())
                     .then(d => {
@@ -455,23 +506,28 @@
             };
 
             return (
-                <div class="max-w-2xl mx-auto h-[600px] flex flex-col glass-card rounded-xl overflow-hidden shadow-2xl">
-                    <div class="p-4 border-b border-slate-700 bg-slate-950 flex items-center gap-3">
-                        <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-lg">🤖</div>
-                        <div><h3 class="font-bold text-white text-sm">Standup Assistant</h3><p class="text-[10px] text-slate-400">Syncs comments & worklogs</p></div>
+                <div className="max-w-2xl mx-auto h-[600px] flex flex-col glass-card rounded-xl overflow-hidden shadow-2xl">
+                    <div className="p-4 border-b flex items-center gap-3" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center text-lg" style={{backgroundColor: 'var(--primary)', color: 'white'}}>🤖</div>
+                        <div><h3 className="font-bold text-sm" style={{color: 'var(--text-main)'}}>Standup Assistant</h3><p className="text-[10px]" style={{color: 'var(--text-muted)'}}>Syncs comments & worklogs</p></div>
                     </div>
-                    <div class="flex-1 p-6 space-y-4 overflow-y-auto bg-slate-900/50">
+                    <div className="flex-1 p-6 space-y-4 overflow-y-auto" style={{backgroundColor: 'var(--bg-body)'}}>
                         {hist.map((m,i) => (
-                            <div key={i} class={`flex ${m.sender==='user'?'justify-end':'justify-start'}`}>
-                                <div class={`p-3 rounded-2xl text-sm max-w-[80%] ${m.sender==='user'?'bg-indigo-600 text-white rounded-br-none':'bg-slate-700 text-slate-200 rounded-bl-none'}`}>
+                            <div key={i} className={`flex ${m.sender==='user'?'justify-end':'justify-start'}`}>
+                                <div className="p-3 rounded-2xl text-sm max-w-[80%]" 
+                                     style={{
+                                         backgroundColor: m.sender==='user' ? 'var(--primary)' : 'var(--bg-card)',
+                                         color: m.sender==='user' ? 'white' : 'var(--text-main)',
+                                         border: m.sender==='bot' ? '1px solid var(--border)' : 'none'
+                                     }}>
                                     {m.text}
                                 </div>
                             </div>
                         ))}
                     </div>
-                    <div class="p-4 border-t border-slate-700 bg-slate-950 flex gap-2">
-                        <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-sm outline-none focus:border-indigo-500" placeholder="Type your update (e.g. 'Fixed bug, spent 2h')..." />
-                        <button onClick={send} class="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-lg font-bold text-sm transition">Send</button>
+                    <div className="p-4 border-t flex gap-2" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
+                        <input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} className="flex-1 p-3 rounded-lg text-sm input-field" placeholder="Type update..." />
+                        <button onClick={send} className="text-white px-6 rounded-lg font-bold text-sm transition hover:opacity-90" style={{backgroundColor: 'var(--primary)'}}>Send</button>
                     </div>
                 </div>
             );
@@ -495,45 +551,47 @@
             const del = (c, id) => save({...board, [c]: board[c].filter(i=>i.id!==id)});
 
             return (
-                <div class="h-full flex flex-col pb-6">
-                    <div class="flex justify-between items-center mb-6">
-                        <div class="flex gap-4 items-center">
-                            <h2 class="text-2xl font-bold text-white">Retrospective</h2>
-                            <select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} class="p-2 rounded bg-slate-800 border border-slate-700 text-white text-xs outline-none">
+                <div className="h-full flex flex-col pb-6">
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="flex gap-4 items-center">
+                            <h2 className="text-2xl font-bold" style={{color: 'var(--text-main)'}}>Retrospective</h2>
+                            <select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} className="p-2 rounded border text-xs input-field">
                                 {sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                         </div>
                     </div>
                     
-                    <div class="flex gap-2 mb-6">
-                        <div class="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+                    <div className="flex gap-2 mb-6">
+                        <div className="flex p-1 rounded-lg border" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)'}}>
                             {['well', 'improve', 'kudos'].map(c => (
-                                <button key={c} onClick={()=>setCol(c)} class={`px-4 py-1.5 rounded-md text-xs font-bold capitalize transition ${col===c?'bg-indigo-600 text-white shadow':'text-slate-400 hover:text-white'}`}>{c}</button>
+                                <button key={c} onClick={()=>setCol(c)} className="px-4 py-1.5 rounded-md text-xs font-bold capitalize transition" style={{
+                                    backgroundColor: col===c ? 'var(--primary)' : 'transparent',
+                                    color: col===c ? 'white' : 'var(--text-muted)'
+                                }}>{c}</button>
                             ))}
                         </div>
-                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder={`Add to ${col}...`} class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 text-sm text-white outline-none focus:border-indigo-500" />
-                        <button onClick={add} class="bg-indigo-600 text-white px-6 rounded-lg font-bold text-sm hover:bg-indigo-500 transition">Post</button>
+                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder={`Add to ${col}...`} className="flex-1 rounded-lg px-4 text-sm input-field" />
+                        <button onClick={add} className="text-white px-6 rounded-lg font-bold text-sm hover:opacity-90" style={{backgroundColor: 'var(--primary)'}}>Post</button>
                     </div>
 
-                    <div class="grid grid-cols-4 gap-4 flex-1 min-h-0">
-                        <RetroColumn title="🚀 Went Well" items={board.well} color="bg-emerald-900/20 border-emerald-500/30 text-emerald-100" onDel={del} col="well" />
-                        <RetroColumn title="🔥 Needs Improvement" items={board.improve} color="bg-red-900/20 border-red-500/30 text-red-100" onDel={del} col="improve" />
-                        <RetroColumn title="🏆 Kudos" items={board.kudos} color="bg-amber-900/20 border-amber-500/30 text-amber-100" onDel={del} col="kudos" />
+                    <div className="grid grid-cols-4 gap-4 flex-1 min-h-0">
+                        <RetroColumn title="🚀 Went Well" items={board.well} onDel={del} col="well" />
+                        <RetroColumn title="🔥 Needs Improvement" items={board.improve} onDel={del} col="improve" />
+                        <RetroColumn title="🏆 Kudos" items={board.kudos} onDel={del} col="kudos" />
                         
-                        <div class="glass-card p-4 rounded-xl flex flex-col border-l-2 border-indigo-500 bg-slate-800/50">
-                            <h3 class="font-bold text-indigo-400 uppercase text-[10px] mb-4 flex justify-between items-center">
+                        <div className="glass-card p-4 rounded-xl flex flex-col border-l-2" style={{borderLeftColor: 'var(--primary)'}}>
+                            <h3 className="font-bold uppercase text-[10px] mb-4 flex justify-between items-center" style={{color: 'var(--primary)'}}>
                                 Action Items 
-                                <button onClick={genActions} disabled={loadingAI} class="bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 px-2 py-1 rounded text-[10px] transition disabled:opacity-50">
+                                <button onClick={genActions} disabled={loadingAI} className="px-2 py-1 rounded text-[10px] transition disabled:opacity-50" style={{backgroundColor: 'var(--primary-dim)', color: 'var(--primary)'}}>
                                     {loadingAI ? "Thinking..." : "✨ AI Generate"}
                                 </button>
                             </h3>
-                            <div class="overflow-y-auto space-y-3 flex-1 pr-2">
+                            <div className="overflow-y-auto space-y-3 flex-1 pr-2">
                                 {board.actions.map(i => (
-                                    <div key={i.id} class="p-3 rounded border border-indigo-500/30 bg-indigo-900/10 text-indigo-100 text-sm relative group">
+                                    <div key={i.id} className="p-3 rounded border text-sm relative group" style={{borderColor: 'var(--primary)', backgroundColor: 'var(--primary-dim)', color: 'var(--text-main)'}}>
                                         {i.text}
                                     </div>
                                 ))}
-                                {board.actions.length === 0 && <div class="text-center text-slate-600 text-xs mt-10">Use AI to generate plan</div>}
                             </div>
                         </div>
                     </div>
@@ -541,16 +599,16 @@
             );
         }
 
-        function RetroColumn({ title, items, color, onDel, col }) {
+        function RetroColumn({ title, items, onDel, col }) {
             return (
-                <div class="glass-card p-4 rounded-xl flex flex-col overflow-hidden bg-slate-900/50">
-                    <h3 class="font-bold text-slate-500 uppercase text-[10px] mb-4 flex justify-between">{title} <span>{items.length}</span></h3>
-                    <div class="overflow-y-auto space-y-3 flex-1 pr-2">
+                <div className="glass-card p-4 rounded-xl flex flex-col overflow-hidden">
+                    <h3 className="font-bold uppercase text-[10px] mb-4 flex justify-between" style={{color: 'var(--text-muted)'}}>{title} <span>{items.length}</span></h3>
+                    <div className="overflow-y-auto space-y-3 flex-1 pr-2">
                         <AnimatePresence>
                             {items.map(i => (
-                                <motion.div key={i.id} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} class={`p-3 rounded border text-sm relative group ${color}`}>
+                                <motion.div key={i.id} initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} className="p-3 rounded border text-sm relative group sticky-note" style={{backgroundColor: 'var(--bg-body)', borderColor: 'var(--border)', color: 'var(--text-main)'}}>
                                     {i.text}
-                                    <button onClick={()=>onDel(col, i.id)} class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-[10px] hover:text-white transition">✕</button>
+                                    <button onClick={()=>onDel(col, i.id)} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-[10px] hover:text-red-500 transition">✕</button>
                                 </motion.div>
                             ))}
                         </AnimatePresence>
@@ -564,23 +622,17 @@
             if (!task) return null;
             return (
                 <>
-                    <div onClick={onClose} class="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm transition-opacity"></div>
-                    <motion.div initial={{x:"100%"}} animate={{x:0}} class="fixed right-0 top-0 h-full w-96 z-50 p-6 shadow-2xl overflow-y-auto border-l border-slate-700 bg-slate-900">
-                        <div class="flex justify-between mb-8">
-                            <h2 class="text-xl font-bold text-white">{task.key}</h2>
-                            <button onClick={onClose} class="text-slate-400 hover:text-white">✕</button>
+                    <div onClick={onClose} className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm transition-opacity"></div>
+                    <motion.div initial={{x:"100%"}} animate={{x:0}} className="fixed right-0 top-0 h-full w-96 z-50 p-6 shadow-2xl overflow-y-auto border-l" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border)'}}>
+                        <div className="flex justify-between mb-8">
+                            <h2 className="text-xl font-bold" style={{color: 'var(--text-main)'}}>{task.key}</h2>
+                            <button onClick={onClose} style={{color: 'var(--text-muted)'}}>✕</button>
                         </div>
-                        <div class="space-y-6">
-                            <div><label class="text-[10px] font-bold text-slate-500 uppercase">Summary</label><p class="text-white font-medium text-lg mt-1">{task.summary}</p></div>
-                            <div class="glass-card p-5 space-y-4">
-                                <div>
-                                    <label class="text-[10px] font-bold text-indigo-400 uppercase block mb-1">Due Date</label>
-                                    <input type="date" defaultValue={task.end} onChange={(e)=>secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'duedate', value:e.target.value})})} class="w-full p-2 bg-slate-950 border border-slate-700 rounded text-sm text-white outline-none focus:border-indigo-500" />
-                                </div>
-                                <div>
-                                    <label class="text-[10px] font-bold text-indigo-400 uppercase block mb-1">Assignee</label>
-                                    <input placeholder="Type username & enter..." onKeyDown={(e)=>{if(e.key==='Enter') secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'assignee', value:e.target.value})}).then(()=>alert('Updated!'))}} class="w-full p-2 bg-slate-950 border border-slate-700 rounded text-sm text-white outline-none focus:border-indigo-500" />
-                                </div>
+                        <div className="space-y-6">
+                            <div><label className="text-[10px] font-bold uppercase" style={{color: 'var(--text-muted)'}}>Summary</label><p className="font-medium text-lg mt-1" style={{color: 'var(--text-main)'}}>{task.summary}</p></div>
+                            <div className="glass-card p-5 space-y-4">
+                                <div><label className="text-[10px] font-bold uppercase block mb-1" style={{color: 'var(--primary)'}}>Due Date</label><input type="date" defaultValue={task.end} onChange={(e)=>secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'duedate', value:e.target.value})})} className="w-full p-2 rounded text-sm input-field" /></div>
+                                <div><label className="text-[10px] font-bold uppercase block mb-1" style={{color: 'var(--primary)'}}>Assignee</label><input placeholder="Type username..." onKeyDown={(e)=>{if(e.key==='Enter') secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'assignee', value:e.target.value})}).then(()=>alert('Updated!'))}} className="w-full p-2 rounded text-sm input-field" /></div>
                             </div>
                         </div>
                     </motion.div>
@@ -590,48 +642,66 @@
 
         function AIChatBubble({ isOpen, toggle, project }) {
             const [input, setInput] = useState("");
-            const [msgs, setMsgs] = useState([{role:'ai', text:"I'm your Data Analyst. Ask me anything about the sprint stats."}]);
+            const [msgs, setMsgs] = useState([{role:'ai', text:"I'm your Data Analyst. Ask me anything."}]);
             const ask = () => { if(!input) return; const q=input; setMsgs(p=>[...p,{role:'user', text:q}]); setInput(""); secureFetch('/chat/agent', {method:'POST', body:JSON.stringify({project, query:q})}).then(r=>r?.json()).then(d=>setMsgs(p=>[...p,{role:'ai', text:d.response}])); };
+            
+            const parseMarkdown = (text) => {
+                if(!text) return "";
+                return marked.parse(text); 
+            };
+
             return (
-                <div class="chat-bubble">
+                <div className="chat-bubble">
                     <AnimatePresence>
                         {isOpen && (
-                            <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} class="mb-4 w-80 h-96 glass-card flex flex-col overflow-hidden shadow-2xl border border-slate-600">
-                                <div class="p-3 bg-indigo-600 text-white font-bold flex justify-between text-sm"><span>Analyst AI</span><button onClick={toggle}>✕</button></div>
-                                <div class="flex-1 p-3 overflow-y-auto space-y-3 bg-slate-900">{msgs.map((m,i) => <div key={i} class={`p-2 rounded-lg text-xs ${m.role==='user'?'bg-indigo-600 text-white self-end ml-10':'bg-slate-700 text-slate-200 mr-10'}`}>{m.text}</div>)}</div>
-                                <div class="p-2 bg-slate-800 flex gap-2 border-t border-slate-700"><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} class="flex-1 bg-slate-900 border border-slate-600 rounded p-1.5 text-xs text-white outline-none" placeholder="Ask..." /><button onClick={ask} class="text-indigo-400 font-bold text-xs px-2">Send</button></div>
+                            <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} className="mb-4 w-96 glass-card flex flex-col overflow-hidden shadow-2xl border" style={{height:'500px', borderColor: 'var(--border)'}}>
+                                <div className="p-3 text-white font-bold flex justify-between text-sm" style={{backgroundColor: 'var(--primary)'}}><span>Analyst AI</span><button onClick={toggle}>✕</button></div>
+                                <div className="flex-1 p-4 overflow-y-auto space-y-3" style={{backgroundColor: 'var(--bg-body)'}}>
+                                    {msgs.map((m,i) => (
+                                        <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}>
+                                            <div 
+                                                className={`p-3 rounded-lg text-sm max-w-[85%] prose prose-invert`}
+                                                style={{
+                                                    backgroundColor: m.role==='user' ? 'var(--primary)' : 'var(--bg-card)',
+                                                    color: m.role==='user' ? 'white' : 'var(--text-main)',
+                                                    border: m.role==='bot' ? '1px solid var(--border)' : 'none'
+                                                }}
+                                                dangerouslySetInnerHTML={{ __html: parseMarkdown(m.text) }}
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="p-2 flex gap-2 border-t" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}>
+                                    <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} className="flex-1 rounded p-1.5 text-xs input-field" placeholder="Ask..." />
+                                    <button onClick={ask} className="font-bold text-xs px-2" style={{color: 'var(--primary)'}}><lucide.Send size={16}/></button>
+                                </div>
                             </motion.div>
                         )}
                     </AnimatePresence>
-                    <button onClick={toggle} class="w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-xl shadow-lg transition text-white ring-4 ring-slate-900">✨</button>
+                    <button onClick={toggle} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg transition hover:scale-110 text-white" style={{backgroundColor: 'var(--primary)'}}>✨</button>
                 </div>
             );
         }
 
-        function MetricCard({ label, value, color, isDanger }) {
-            const colors = {
-                indigo: 'border-indigo-500 text-indigo-500',
-                sky: 'border-sky-500 text-sky-500',
-                red: 'border-red-500 text-red-500',
-                amber: 'border-amber-500 text-amber-500'
-            };
+        function IGLogo() {
             return (
-                <div class={`glass-card p-6 border-l-4 ${isDanger ? colors.red : colors[color] || colors.indigo}`}>
-                    <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{label}</div>
-                    <div class="text-3xl font-bold text-white">{value}</div>
+                <div className="flex gap-1">
+                    <div className="w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.5)]"></div>
+                    <div className="w-3 h-3 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]"></div>
+                    <div className="w-3 h-3 rounded-full bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.5)]"></div>
                 </div>
             );
         }
 
         // Placeholders
-        function BurndownView() { return <div class="text-slate-500 p-10">Burndown Chart Component</div> }
+        function BurndownView() { return <div className="text-center p-10 opacity-50">Burndown Chart Component</div> }
         function ReportsView({ project }) { 
             const [rep, setRep] = useState(null);
             useEffect(()=>{ secureFetch(`/reports/${project}/weekly`).then(r=>r?.json()).then(setRep) },[project]);
             if(!rep) return <LoadingScreen/>;
-            return <div class="glass-card p-8"><h2 class="text-2xl font-bold text-white mb-2">Weekly Report</h2><div class="text-4xl font-black text-indigo-400 mb-4">{rep.completed_count} Tasks Completed</div><p class="text-slate-300 leading-relaxed">{rep.ai_summary.summary}</p></div> 
+            return <div className="glass-card p-8"><h2 className="text-2xl font-bold mb-2" style={{color: 'var(--text-main)'}}>Weekly Report</h2><div className="text-4xl font-black mb-4" style={{color: 'var(--primary)'}}>{rep.completed_count} Tasks Completed</div><p className="leading-relaxed" style={{color: 'var(--text-muted)'}}>{rep.ai_summary.summary}</p></div> 
         }
-        function LoadingScreen() { return <div class="h-96 flex flex-col items-center justify-center"><div class="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div><div class="mt-4 text-xs text-indigo-400 font-mono animate-pulse">Initializing Secure Core...</div></div> }
+        function LoadingScreen() { return <div className="h-96 flex flex-col items-center justify-center"><div className="w-8 h-8 border-4 border-t-transparent rounded-full animate-spin" style={{borderColor: 'var(--primary)', borderTopColor: 'transparent'}}></div></div> }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
