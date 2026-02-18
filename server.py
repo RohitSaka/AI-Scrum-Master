@@ -8,7 +8,6 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-# Enable CORS for Electron/Web Client
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,6 +18,7 @@ app.add_middleware(
 # --- CONFIGURATION ---
 STORY_POINT_CACHE = {} 
 RETRO_FILE = "retro_data.json"
+CACHED_MODEL_NAME = None # Stores the working model name
 
 # --- SECURITY & AUTH ---
 async def get_jira_creds(
@@ -29,37 +29,74 @@ async def get_jira_creds(
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- AI CORE: RAW HTTP (Crash Proof) ---
+# --- AI CORE: SELF-HEALING DISCOVERY ---
+def get_best_available_model(api_key):
+    """
+    Asks Google API for available models and picks the best one.
+    This prevents 404 errors by never guessing.
+    """
+    global CACHED_MODEL_NAME
+    if CACHED_MODEL_NAME: return CACHED_MODEL_NAME
+
+    print("🔍 Auto-detecting best AI model...")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    try:
+        r = requests.get(url)
+        if r.status_code != 200:
+            print(f"❌ Failed to list models: {r.text}")
+            return "gemini-1.5-flash" # Fallback
+
+        data = r.json()
+        models = [m['name'].replace('models/', '') for m in data.get('models', []) if 'generateContent' in m['supportedGenerationMethods']]
+        
+        # Priority List (Paid/Smart -> Fast -> Legacy)
+        for priority in ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]:
+            # Check for exact match or versioned match (e.g., gemini-1.5-pro-001)
+            for m in models:
+                if priority in m:
+                    print(f"✅ Selected Model: {m}")
+                    CACHED_MODEL_NAME = m
+                    return m
+        
+        # If nothing matches, take the first valid one
+        if models:
+            CACHED_MODEL_NAME = models[0]
+            print(f"⚠️ specific model not found, using: {CACHED_MODEL_NAME}")
+            return CACHED_MODEL_NAME
+            
+    except Exception as e:
+        print(f"❌ Network error detecting models: {e}")
+    
+    return "gemini-1.5-flash" # Ultimate fallback
+
 def generate_ai_response(prompt, temperature=0.3):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        print("❌ CRITICAL: GEMINI_API_KEY is missing!")
         return '{"executive_summary": "API Key Missing", "risk_level": "Unknown", "key_recommendation": "Check Server Env."}'
 
-    # We manually hit the API. This bypasses all library version issues.
-    models_to_try = ["gemini-1.5-pro", "gemini-1.5-flash"]
+    model_name = get_best_available_model(api_key)
     
-    for model in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}
-        }
-        
-        try:
-            r = requests.post(url, headers=headers, json=payload)
-            if r.status_code == 200:
-                print(f"✅ AI Success ({model})")
-                return r.json()['candidates'][0]['content']['parts'][0]['text']
-            else:
-                print(f"⚠️ AI Fail ({model}): {r.text[:100]}")
-                continue # Try next model
-        except Exception as e:
-            print(f"❌ Network Error: {e}")
-            continue
-
-    return '{"executive_summary": "AI Analysis Unavailable", "risk_level": "Unknown", "key_recommendation": "Check Quota/Billing."}'
+    # API Call
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}
+    }
+    
+    try:
+        r = requests.post(url, headers=headers, json=payload)
+        if r.status_code == 200:
+            return r.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            print(f"⚠️ AI Error ({r.status_code}): {r.text[:200]}")
+            # If 404, force re-discovery next time
+            global CACHED_MODEL_NAME
+            if r.status_code == 404: CACHED_MODEL_NAME = None 
+            return None
+    except Exception as e:
+        print(f"❌ Request Failed: {e}")
+        return None
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, creds, data=None):
@@ -70,10 +107,7 @@ def jira_request(method, endpoint, creds, data=None):
         if method == "POST": r = requests.post(url, json=data, auth=auth, headers=headers)
         elif method == "PUT": r = requests.put(url, json=data, auth=auth, headers=headers)
         elif method == "GET": r = requests.get(url, auth=auth, headers=headers)
-        
-        if r.status_code >= 400:
-            print(f"❌ Jira Error {r.status_code} on {endpoint}")
-            return None
+        if r.status_code >= 400: return None
         return r
     except: return None
 
@@ -89,40 +123,33 @@ def get_story_point_field(creds):
         except: pass
     return "customfield_10016"
 
-# --- HELPER: POINT ESTIMATION LOGIC ---
+# --- HELPER: ESTIMATION ---
 def estimate_story_points(summary, description):
     prompt = f"""
-    You are a Technical Architect. Estimate Jira Ticket effort.
-    
-    TICKET: {summary}
-    DETAILS: {description}
-    
-    RULES: 1 Story Point = 6 hours. Scale: 1, 2, 3, 5, 8, 13.
-    
-    RETURN JSON: {{ "points": int, "reasoning": "string" }}
+    Role: Technical Architect.
+    Task: Estimate Jira Ticket (1 pt = 6 hours).
+    Ticket: {summary}
+    Desc: {description}
+    Return JSON: {{ "points": int, "reasoning": "string" }}
     """
     raw = generate_ai_response(prompt, temperature=0.1)
+    if not raw: return None
     try: return json.loads(raw)
     except: return None
 
-# --- DATA STORAGE (FIXED SYNTAX) ---
+# --- DATA STORAGE ---
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE):
-        return {}
-    try:
-        with open(RETRO_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+    if not os.path.exists(RETRO_FILE): return {}
+    try: with open(RETRO_FILE, "r") as f: return json.load(f)
+    except: return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f:
-        json.dump(data, f)
+    with open(RETRO_FILE, "w") as f: json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "IG Agile Brain Online 🧠"}
+def home(): return {"status": "Online"}
 
 # --- 1. ANALYTICS ---
 @app.get("/analytics/{project_key}")
@@ -158,29 +185,28 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
         
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += pts
-        
-        context_for_ai.append(f"[{type_name}] {f['summary']} ({pts} pts) - Status: {f['status']['name']}")
+        context_for_ai.append(f"[{type_name}] {f['summary']} ({pts} pts)")
 
-    # EXECUTIVE AI ANALYSIS
-    tickets_list = "\n".join(context_for_ai[:40]) 
-    
+    # AI SUMMARY
+    tickets = "\n".join(context_for_ai[:40])
     prompt = f"""
-    Analyze this Sprint.
-    METRICS: {stats['points']} Points, {stats['stories']} Stories, {stats['bugs']} Bugs, {stats['blockers']} Blockers.
-    TICKETS:
-    {tickets_list}
-    
-    RETURN JSON:
+    Analyze Sprint. Metrics: {stats['points']} pts, {stats['bugs']} bugs.
+    Tickets:
+    {tickets}
+    Return JSON:
     {{
-        "executive_summary": "2 sentences on health/risks.",
+        "executive_summary": "2 sentences on risks/health.",
         "risk_level": "Low/Medium/High",
-        "key_recommendation": "Advice for Scrum Master."
+        "key_recommendation": "Advice for PM."
     }}
     """
     
     ai_raw = generate_ai_response(prompt)
-    try: ai_data = json.loads(ai_raw)
-    except: ai_data = {"executive_summary": "Analysis format error.", "risk_level": "Unknown", "key_recommendation": "Check data."}
+    if ai_raw:
+        try: ai_data = json.loads(ai_raw)
+        except: ai_data = {"executive_summary": "Format Error", "risk_level": "Unknown", "key_recommendation": "Check Logs"}
+    else:
+        ai_data = {"executive_summary": "AI Unreachable", "risk_level": "Unknown", "key_recommendation": "Check API Key"}
 
     return {"metrics": stats, "ai_insights": ai_data}
 
@@ -193,45 +219,41 @@ async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
     
     issue = res.json()
     summary = issue['fields']['summary']
-    description = str(issue['fields'].get('description', ''))[:1000]
+    desc = str(issue['fields'].get('description', ''))[:1000]
     
-    estimate = estimate_story_points(summary, description)
-    if not estimate: return {"status": "error", "message": "AI Estimation Failed"}
+    est = estimate_story_points(summary, desc)
+    if not est: return {"status": "error", "message": "AI Failed"}
     
     sp_field = get_story_point_field(creds)
-    jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: estimate['points']}})
-    jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 AI Estimate: {estimate['points']} Pts. {estimate['reasoning']}"}]}]}})
+    jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: est['points']}})
+    jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 AI Estimate: {est['points']} Pts. {est['reasoning']}"}]}]}})
     
-    return {"status": "success", "points": estimate['points'], "reason": estimate['reasoning']}
+    return {"status": "success", "points": est['points'], "reason": est['reasoning']}
 
 # --- 3. PROJECTS ---
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", "project", creds)
-    if res:
-        try: return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
-        except: return []
-    return []
+    try: return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
+    except: return []
 
 # --- 4. CHAT ---
 @app.post("/chat/agent")
 def chat_agent(payload: dict, creds: dict = Depends(get_jira_creds)):
     jql = f"project = {payload.get('project')} AND sprint in openSprints()"
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status", "assignee"]})
-    context = str(res.json().get('issues', []))[:4000] if res else ""
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status"]})
+    context = str(res.json().get('issues', []))[:3000] if res else ""
     
-    # We ask for plain text here, not JSON
-    prompt = f"CONTEXT:\n{context}\n\nQUESTION: {payload.get('query')}\n\nANSWER (Plain Text, concise):"
-    
-    # Manually call API for text response
+    # Use generic endpoint for text chat
     api_key = os.getenv("GEMINI_API_KEY")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    model = get_best_available_model(api_key)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    
+    prompt = f"Context:\n{context}\nUser: {payload.get('query')}\nAnswer concisely."
     try:
-        r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+        r = requests.post(url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
         return {"response": r.json()['candidates'][0]['content']['parts'][0]['text']}
-    except:
-        return {"response": "AI Unavailable."}
+    except: return {"response": "AI Error"}
 
 # --- 5. STANDUP ---
 @app.post("/standup/post")
@@ -258,10 +280,10 @@ def update_retro(payload: dict):
     save_retro_data(data)
     return {"status": "saved"}
 
+# --- 7. SPRINT ---
 @app.get("/sprints/{project_key}")
 def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
-    if not res: return []
     try:
         sprints = {}
         for i in res.json().get('issues', []):
@@ -270,6 +292,7 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
+# --- 8. REPORTS ---
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -281,6 +304,7 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     pts = sum([float(i['fields'].get(sp_field) or 0) for i in issues])
     return {"completed_count": len(issues), "completed_points": pts, "ai_summary": {"summary": f"{len(issues)} tasks done."}}
 
+# --- 9. BURNDOWN ---
 @app.get("/burndown/{project_key}")
 def get_burndown(project_key: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
