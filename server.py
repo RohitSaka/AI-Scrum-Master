@@ -29,7 +29,7 @@ async def get_jira_creds(
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- AI CORE: RAW HTTP (Library-Free & Crash Proof) ---
+# --- AI CORE: RAW HTTP (Crash Proof) ---
 def generate_ai_response(prompt, temperature=0.3):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -105,14 +105,19 @@ def estimate_story_points(summary, description):
     try: return json.loads(raw)
     except: return None
 
-# --- DATA STORAGE ---
+# --- DATA STORAGE (FIXED SYNTAX) ---
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE): return {}
-    try: with open(RETRO_FILE, "r") as f: return json.load(f)
-    except: return {}
+    if not os.path.exists(RETRO_FILE):
+        return {}
+    try:
+        with open(RETRO_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f: json.dump(data, f)
+    with open(RETRO_FILE, "w") as f:
+        json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
