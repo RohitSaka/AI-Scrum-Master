@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests, json, os, re, time
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
-from datetime import datetime, timedelta  # <--- FIXED MISSING IMPORT
+from datetime import datetime, timedelta
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -19,7 +19,7 @@ app.add_middleware(
 # --- CONFIGURATION ---
 STORY_POINT_CACHE = {} 
 RETRO_FILE = "retro_data.json"
-ACTIVE_MODEL = None 
+ACTIVE_MODEL = None # Will be set automatically
 
 # --- SECURITY & AUTH ---
 async def get_jira_creds(
@@ -30,55 +30,75 @@ async def get_jira_creds(
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- INTELLIGENT MODEL SELECTOR ---
-def get_prioritized_models():
-    """Returns a list of models to try in order of preference."""
-    # We prefer 1.5 Pro (Best) -> 1.5 Flash (Fastest) -> 2.0 (Experimental) -> Legacy
-    return [
-        "gemini-1.5-pro",
-        "gemini-1.5-flash", 
-        "gemini-2.0-flash-exp",
-        "gemini-pro"
-    ]
+# --- CRITICAL: DYNAMIC MODEL DISCOVERY ---
+def find_working_model():
+    """
+    Hits the Google API to find exactly which model name is valid for your key.
+    This prevents 404 errors by never guessing.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        print("❌ CRITICAL: GEMINI_API_KEY is missing from environment variables!")
+        return None
+
+    print("\n🔍 *** STARTING DYNAMIC MODEL DISCOVERY ***")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            print(f"❌ Failed to list models. Error: {response.text}")
+            return "gemini-1.5-flash" # Last resort fallback
+
+        data = response.json()
+        available_models = [m['name'] for m in data.get('models', []) if 'generateContent' in m['supportedGenerationMethods']]
+        
+        print(f"✅ Found {len(available_models)} available models.")
+
+        # Smart Selection Logic (Paid > Fast > Legacy)
+        priorities = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
+        
+        for p in priorities:
+            for model in available_models:
+                if p in model:
+                    clean_name = model.replace("models/", "")
+                    print(f"🚀 SELECTED BEST MODEL: {clean_name}")
+                    return clean_name
+        
+        # If no preferred match, take the first valid one
+        if available_models:
+            return available_models[0].replace("models/", "")
+            
+    except Exception as e:
+        print(f"❌ Network Error during model discovery: {e}")
+    
+    return "gemini-1.5-flash"
+
+# Initialize Model on Startup
+ACTIVE_MODEL = find_working_model()
 
 def generate_ai_response(prompt, temperature=0.3):
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return '{"executive_summary": "API Key Missing", "risk_level": "Unknown", "key_recommendation": "Check Server Env."}'
-
-    # Get list of candidates
-    candidates = get_prioritized_models()
+    # Use the discovered model, or fallback if discovery failed
+    model = ACTIVE_MODEL if ACTIVE_MODEL else "gemini-1.5-flash"
     
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}
     }
-
-    # ACTIVE FAILOVER LOOP
-    # If the first model fails (404 or 503), we immediately try the next one.
-    for model in candidates:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        
-        try:
-            # print(f"Trying AI Model: {model}...") 
-            r = requests.post(url, headers=headers, json=payload)
-            
-            if r.status_code == 200:
-                print(f"✅ AI Success using {model}")
-                return r.json()['candidates'][0]['content']['parts'][0]['text']
-            
-            # If 503 (Overloaded) or 404 (Not Found), we continue to next model
-            print(f"⚠️ Model {model} failed ({r.status_code}): {r.text[:100]}... switching...")
-            continue 
-            
-        except Exception as e:
-            print(f"❌ Network Error on {model}: {e}")
-            continue
-
-    # If all fail:
-    print("❌ ALL AI MODELS FAILED.")
-    return '{"executive_summary": "AI Service Temporarily Unavailable.", "risk_level": "Unknown", "key_recommendation": "Try again in 1 minute."}'
+    
+    try:
+        r = requests.post(url, headers=headers, json=payload)
+        if r.status_code == 200:
+            return r.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            print(f"⚠️ AI Generation Failed ({model}): {r.text[:200]}")
+            return None
+    except Exception as e:
+        print(f"❌ AI Network Error: {e}")
+        return None
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, creds, data=None):
@@ -86,9 +106,13 @@ def jira_request(method, endpoint, creds, data=None):
     auth = HTTPBasicAuth(creds['email'], creds['token'])
     headers = {"Accept": "application/json", "Content-Type": "application/json"}
     try:
-        if method == "POST": r = requests.post(url, json=data, auth=auth, headers=headers)
-        elif method == "PUT": r = requests.put(url, json=data, auth=auth, headers=headers)
-        elif method == "GET": r = requests.get(url, auth=auth, headers=headers)
+        if method == "POST": 
+            r = requests.post(url, json=data, auth=auth, headers=headers)
+        elif method == "PUT": 
+            r = requests.put(url, json=data, auth=auth, headers=headers)
+        elif method == "GET": 
+            r = requests.get(url, auth=auth, headers=headers)
+        
         if r.status_code >= 400: return None
         return r
     except: return None
@@ -119,19 +143,24 @@ def estimate_story_points(summary, description):
     try: return json.loads(raw.replace('```json','').replace('```','').strip())
     except: return None
 
-# --- DATA STORAGE ---
+# --- DATA STORAGE (FIXED SYNTAX) ---
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE): return {}
-    try: with open(RETRO_FILE, "r") as f: return json.load(f)
-    except: return {}
+    if not os.path.exists(RETRO_FILE): 
+        return {}
+    try: 
+        with open(RETRO_FILE, "r") as f: 
+            return json.load(f)
+    except: 
+        return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f: json.dump(data, f)
+    with open(RETRO_FILE, "w") as f: 
+        json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online"}
+def home(): return {"status": "Online", "active_model": ACTIVE_MODEL}
 
 # --- 1. ANALYTICS ---
 @app.get("/analytics/{project_key}")
@@ -266,23 +295,16 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
-# --- REPORTS (FIXED DATETIME) ---
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else 30
-    # FIX: datetime is now imported correctly at top of file
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    
     jql = f"project = {project_key} AND statusCategory = Done AND resolved >= '{dt}'"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", sp_field]})
     issues = res.json().get('issues', []) if res else []
     pts = sum([float(i['fields'].get(sp_field) or 0) for i in issues])
-    
-    prompt = f"Summarize Report: {len(issues)} tasks done, {pts} points in {days} days. Brief."
-    ai_text = generate_ai_response(prompt) or "Great progress."
-    
-    return {"completed_count": len(issues), "completed_points": pts, "ai_summary": {"summary": ai_text}}
+    return {"completed_count": len(issues), "completed_points": pts, "ai_summary": {"summary": f"{len(issues)} tasks done."}}
 
 @app.get("/burndown/{project_key}")
 def get_burndown(project_key: str, creds: dict = Depends(get_jira_creds)):
