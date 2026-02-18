@@ -1,10 +1,9 @@
 from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import requests, json, time, re, os
-import google.generativeai as genai
+from google import genai
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -19,8 +18,14 @@ app.add_middleware(
 )
 
 # --- CONFIGURATION ---
-# Ensure your .env has the Paid API Key
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# Initialize the NEW GenAI Client
+# Ensure GEMINI_API_KEY is in your .env or Render Environment Variables
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    print("❌ CRITICAL: GEMINI_API_KEY is missing!")
+
+client = genai.Client(api_key=api_key)
+
 STORY_POINT_CACHE = {} 
 RETRO_FILE = "retro_data.json"
 
@@ -30,31 +35,32 @@ async def get_jira_creds(
     x_jira_email: str = Header(...),
     x_jira_token: str = Header(...)
 ):
-    # CLEANUP: Remove protocol if user added it
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- AI CORE: FAILSAFE MODEL SELECTION ---
+# --- AI CORE: NEW SDK LOGIC ---
 def generate_ai_response(prompt, temperature=0.3):
     """
-    Tries 3 generations of models to ensure we NEVER get a 404.
+    Uses the new Google GenAI SDK to fetch responses.
+    Prioritizes Gemini 1.5 Pro (Paid/Smart) -> Flash (Fast).
     """
-    # 1. Try the Paid/Best Model First
-    # 2. Try the Fast/Standard Model
-    # 3. Try the Legacy Model (Failsafe)
-    models_to_try = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
+    # List of models to try in order of intelligence
+    models_to_try = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
     
     for model_name in models_to_try:
         try:
-            model = genai.GenerativeModel(model_name, generation_config={"temperature": temperature})
-            response = model.generate_content(prompt)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config={"temperature": temperature}
+            )
             print(f"✅ Success using model: {model_name}")
             return response.text
         except Exception as e:
             print(f"⚠️ Failed on {model_name}: {e}")
             continue # Try next model
             
-    return '{"error": "All AI models failed. Please check API Key billing."}'
+    return '{"executive_summary": "AI Service Unreachable. Check API Key.", "risk_level": "Unknown", "key_recommendation": "Contact Support."}'
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, creds, data=None):
@@ -114,18 +120,22 @@ def estimate_story_points(summary, description):
 
 # --- DATA STORAGE ---
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE): return {}
+    if not os.path.exists(RETRO_FILE): 
+        return {}
     try:
-        with open(RETRO_FILE, "r") as f: return json.load(f)
-    except: return {}
+        with open(RETRO_FILE, "r") as f: 
+            return json.load(f)
+    except: 
+        return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f: json.dump(data, f)
+    with open(RETRO_FILE, "w") as f: 
+        json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "IG Agile Brain Online 🧠"}
+def home(): return {"status": "IG Agile Brain Online 🧠 (GenAI SDK)"}
 
 # --- 1. DEEP SPRINT ANALYTICS ---
 @app.get("/analytics/{project_key}")
@@ -186,7 +196,7 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     RETURN JSON ONLY:
     {{
         "executive_summary": "Professional summary (2 sentences). Mention goal and health.",
-        "risk_level": "Low/Medium/High",
+        "risk_level": "Low" | "Medium" | "High",
         "key_recommendation": "Strategic advice for the Scrum Master."
     }}
     """
@@ -246,7 +256,7 @@ async def post_standup(payload: dict, creds: dict = Depends(get_jira_creds)):
     jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 Standup: {msg}"}]}]}})
     return {"status": "posted"}
 
-# --- 6. RETRO ---
+# --- 6. RETRO & OTHERS ---
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str):
     data = load_retro_data()
