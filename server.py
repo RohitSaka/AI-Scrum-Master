@@ -128,7 +128,7 @@ def estimate_story_points(summary, description):
     except:
         return None
 
-# --- DATA STORAGE HANDLERS ---
+# --- DATA STORAGE HANDLERS (FIXED SYNTAX) ---
 def load_retro_data():
     if not os.path.exists(RETRO_FILE): 
         return {}
