@@ -47,7 +47,7 @@ def find_working_model():
         response = requests.get(url)
         if response.status_code != 200:
             print(f"❌ Failed to list models. Error: {response.text}")
-            return "models/gemini-1.5-flash" # Last resort fallback
+            return "gemini-1.5-flash" # Last resort fallback
 
         data = response.json()
         available_models = [m['name'] for m in data.get('models', []) if 'generateContent' in m['supportedGenerationMethods']]
@@ -138,14 +138,19 @@ def estimate_story_points(summary, description):
     try: return json.loads(raw.replace('```json','').replace('```','').strip())
     except: return None
 
-# --- DATA STORAGE ---
+# --- DATA STORAGE (FIXED SYNTAX ERROR HERE) ---
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE): return {}
-    try: with open(RETRO_FILE, "r") as f: return json.load(f)
-    except: return {}
+    if not os.path.exists(RETRO_FILE): 
+        return {}
+    try: 
+        with open(RETRO_FILE, "r") as f: 
+            return json.load(f)
+    except: 
+        return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f: json.dump(data, f)
+    with open(RETRO_FILE, "w") as f: 
+        json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
