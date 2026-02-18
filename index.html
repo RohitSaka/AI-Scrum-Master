@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IG AI Agile Platform</title>
+    <title>IG Agile Intelligence</title>
+    
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -13,24 +14,80 @@
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
     <style>
-        :root { --ig-cyan: #22d3ee; --ig-yellow: #facc15; --ig-magenta: #e879f9; --ig-navy: #0f172a; }
-        body { font-family: 'Inter', sans-serif; transition: background-color 0.3s, color 0.3s; }
-
-        .light-mode { background-color: #f8fafc; color: #0f172a; --bg-sidebar: #ffffff; --bg-card: #ffffff; --text-main: #0f172a; --text-muted: #64748b; --border-color: #e2e8f0; }
-        .dark-mode {
-            background-color: var(--ig-navy); color: #f8fafc;
-            --bg-sidebar: #020617; --bg-card: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8; --border-color: #334155;
-            background-image: radial-gradient(circle at 10% 20%, rgba(34, 211, 238, 0.05), transparent 30%), radial-gradient(circle at 90% 80%, rgba(232, 121, 249, 0.05), transparent 30%);
+        /* --- BRANDING & THEME VARIABLES --- */
+        :root { 
+            --ig-cyan: #22d3ee; 
+            --ig-yellow: #facc15; 
+            --ig-magenta: #e879f9; 
+            --ig-navy: #0f172a; 
         }
         
-        .active-tab { background: rgba(34, 211, 238, 0.1); border-left: 4px solid var(--ig-cyan); color: var(--text-main); }
-        .glass-card { background: var(--bg-card); border: 1px solid var(--border-color); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .sticky-note { cursor: grab; transition: transform 0.2s; box-shadow: 0 4px 10px rgba(0,0,0,0.1); color: #1e293b; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            transition: background-color 0.3s, color 0.3s; 
+            overflow: hidden; /* App-like feel */
+        }
+
+        /* Dark Mode (Default) */
+        .dark-mode {
+            background-color: var(--ig-navy); color: #f8fafc;
+            --bg-sidebar: #020617; 
+            --bg-card: #1e293b; 
+            --text-main: #f8fafc; 
+            --text-muted: #94a3b8; 
+            --border-color: #334155;
+            /* Subtle Enterprise Mesh Gradient */
+            background-image: radial-gradient(circle at 10% 20%, rgba(34, 211, 238, 0.05), transparent 30%), 
+                              radial-gradient(circle at 90% 80%, rgba(232, 121, 249, 0.05), transparent 30%);
+        }
+
+        /* Light Mode */
+        .light-mode {
+            background-color: #f8fafc; color: #0f172a;
+            --bg-sidebar: #ffffff; 
+            --bg-card: #ffffff; 
+            --text-main: #0f172a; 
+            --text-muted: #64748b; 
+            --border-color: #e2e8f0;
+        }
+        
+        /* UI Components */
+        .active-tab { 
+            background: rgba(34, 211, 238, 0.1); 
+            border-left: 4px solid var(--ig-cyan); 
+            color: var(--text-main); 
+        }
+        
+        .glass-card { 
+            background: var(--bg-card); 
+            border: 1px solid var(--border-color); 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+        }
+        
+        .sticky-note { 
+            cursor: grab; 
+            transition: transform 0.2s; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+            color: #1e293b; 
+        }
         .sticky-green { background: #dcfce7; border-left: 4px solid #22c55e; }
         .sticky-red { background: #fee2e2; border-left: 4px solid #ef4444; }
         .sticky-yellow { background: #fef9c3; border-left: 4px solid #eab308; }
         .sticky-blue { background: #dbeafe; border-left: 4px solid #3b82f6; }
+
+        .chat-bubble { position: fixed; bottom: 20px; right: 20px; z-index: 50; }
+        
+        /* Loading Animation */
+        .loader {
+            border: 4px solid rgba(255,255,255,0.1);
+            border-left-color: var(--ig-cyan);
+            border-radius: 50%;
+            width: 30px; height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body class="dark-mode">
@@ -39,18 +96,163 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const { motion, AnimatePresence } = window.Motion;
+        
+        // 🔹 IMPORTANT: POINT THIS TO YOUR RENDER SERVER URL
         const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
 
+        // -----------------------------------------------------------
+        // 🔒 SECURITY LAYER: THE VALET KEY
+        // -----------------------------------------------------------
+        const secureFetch = async (endpoint, options = {}) => {
+            const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
+            
+            // Gatekeeper: Ensure keys exist before making a call
+            if (!config.license || !config.domain || !config.email || !config.token) {
+                throw new Error("No Credentials");
+            }
+
+            const headers = {
+                'Content-Type': 'application/json',
+                // PASSING KEYS SECURELY IN HEADERS
+                'x-license-key': config.license,
+                'x-jira-domain': config.domain,
+                'x-jira-email': config.email,
+                'x-jira-token': config.token,
+                ...options.headers
+            };
+
+            try {
+                const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+                
+                if (res.status === 403 || res.status === 401) {
+                    alert("🚫 Access Denied: Invalid License or Credentials.");
+                    localStorage.removeItem('ig_config'); // Force logout for security
+                    window.location.reload();
+                    return null;
+                }
+                return res;
+            } catch (err) {
+                console.error("API Error:", err);
+                return null;
+            }
+        };
+
         const IGLogo = () => (
-            <div class="flex gap-1"><div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)]"></div><div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)]"></div><div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)]"></div></div>
+            <div class="flex gap-1">
+                <div class="w-3 h-3 rounded-full bg-[var(--ig-cyan)] shadow-[0_0_8px_var(--ig-cyan)]"></div>
+                <div class="w-3 h-3 rounded-full bg-[var(--ig-yellow)] shadow-[0_0_8px_var(--ig-yellow)]"></div>
+                <div class="w-3 h-3 rounded-full bg-[var(--ig-magenta)] shadow-[0_0_8px_var(--ig-magenta)]"></div>
+            </div>
         );
 
+        // -----------------------------------------------------------
+        // 🚀 MAIN APPLICATION CONTROLLER
+        // -----------------------------------------------------------
         function App() {
-            const [view, setView] = useState('retro');
-            const [project, setProject] = useState('SCRUM');
-            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+            // Check if user has already "Registered" (Saved keys locally)
+            const [isConfigured, setIsConfigured] = useState(!!localStorage.getItem('ig_config'));
+
+            if (!isConfigured) {
+                return <LoginScreen onLogin={() => setIsConfigured(true)} />;
+            }
+
+            return <DashboardLayout />;
+        }
+
+        // -----------------------------------------------------------
+        // 🔑 SCREEN 1: LOGIN / CONFIGURATION (The "Registering" Step)
+        // -----------------------------------------------------------
+        function LoginScreen({ onLogin }) {
+            const [form, setForm] = useState({ license: '', domain: '', email: '', token: '' });
+            const [loading, setLoading] = useState(false);
+
+            const save = async () => {
+                if (!form.license || !form.domain || !form.email || !form.token) {
+                    return alert("Please fill in all fields to connect.");
+                }
+                setLoading(true);
+                
+                // Simulate verification (optional: ping server to check license validity here)
+                // For now, we save locally and let the first API call verify.
+                localStorage.setItem('ig_config', JSON.stringify(form));
+                
+                setTimeout(() => {
+                    setLoading(false);
+                    onLogin();
+                }, 800);
+            };
+
+            return (
+                <div class="h-screen flex items-center justify-center bg-slate-900 text-white">
+                    <motion.div 
+                        initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+                        class="w-96 glass-card p-8 rounded-2xl border border-slate-700 shadow-2xl"
+                    >
+                        <div class="text-center mb-8">
+                            <div class="flex justify-center mb-4"><IGLogo /></div>
+                            <h1 class="text-2xl font-black tracking-tighter">IG AGILE SETUP</h1>
+                            <p class="text-xs text-slate-400 mt-1">Enterprise AI Configuration</p>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--ig-magenta)] uppercase">License Key</label>
+                                <input value={form.license} onChange={e=>setForm({...form, license:e.target.value})} placeholder="IG-XXXX-XXXX" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-magenta)] text-sm" />
+                            </div>
+                            
+                            <div class="h-px bg-slate-700 my-2"></div>
+                            
+                            <div>
+                                <label class="text-[10px] font-bold text-[var(--ig-cyan)] uppercase">Jira Domain</label>
+                                <input value={form.domain} onChange={e=>setForm({...form, domain:e.target.value})} placeholder="company.atlassian.net" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-cyan)] text-sm" />
+                            </div>
+                            
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">Jira Email</label>
+                                <input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="you@company.com" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-cyan)] text-sm" />
+                            </div>
+                            
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-500 uppercase">API Token</label>
+                                <input type="password" value={form.token} onChange={e=>setForm({...form, token:e.target.value})} placeholder="Atlassian API Token" class="w-full p-3 bg-slate-800 rounded border border-slate-600 outline-none focus:border-[var(--ig-cyan)] text-sm" />
+                                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" class="text-[10px] text-blue-400 hover:underline mt-1 block text-right">Get Token Here ↗</a>
+                            </div>
+
+                            <button onClick={save} disabled={loading} class="w-full mt-4 bg-gradient-to-r from-[var(--ig-cyan)] to-[var(--ig-magenta)] text-white font-bold p-3 rounded-xl hover:opacity-90 transition shadow-lg flex justify-center">
+                                {loading ? <div class="loader w-5 h-5 border-2"></div> : "Connect & Initialize"}
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            );
+        }
+
+        // -----------------------------------------------------------
+        // 🖥️ SCREEN 2: MAIN DASHBOARD (The Product)
+        // -----------------------------------------------------------
+        function DashboardLayout() {
+            const [view, setView] = useState('dashboard');
+            const [projectList, setProjectList] = useState([]);
+            const [activeProject, setActiveProject] = useState(null);
             const [theme, setTheme] = useState('dark');
-            const [selectedTask, setSelectedTask] = useState(null);
+            const [selectedTask, setSelectedTask] = useState(null); // Drawer
+            const [isChatOpen, setIsChatOpen] = useState(false); // Chat
+
+            // 1. Fetch User's Projects on Load
+            useEffect(() => {
+                secureFetch('/projects')
+                    .then(res => res ? res.json() : [])
+                    .then(data => {
+                        if (data && data.length > 0) {
+                            setProjectList(data);
+                            setActiveProject(data[0].key);
+                        } else {
+                            // Fallback if no projects found or error
+                            setProjectList([{key: 'DEMO', name: 'Demo Project'}]);
+                            setActiveProject('DEMO');
+                        }
+                    });
+            }, []);
 
             const toggleTheme = () => {
                 const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -58,80 +260,86 @@
                 document.body.className = newTheme === 'dark' ? 'dark-mode' : 'light-mode';
             };
 
+            const logout = () => {
+                if(confirm("Disconnect account and clear keys?")) {
+                    localStorage.removeItem('ig_config');
+                    window.location.reload();
+                }
+            };
+
             return (
                 <div class="flex h-screen overflow-hidden">
-                    <header class="md:hidden flex items-center justify-between p-4 border-b z-20 absolute w-full top-0 glass-card">
-                        <div class="flex items-center gap-3 font-bold"><IGLogo /><span class="tracking-wide text-[var(--text-main)]">IG AGILE</span></div>
-                        <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} class="text-[var(--text-main)]">☰</button>
-                    </header>
-
-                    <aside class={`fixed md:relative z-30 h-full w-64 flex flex-col justify-between transition-transform duration-300 border-r ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`} style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-color)'}}>
+                    {/* SIDEBAR */}
+                    <aside class="w-64 flex flex-col justify-between border-r transition-colors duration-300" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-color)'}}>
                         <div>
-                            <div class="p-6 hidden md:block">
+                            <div class="p-6">
                                 <div class="flex items-center gap-3 mb-2"><IGLogo /><h1 class="text-2xl font-black text-[var(--text-main)]">IG AGILE</h1></div>
-                                <p class="text-xs text-[var(--text-muted)] font-mono pl-1">Enterprise v5.0</p>
+                                <p class="text-xs text-[var(--text-muted)] font-mono pl-1 flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full bg-green-500"></span> Connected
+                                </p>
                             </div>
-                            <nav class="mt-4 md:mt-4 pt-16 md:pt-0 space-y-1 px-2">
+                            <nav class="space-y-1 px-2 mt-4">
                                 <NavBtn id="dashboard" icon="📊" label="Command Center" active={view} set={setView} />
                                 <NavBtn id="timeline" icon="🗓️" label="Timeline" active={view} set={setView} />
-                                <NavBtn id="standup" icon="🤖" label="Standup Bot" active={view} set={setView} />
+                                <NavBtn id="standup" icon="🤖" label="Standup & Time" active={view} set={setView} />
                                 <NavBtn id="retro" icon="🧘" label="Retrospective" active={view} set={setView} />
                                 <NavBtn id="burndown" icon="📉" label="Burndown" active={view} set={setView} />
                                 <NavBtn id="reports" icon="📑" label="Reports" active={view} set={setView} />
                             </nav>
                         </div>
-                        <div class="p-4 border-t" style={{borderColor: 'var(--border-color)'}}>
-                             <button onClick={toggleTheme} class="w-full mb-4 p-2 rounded flex items-center justify-center gap-2 border text-xs font-bold uppercase tracking-wider" style={{borderColor: 'var(--border-color)', color: 'var(--text-muted)'}}>{theme === 'dark' ? '☀️ Light' : '🌙 Dark'}</button>
-                             <select value={project} onChange={(e) => setProject(e.target.value)} class="w-full p-2 rounded border outline-none" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border-color)'}}>
-                                <option value="SCRUM">Provider Services</option>
-                                <option value="OT">Ops Team</option>
-                            </select>
+                        
+                        <div class="p-4 border-t space-y-4" style={{borderColor: 'var(--border-color)'}}>
+                             {/* THEME TOGGLE */}
+                             <button onClick={toggleTheme} class="w-full p-2 rounded flex items-center justify-center gap-2 border text-xs font-bold uppercase tracking-wider transition hover:opacity-80" style={{borderColor: 'var(--border-color)', color: 'var(--text-muted)'}}>
+                                {theme === 'dark' ? '☀️ Light Mode' : '🌙 Dark Mode'}
+                             </button>
+
+                             {/* PROJECT SELECTOR */}
+                             <div>
+                                 <label class="text-[10px] font-bold text-[var(--text-muted)] uppercase mb-1 block">Active Project</label>
+                                 <select value={activeProject || ''} onChange={(e) => setActiveProject(e.target.value)} class="w-full p-2 rounded border outline-none text-sm cursor-pointer" style={{backgroundColor: 'var(--bg-card)', color: 'var(--text-main)', borderColor: 'var(--border-color)'}}>
+                                    {projectList.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
+                                </select>
+                             </div>
+
+                             <button onClick={logout} class="text-[10px] text-red-400 hover:text-red-500 w-full text-center">Log Out</button>
                         </div>
                     </aside>
 
-                    <main class="flex-1 overflow-auto pt-16 md:pt-0 relative">
-                        <div class="p-6 md:p-10 max-w-7xl mx-auto h-full">
-                            {view === 'dashboard' && <DashboardView project={project} />}
-                            {view === 'timeline' && <TimelineView project={project} onTaskClick={setSelectedTask} />}
-                            {view === 'retro' && <RetroView project={project} />}
-                            {view === 'standup' && <StandupView project={project} />}
-                            {view === 'burndown' && <BurndownView project={project} />}
-                            {view === 'reports' && <ReportsView project={project} />}
-                        </div>
+                    {/* MAIN CONTENT AREA */}
+                    <main class="flex-1 overflow-auto p-8 relative">
+                        {activeProject ? (
+                            <>
+                                {view === 'dashboard' && <DashboardView project={activeProject} />}
+                                {view === 'timeline' && <TimelineView project={activeProject} onTaskClick={setSelectedTask} />}
+                                {view === 'standup' && <StandupView project={activeProject} />}
+                                {view === 'retro' && <RetroView project={activeProject} />}
+                                {view === 'burndown' && <BurndownView project={activeProject} />}
+                                {view === 'reports' && <ReportsView project={activeProject} />}
+                            </>
+                        ) : <LoadingScreen />}
                     </main>
 
-                    <AnimatePresence>
-                        {selectedTask && (
-                            <>
-                                <motion.div initial={{opacity:0}} animate={{opacity:0.5}} exit={{opacity:0}} onClick={() => setSelectedTask(null)} class="fixed inset-0 bg-black z-40" />
-                                <motion.div initial={{x:"100%"}} animate={{x:0}} exit={{x:"100%"}} transition={{type:"spring", damping:25}} class="fixed right-0 top-0 h-full w-96 z-50 p-6 shadow-2xl overflow-y-auto" style={{backgroundColor: 'var(--bg-sidebar)', borderLeft: '1px solid var(--border-color)'}}>
-                                    <div class="flex justify-between items-start mb-6"><h2 class="text-xl font-bold text-[var(--text-main)]">{selectedTask.key}</h2><button onClick={() => setSelectedTask(null)} class="text-[var(--text-muted)]">✕</button></div>
-                                    <div class="space-y-6">
-                                        <div><label class="text-[10px] uppercase font-bold text-[var(--text-muted)]">Summary</label><p class="text-[var(--text-main)] text-lg font-medium">{selectedTask.summary}</p></div>
-                                        <div class="glass-card p-4 rounded-xl space-y-4">
-                                            <div><label class="text-[10px] uppercase font-bold text-[var(--ig-cyan)] block mb-1">Due Date</label><input type="date" defaultValue={selectedTask.end} onChange={(e) => fetch(`${API_BASE}/issue/update`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:selectedTask.key,field:'duedate',value:e.target.value})})} class="w-full p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /></div>
-                                            <div><label class="text-[10px] uppercase font-bold text-[var(--ig-magenta)] block mb-1">Assignee</label><input type="text" placeholder="Enter username..." onKeyDown={(e) => {if(e.key==='Enter') fetch(`${API_BASE}/issue/update`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:selectedTask.key,field:'assignee',value:e.target.value})}).then(()=>alert("Updated!"))}} class="w-full p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /></div>
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            </>
-                        )}
-                    </AnimatePresence>
+                    {/* INTERACTIVE OVERLAYS */}
+                    <InspectorDrawer task={selectedTask} onClose={() => setSelectedTask(null)} />
+                    <AIChatBubble isOpen={isChatOpen} toggle={() => setIsChatOpen(!isChatOpen)} project={activeProject} />
                 </div>
             );
         }
 
+        // --- HELPER COMPONENT FOR NAV ---
         const NavBtn = ({ id, icon, label, active, set }) => (
             <button onClick={() => set(id)} class={`w-full text-left p-3 rounded-lg transition flex items-center gap-3 text-sm font-medium ${active === id ? 'active-tab shadow-lg' : 'text-[var(--text-muted)] hover:bg-opacity-10 hover:bg-white'}`}>
                 <span class="text-lg">{icon}</span> {label}
             </button>
         );
 
-        // --- DASHBOARD ---
+        // --- 1. DASHBOARD VIEW ---
         function DashboardView({ project }) {
             const [data, setData] = useState(null);
-            useEffect(() => { fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData); }, [project]);
+            useEffect(() => { secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(setData); }, [project]);
             if (!data) return <LoadingScreen />;
+            
             return (
                 <div class="animate-fade-in space-y-8">
                     <header><h2 class="text-3xl font-bold text-[var(--text-main)]">Command Center</h2></header>
@@ -142,32 +350,37 @@
                         <MetricCard label="Team" value={Object.keys(data.metrics.assignees).length} color="border-[var(--ig-yellow)]" />
                     </div>
                     <div class="glass-card rounded-xl p-6 relative overflow-hidden">
-                        <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase text-xs">AI Analysis</h3>
+                        <h3 class="font-bold text-[var(--ig-yellow)] mb-2 uppercase text-xs">AI Executive Analysis</h3>
                         <p class="text-[var(--text-main)] leading-relaxed text-lg font-light">"{data.ai_insights.sprint_summary}"</p>
                     </div>
                 </div>
             );
         }
 
-        // --- TIMELINE ---
+        // --- 2. TIMELINE VIEW ---
         function TimelineView({ project, onTaskClick }) {
             const [data, setData] = useState(null);
-            useEffect(() => { fetch(`${API_BASE}/analytics/${project}`).then(r=>r.json()).then(setData); }, [project]);
+            useEffect(() => { secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(setData); }, [project]);
             if (!data) return <LoadingScreen />;
+            
             return (
                 <div class="animate-fade-in">
                     <h2 class="text-3xl font-bold text-[var(--text-main)] mb-6">Timeline</h2>
-                    <div class="glass-card rounded-xl overflow-hidden shadow-2xl">
+                    <div class="glass-card rounded-xl overflow-hidden shadow-xl">
                         {Object.entries(data.metrics.assignees).map(([name, stats]) => (
                             <div key={name} class="grid grid-cols-[200px_1fr] border-b" style={{borderColor: 'var(--border-color)'}}>
-                                <div class="p-4 border-r flex flex-col justify-center" style={{borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)'}}>
-                                    <div class="flex items-center gap-2"><img src={stats.avatar} class="w-6 h-6 rounded-full" /><span class="text-[var(--text-main)] text-xs font-bold truncate">{name.split(" ")[0]}</span></div>
-                                    <div class="text-[10px] text-[var(--text-muted)] mt-1">{stats.points} pts</div>
+                                <div class="p-4 border-r" style={{borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)'}}>
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <img src={stats.avatar} class="w-6 h-6 rounded-full" />
+                                        <span class="text-[var(--text-main)] text-xs font-bold truncate">{name.split(" ")[0]}</span>
+                                    </div>
+                                    <div class="w-full h-1 rounded-full bg-slate-700/20"><div class="h-1 rounded-full bg-[var(--ig-cyan)]" style={{width: `${Math.min(100, (stats.points/20)*100)}%`}}></div></div>
                                 </div>
                                 <div class="p-2 flex flex-wrap gap-2" style={{backgroundColor: 'var(--bg-sidebar)'}}>
                                     {stats.tasks.map(t => (
-                                        <div key={t.key} onClick={() => onTaskClick(t)} class="p-2 rounded border-l-2 cursor-pointer transition hover:brightness-110" style={{backgroundColor:'rgba(34,211,238,0.1)', borderColor:'var(--ig-cyan)', color:'var(--ig-cyan)'}}>
-                                            <div class="text-[10px] font-bold">{t.key}</div>
+                                        <div key={t.key} onClick={() => onTaskClick(t)} class="p-2 rounded border-l-2 cursor-pointer hover:scale-105 transition shadow-sm bg-[var(--bg-card)]" style={{borderColor: 'var(--ig-cyan)'}}>
+                                            <div class="text-[10px] font-bold text-[var(--text-main)]">{t.key}</div>
+                                            <div class="text-[10px] text-[var(--text-muted)] truncate w-20">{t.summary}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -178,7 +391,47 @@
             );
         }
 
-        // --- RETRO (SPRINT AWARE + AI AGENT) ---
+        // --- 3. STANDUP VIEW ---
+        function StandupView({ project }) {
+            const [tasks, setTasks] = useState([]);
+            const [curr, setCurr] = useState(0);
+            const [reply, setReply] = useState("");
+            const [hist, setHist] = useState([]);
+
+            useEffect(() => {
+                secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(d => {
+                    if(d) {
+                        const all = Object.values(d.metrics.assignees).flatMap(u => u.tasks);
+                        setTasks(all);
+                        if(all.length) setHist([{sender:'bot', text:`Hi! Found ${all.length} tasks. Status on ${all[0].key}? (Type '2h' to log time)`}]);
+                    }
+                });
+            }, [project]);
+
+            const send = () => {
+                if(!reply) return;
+                const task = tasks[curr];
+                setHist([...hist, {sender:'user', text:reply}]);
+                setReply("");
+                secureFetch(`/standup/post`, {method:'POST', body:JSON.stringify({key:task.key, message:reply})}).then(r=>r.json()).then(d => {
+                    const extra = d.time_logged ? `✅ Logged ${d.time_logged}.` : "";
+                    if(curr+1 < tasks.length) { setCurr(curr+1); setHist(prev => [...prev, {sender:'bot', text:`Logged. ${extra} Next: ${tasks[curr+1].key}?`}]); }
+                    else setHist(prev => [...prev, {sender:'bot', text:`All Done! ${extra} 🚀`}]);
+                });
+            };
+
+            return (
+                <div class="max-w-2xl mx-auto h-[600px] flex flex-col glass-card rounded-xl overflow-hidden">
+                    <div class="p-4 border-b flex items-center gap-3" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-sidebar)'}}><div class="text-2xl">🤖</div><div><h3 class="font-bold text-[var(--text-main)]">Standup Bot</h3><p class="text-xs text-[var(--text-muted)]">Auto-syncs to Jira</p></div></div>
+                    <div class="flex-1 overflow-y-auto p-6 space-y-4">
+                        {hist.map((m, i) => <div key={i} class={`flex ${m.sender==='user'?'justify-end':'justify-start'}`}><div class={`max-w-[80%] p-3 rounded-xl text-sm ${m.sender==='user'?'bg-[var(--ig-cyan)] text-slate-900':'bg-slate-700 text-white'}`}>{m.text}</div></div>)}
+                    </div>
+                    <div class="p-4 border-t flex gap-2" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-sidebar)'}}><input value={reply} onChange={e=>setReply(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send()} placeholder="Update..." class="flex-1 p-3 rounded-lg border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /><button onClick={send} class="bg-[var(--ig-cyan)] text-slate-900 px-6 font-bold rounded-lg">Send</button></div>
+                </div>
+            );
+        }
+
+        // --- 4. RETRO VIEW ---
         function RetroView({ project }) {
             const [sprints, setSprints] = useState([]);
             const [activeSprint, setActiveSprint] = useState(null);
@@ -187,62 +440,66 @@
             const [col, setCol] = useState("well");
             const [loadingAI, setLoadingAI] = useState(false);
 
-            useEffect(() => { fetch(`${API_BASE}/sprints/${project}`).then(r=>r.json()).then(d => { setSprints(d); if(d.length) setActiveSprint(d[0].id); }); }, [project]);
-            useEffect(() => { if(activeSprint) fetch(`${API_BASE}/retro/${project}?sprint_id=${activeSprint}`).then(r=>r.json()).then(setBoard); }, [project, activeSprint]);
+            useEffect(() => { secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { setSprints(d); if(d.length) setActiveSprint(d[0].id); }); }, [project]);
+            useEffect(() => { if(activeSprint) secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r=>r?.json()).then(setBoard); }, [project, activeSprint]);
 
-            const save = (nb) => { setBoard(nb); fetch(`${API_BASE}/retro/update`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({project, sprint:activeSprint, board:nb})}); };
+            const save = (nb) => { setBoard(nb); secureFetch(`/retro/update`, {method:'POST', body:JSON.stringify({project, sprint:activeSprint, board:nb})}); };
             const add = () => { if(!input) return; save({...board, [col]: [...board[col], {id:Date.now(), text:input}]}); setInput(""); };
-            const genActions = () => { setLoadingAI(true); fetch(`${API_BASE}/retro/generate_actions`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions:[...board.actions, ...d.actions]}); setLoadingAI(false); }); };
-            const promote = (txt) => fetch(`${API_BASE}/retro/promote`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({project, text:txt})}).then(()=>alert("Ticket Created!"));
+            const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions:[...board.actions, ...d.actions]}); setLoadingAI(false); }); };
+            const promote = (txt) => secureFetch(`/retro/promote`, {method:'POST', body:JSON.stringify({project, text:txt})}).then(()=>alert("Ticket Created!"));
             const del = (c, id) => save({...board, [c]: board[c].filter(i=>i.id!==id)});
 
             return (
                 <div class="h-full flex flex-col pb-10">
-                    <div class="flex justify-between items-center mb-6">
-                        <div class="flex items-center gap-4">
-                            <h2 class="text-3xl font-bold text-[var(--text-main)]">Retrospective</h2>
-                            <select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} class="p-2 rounded border outline-none text-sm" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}}>{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-                        </div>
-                    </div>
-                    <div class="flex gap-2 mb-6">
-                        <div class="flex gap-1 p-1 rounded-lg border" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-card)'}}>{['well', 'improve', 'kudos'].map(c=><button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c?'bg-[var(--ig-cyan)] text-slate-900':'text-[var(--text-muted)]'}`}>{c}</button>)}</div>
-                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder={`Add to ${col}...`} class="flex-1 p-3 rounded-lg border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} />
-                        <button onClick={add} class="bg-[var(--ig-cyan)] text-slate-900 px-6 rounded-lg font-bold">Post</button>
-                    </div>
+                    <div class="flex justify-between mb-6"><div class="flex gap-4"><h2 class="text-3xl font-bold text-[var(--text-main)]">Retrospective</h2><select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} class="p-2 rounded border outline-none text-sm" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}}>{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div></div>
+                    <div class="flex gap-2 mb-6"><div class="flex gap-1 p-1 rounded-lg border" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-card)'}}>{['well', 'improve', 'kudos'].map(c=><button key={c} onClick={()=>setCol(c)} class={`px-4 py-2 rounded text-sm font-bold capitalize ${col===c?'bg-[var(--ig-cyan)] text-slate-900':'text-[var(--text-muted)]'}`}>{c}</button>)}</div><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Add note..." class="flex-1 p-3 rounded-lg border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /><button onClick={add} class="bg-[var(--ig-cyan)] text-slate-900 px-6 rounded-lg font-bold">Post</button></div>
                     <div class="grid grid-cols-4 gap-4 flex-1 min-h-0">
-                        <RetroColumn title="🚀 Went Well" items={board.well} color="sticky-green" onDel={id=>del('well',id)} />
-                        <RetroColumn title="🔥 Improve" items={board.improve} color="sticky-red" onDel={id=>del('improve',id)} />
-                        <RetroColumn title="🏆 Kudos" items={board.kudos} color="sticky-yellow" onDel={id=>del('kudos',id)} />
-                        <div class="glass-card p-4 rounded-xl flex flex-col border-l-4 border-[var(--ig-cyan)]">
-                            <h3 class="font-bold text-[var(--ig-cyan)] uppercase text-xs mb-4 flex justify-between">Actions <button onClick={genActions} disabled={loadingAI} class="bg-[var(--ig-cyan)]/20 px-2 rounded text-[10px]">{loadingAI?"Thinking...":"✨ Generate"}</button></h3>
-                            <div class="overflow-y-auto space-y-3 flex-1">{board.actions.map(i=><motion.div key={i.id} initial={{opacity:0}} animate={{opacity:1}} class="sticky-note p-3 rounded bg-blue-100 relative group"><p class="text-sm">{i.text}</p><button onClick={()=>promote(i.text)} class="mt-2 w-full py-1 bg-blue-200 text-blue-900 rounded text-xs font-bold">Ticket</button><button onClick={()=>del('actions',i.id)} class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs">✕</button></motion.div>)}</div>
-                        </div>
+                        {['well', 'improve', 'kudos'].map(c => <div key={c} class="glass-card p-4 rounded-xl overflow-y-auto space-y-3"><h3 class="font-bold text-[var(--text-muted)] uppercase text-xs mb-4">{c}</h3>{board[c].map(i=><div key={i.id} class="sticky-note p-4 rounded-lg bg-white text-slate-900 relative group"><p class="text-sm">{i.text}</p><button onClick={()=>del(c,i.id)} class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs text-red-500">✕</button></div>)}</div>)}
+                        <div class="glass-card p-4 rounded-xl flex flex-col border-l-4 border-[var(--ig-cyan)]"><h3 class="font-bold text-[var(--ig-cyan)] uppercase text-xs mb-4 flex justify-between">Actions <button onClick={genActions} disabled={loadingAI} class="bg-[var(--ig-cyan)]/20 px-2 rounded text-[10px]">{loadingAI?"Thinking...":"✨ Generate"}</button></h3><div class="overflow-y-auto space-y-3 flex-1">{board.actions.map(i=><div key={i.id} class="sticky-note p-3 rounded bg-blue-100 text-blue-900 relative group"><p class="text-sm">{i.text}</p><button onClick={()=>promote(i.text)} class="mt-2 w-full py-1 bg-blue-200 text-blue-900 rounded text-xs font-bold">Ticket</button><button onClick={()=>del('actions',i.id)} class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 text-xs">✕</button></div>)}</div></div>
                     </div>
                 </div>
             );
         }
 
-        function RetroColumn({ title, items, color, onDel }) {
+        // --- UTILS: DRAWER & CHAT ---
+        function InspectorDrawer({ task, onClose }) {
+            if (!task) return null;
             return (
-                <div class="glass-card p-4 rounded-xl flex flex-col overflow-hidden">
-                    <h3 class="font-bold text-[var(--text-muted)] uppercase text-xs mb-4 flex justify-between border-b pb-2" style={{borderColor: 'var(--border-color)'}}>{title} <span>{items.length}</span></h3>
-                    <div class="overflow-y-auto space-y-3 flex-1 pr-2">
-                        <AnimatePresence>{items.map(i => <motion.div key={i.id} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} class={`sticky-note p-4 rounded-lg relative group ${color}`}><p class="text-sm font-medium">{i.text}</p><button onClick={()=>onDel(i.id)} class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 bg-black/10 rounded w-5 h-5 flex items-center justify-center text-xs">✕</button></motion.div>)}</AnimatePresence>
-                    </div>
+                <>
+                    <div onClick={onClose} class="fixed inset-0 bg-black/50 z-40"></div>
+                    <motion.div initial={{x:"100%"}} animate={{x:0}} class="fixed right-0 top-0 h-full w-96 z-50 p-6 shadow-2xl overflow-y-auto border-l" style={{backgroundColor: 'var(--bg-sidebar)', borderColor: 'var(--border-color)'}}>
+                        <div class="flex justify-between mb-6"><h2 class="text-xl font-bold text-[var(--text-main)]">{task.key}</h2><button onClick={onClose}>✕</button></div>
+                        <div class="space-y-6">
+                            <div><label class="text-[10px] uppercase font-bold text-[var(--text-muted)]">Summary</label><p class="text-[var(--text-main)] font-medium">{task.summary}</p></div>
+                            <div class="glass-card p-4 rounded-xl space-y-4">
+                                <div><label class="text-[10px] uppercase font-bold text-[var(--ig-cyan)] block mb-1">Due Date</label><input type="date" defaultValue={task.end} onChange={(e)=>secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'duedate', value:e.target.value})})} class="w-full p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /></div>
+                                <div><label class="text-[10px] uppercase font-bold text-[var(--ig-magenta)] block mb-1">Assignee</label><input placeholder="Username..." onKeyDown={(e)=>{if(e.key==='Enter') secureFetch('/issue/update', {method:'POST', body:JSON.stringify({key:task.key, field:'assignee', value:e.target.value})}).then(()=>alert('Updated!'))}} class="w-full p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} /></div>
+                            </div>
+                        </div>
+                    </motion.div>
+                </>
+            );
+        }
+
+        function AIChatBubble({ isOpen, toggle, project }) {
+            const [input, setInput] = useState("");
+            const [msgs, setMsgs] = useState([{role:'ai', text:"Hi! Ask me about sprint stats."}]);
+            const ask = () => {
+                if(!input) return;
+                const q = input; setMsgs(p=>[...p,{role:'user', text:q}]); setInput("");
+                secureFetch('/chat/agent', {method:'POST', body:JSON.stringify({project, query:q})}).then(r=>r?.json()).then(d => setMsgs(p=>[...p,{role:'ai', text:d.response}]));
+            };
+            return (
+                <div class="chat-bubble">
+                    <AnimatePresence>{isOpen && <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} class="mb-4 w-80 h-96 glass-card rounded-2xl flex flex-col overflow-hidden"><div class="p-3 border-b flex justify-between bg-[var(--bg-sidebar)]" style={{borderColor:'var(--border-color)'}}><span class="font-bold text-[var(--text-main)]">AI Analyst</span><button onClick={toggle}>✕</button></div><div class="flex-1 overflow-y-auto p-3 space-y-3 bg-[var(--bg-card)]">{msgs.map((m,i)=><div key={i} class={`p-2 rounded text-xs ${m.role==='user'?'bg-blue-600 text-white self-end':'bg-slate-700 text-white'}`}>{m.text}</div>)}</div><div class="p-2 border-t flex gap-1" style={{borderColor:'var(--border-color)', backgroundColor:'var(--bg-sidebar)'}}><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} class="flex-1 text-xs p-2 rounded border outline-none" style={{backgroundColor:'var(--bg-card)', color:'var(--text-main)', borderColor:'var(--border-color)'}} placeholder="Ask..." /><button onClick={ask} class="text-xs bg-[var(--ig-magenta)] px-3 rounded text-white">></button></div></motion.div>}</AnimatePresence>
+                    <button onClick={toggle} class="w-14 h-14 rounded-full bg-[var(--ig-magenta)] flex items-center justify-center text-2xl shadow-lg hover:scale-110 transition">✨</button>
                 </div>
             );
         }
 
-        // --- STANDUP & OTHERS (Simplified for length, functionality preserved) ---
-        function StandupView({ project }) { return <div class="text-[var(--text-main)]">Standup Bot Active</div> } // Use code from prev step if needed
-        function BurndownView({ project }) { return <div class="text-[var(--text-main)]">Burndown Chart Active</div> }
-        function ReportsView({ project }) { 
-            const [report, setReport] = useState(null);
-            useEffect(() => { fetch(`${API_BASE}/reports/${project}/weekly`).then(r=>r.json()).then(setReport); }, [project]);
-            if(!report) return <LoadingScreen />;
-            return <div class="glass-card p-8 rounded-xl"><div class="text-4xl font-black text-[var(--text-main)]">{report.completed_count} Tasks</div><p class="text-[var(--text-muted)] mt-4">{report.ai_summary.summary}</p></div>; 
-        }
-
+        // --- EXTRAS ---
+        function BurndownView({project}) { const chartRef=useRef(null); useEffect(()=>{secureFetch(`/burndown/${project}`).then(r=>r?.json()).then(d=>{if(chartRef.current)new Chart(chartRef.current,{type:'line',data:{labels:d.labels,datasets:[{label:'Actual',data:d.actual,borderColor:'#e879f9',fill:true}]}})})},[project]); return <div><h2 class="text-3xl font-bold text-[var(--text-main)] mb-6">Burndown</h2><div class="glass-card p-6 rounded-xl h-[500px]"><canvas ref={chartRef}></canvas></div></div> }
+        function ReportsView({project}) { const [rep, setRep] = useState(null); useEffect(()=>{secureFetch(`/reports/${project}/weekly`).then(r=>r?.json()).then(setRep);},[project]); if(!rep)return <LoadingScreen/>; return <div class="glass-card p-8 rounded-xl"><div class="text-4xl font-black text-[var(--text-main)]">{rep.completed_count} Tasks</div><p class="text-[var(--text-muted)] mt-4">{rep.ai_summary.summary}</p></div>; }
         function LoadingScreen() { return <div class="h-96 flex flex-col items-center justify-center"><div class="w-12 h-12 border-4 border-[var(--ig-cyan)] border-t-transparent rounded-full animate-spin"></div></div>; }
         function MetricCard({ label, value, color }) { return <div class={`glass-card p-5 rounded-xl border-l-4 ${color}`} style={{borderColor:color.includes('cyan')?'var(--ig-cyan)':color.includes('magenta')?'var(--ig-magenta)':'var(--ig-yellow)'}}><div class="text-[var(--text-muted)] text-[10px] font-bold uppercase mb-1">{label}</div><div class="text-3xl font-black text-[var(--text-main)]">{value}</div></div>; }
 
