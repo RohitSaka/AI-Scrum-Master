@@ -34,32 +34,27 @@ async def get_jira_creds(
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- AI CORE: PAID MODEL PRIORITIZATION ---
-def get_smartest_model():
-    """
-    Selects the best paid model. 
-    Falls back to Flash only if Pro is unavailable.
-    """
-    try:
-        models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-        # PRIORITY 1: 1.5 Pro (The "Brain")
-        if "models/gemini-1.5-pro" in models: return "models/gemini-1.5-pro"
-        if "models/gemini-1.5-pro-latest" in models: return "models/gemini-1.5-pro-latest"
-        # PRIORITY 2: Flash (The "Speed")
-        return "models/gemini-1.5-flash"
-    except:
-        return "models/gemini-1.5-flash"
-
+# --- AI CORE: FAILSAFE MODEL SELECTION ---
 def generate_ai_response(prompt, temperature=0.3):
-    model_name = get_smartest_model()
-    # Lower temperature = more factual/mathematical responses
-    model = genai.GenerativeModel(model_name, generation_config={"temperature": temperature})
-    try:
-        response = model.generate_content(prompt)
-        return response.text
-    except Exception as e:
-        print(f"⚠️ AI Error: {e}")
-        return None
+    """
+    Tries 3 generations of models to ensure we NEVER get a 404.
+    """
+    # 1. Try the Paid/Best Model First
+    # 2. Try the Fast/Standard Model
+    # 3. Try the Legacy Model (Failsafe)
+    models_to_try = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
+    
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name, generation_config={"temperature": temperature})
+            response = model.generate_content(prompt)
+            print(f"✅ Success using model: {model_name}")
+            return response.text
+        except Exception as e:
+            print(f"⚠️ Failed on {model_name}: {e}")
+            continue # Try next model
+            
+    return '{"error": "All AI models failed. Please check API Key billing."}'
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, creds, data=None):
@@ -72,7 +67,7 @@ def jira_request(method, endpoint, creds, data=None):
         elif method == "GET": r = requests.get(url, auth=auth, headers=headers)
         
         if r.status_code >= 400:
-            print(f"❌ Jira Error {r.status_code}: {r.text[:100]}")
+            print(f"❌ Jira Error {r.status_code} on {endpoint}")
             return None
         return r
     except Exception as e:
@@ -93,33 +88,22 @@ def get_story_point_field(creds):
 
 # --- HELPER: POINT ESTIMATION LOGIC ---
 def estimate_story_points(summary, description):
-    """
-    Uses AI to estimate points based on 1pt = 6h rule.
-    Returns: JSON { points: int, reasoning: str }
-    """
     prompt = f"""
     You are a Senior Technical Architect. Analyze this Jira Ticket to estimate effort.
     
-    TICKET SUMMARY: {summary}
-    TICKET DESCRIPTION: {description}
+    TICKET: {summary}
+    DETAILS: {description}
     
     ESTIMATION RULES:
-    1. Standard: 1 Story Point = 6 hours of focused development/testing work.
-    2. Scale (Fibonacci): 1, 2, 3, 5, 8, 13.
-    3. If unclear, assume higher complexity (risk buffer).
-    
-    TASK:
-    1. Estimate the Story Points.
-    2. Write a "Justification Comment" for the developer. Explain *why* based on technical complexity (DB changes, API integration, Testing scope).
+    1. Standard: 1 Story Point = 6 hours of focused work.
+    2. Scale: 1, 2, 3, 5, 8, 13.
+    3. Be conservative.
     
     RETURN JSON ONLY:
-    {{
-        "points": integer,
-        "reasoning": "string (max 2 sentences)"
-    }}
+    {{ "points": integer, "reasoning": "string (max 2 sentences)" }}
     """
     
-    raw = generate_ai_response(prompt, temperature=0.1) # Low temp for math/logic
+    raw = generate_ai_response(prompt, temperature=0.1)
     if not raw: return None
     
     try:
@@ -128,38 +112,31 @@ def estimate_story_points(summary, description):
     except:
         return None
 
-# --- DATA STORAGE HANDLERS (FIXED SYNTAX) ---
+# --- DATA STORAGE ---
 def load_retro_data():
-    if not os.path.exists(RETRO_FILE): 
-        return {}
+    if not os.path.exists(RETRO_FILE): return {}
     try:
-        with open(RETRO_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+        with open(RETRO_FILE, "r") as f: return json.load(f)
+    except: return {}
 
 def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f:
-        json.dump(data, f)
+    with open(RETRO_FILE, "w") as f: json.dump(data, f)
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): 
-    return {"status": "IG Agile Brain Online 🧠", "model": get_smartest_model()}
+def home(): return {"status": "IG Agile Brain Online 🧠"}
 
 # --- 1. DEEP SPRINT ANALYTICS ---
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    # Fetch Description now for deeper analysis
     fields = ["summary", "status", "assignee", "priority", sp_field, "issuetype", "description"]
     
     jql = f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": fields})
     issues = res.json().get('issues', []) if res else []
     
-    # Fallback to backlog if no active sprint
     if not issues:
         jql = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
         res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": fields})
@@ -174,7 +151,6 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
         pts = f.get(sp_field) or 0
         type_name = f['issuetype']['name']
         
-        # Stats Aggregation
         stats["points"] += pts
         if f['priority']['name'] in ["High", "Highest", "Critical"]: stats["blockers"] += 1
         if type_name == "Bug": stats["bugs"] += 1
@@ -186,17 +162,16 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += pts
         
-        # Prepare Context for AI (Include Summary + Type)
         context_for_ai.append(f"[{type_name}] {f['summary']} ({pts} pts) - Status: {f['status']['name']}")
 
-    # --- PROMPT: DEEP ANALYSIS ---
-    tickets_list = "\n".join(context_for_ai[:40]) # Limit to 40 tickets to fit context
+    # EXECUTIVE AI ANALYSIS
+    tickets_list = "\n".join(context_for_ai[:40]) 
     
     prompt = f"""
-    Act as a Lead Agile Consultant. Analyze this Sprint Snapshot.
+    Act as a Senior Delivery Manager. Analyze this Sprint Snapshot.
     
     METRICS:
-    - Total Work: {stats['points']} Points across {stats['total']} items.
+    - Total Work: {stats['points']} Points.
     - Composition: {stats['stories']} Stories, {stats['bugs']} Bugs.
     - Critical Blockers: {stats['blockers']}
     
@@ -204,71 +179,44 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     {tickets_list}
     
     TASK:
-    1. Identify the *implied* Sprint Goal based on the tickets.
-    2. Spot 1 major risk (e.g., too many bugs, stuck high-point stories).
-    3. Comment on the Work/Bug ratio.
+    1. Identify the implied Sprint Goal.
+    2. Spot 1 major risk (e.g., high bugs, stuck stories).
+    3. Be opinionated.
     
     RETURN JSON ONLY:
     {{
-        "executive_summary": "Professional, executive-style summary (3 sentences). Mention the goal and the health.",
-        "risk_level": "Low" | "Medium" | "High",
+        "executive_summary": "Professional summary (2 sentences). Mention goal and health.",
+        "risk_level": "Low/Medium/High",
         "key_recommendation": "Strategic advice for the Scrum Master."
     }}
     """
     
     ai_raw = generate_ai_response(prompt)
-    if ai_raw:
-        try:
-            ai_data = json.loads(ai_raw.replace('```json','').replace('```','').strip())
-        except:
-            ai_data = {"executive_summary": "Analysis format error.", "risk_level": "Unknown", "key_recommendation": "Check data."}
-    else:
-        ai_data = {"executive_summary": "AI Analysis Failed.", "risk_level": "Unknown", "key_recommendation": "Check API Quota."}
+    try:
+        ai_data = json.loads(ai_raw.replace('```json','').replace('```','').strip())
+    except:
+        ai_data = {"executive_summary": "Analysis format error.", "risk_level": "Unknown", "key_recommendation": "Check data."}
 
     return {"metrics": stats, "ai_insights": ai_data}
 
-# --- 2. AUTO-ESTIMATION (The "Magic" Button) ---
+# --- 2. AUTO-ESTIMATION ---
 @app.post("/estimate")
 async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """
-    Reads a ticket, calculates points (1pt=6h), and updates Jira.
-    """
     key = payload.get("key")
-    
-    # 1. Fetch Ticket Details
     res = jira_request("GET", f"issue/{key}", creds)
     if not res: return {"status": "error", "message": "Ticket not found"}
     
     issue = res.json()
     summary = issue['fields']['summary']
-    # Handle description (Jira API V3 returns 'content' blocks or plain text)
-    desc_raw = issue['fields'].get('description', '')
-    description = str(desc_raw)[:1000] # Truncate for AI
+    description = str(issue['fields'].get('description', ''))[:1000]
     
-    # 2. Get AI Estimate
     estimate = estimate_story_points(summary, description)
     if not estimate: return {"status": "error", "message": "AI Estimation Failed"}
     
-    # 3. Write to Jira (Update Points)
+    # Update Jira
     sp_field = get_story_point_field(creds)
-    update_payload = {"fields": {sp_field: estimate['points']}}
-    jira_request("PUT", f"issue/{key}", creds, update_payload)
-    
-    # 4. Write to Jira (Add Comment)
-    comment_body = {
-        "body": {
-            "type": "doc", 
-            "version": 1, 
-            "content": [{
-                "type": "paragraph", 
-                "content": [{
-                    "type": "text", 
-                    "text": f"🤖 AI Estimation: {estimate['points']} Points (~{estimate['points']*6} hours)\n\nReasoning: {estimate['reasoning']}"
-                }]
-            }]
-        }
-    }
-    jira_request("POST", f"issue/{key}/comment", creds, comment_body)
+    jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: estimate['points']}})
+    jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 AI Estimate: {estimate['points']} Pts (~{estimate['points']*6}h). {estimate['reasoning']}"}]}]}})
     
     return {"status": "success", "points": estimate['points'], "reason": estimate['reasoning']}
 
@@ -284,33 +232,21 @@ def list_projects(creds: dict = Depends(get_jira_creds)):
 # --- 4. CHAT AGENT ---
 @app.post("/chat/agent")
 def chat_agent(payload: dict, creds: dict = Depends(get_jira_creds)):
-    # Fetch Context
     jql = f"project = {payload.get('project')} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status", "assignee"]})
     context = str(res.json().get('issues', []))[:4000] if res else ""
     
-    prompt = f"""
-    CONTEXT:
-    {context}
-    
-    USER QUESTION: {payload.get('query')}
-    
-    ANSWER GUIDELINES:
-    - Use the provided context to answer accurately.
-    - If calculating capacity, remember 1 point = 6 hours.
-    - Be helpful and concise.
-    """
+    prompt = f"CONTEXT:\n{context}\n\nUSER QUESTION: {payload.get('query')}\n\nANSWER as an Agile Data Analyst. Be concise."
     return {"response": generate_ai_response(prompt)}
 
 # --- 5. STANDUP BOT ---
 @app.post("/standup/post")
 async def post_standup(payload: dict, creds: dict = Depends(get_jira_creds)):
     key, msg = payload.get("key"), payload.get("message")
-    # Comment
     jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 Standup: {msg}"}]}]}})
     return {"status": "posted"}
 
-# --- 6. RETRO & OTHERS ---
+# --- 6. RETRO ---
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str):
     data = load_retro_data()
@@ -380,7 +316,6 @@ def get_burndown(project_key: str, creds: dict = Depends(get_jira_creds)):
         
     return {"labels": dates, "ideal": [max(0, total-(i*(total/14))) for i in range(15)], "actual": actual}
 
-# --- WEBHOOK ---
 @app.post("/webhook")
 async def webhook(payload: dict):
     return {"status": "processed"}
