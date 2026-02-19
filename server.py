@@ -1,7 +1,7 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-import requests, json, os, time
+import requests, json, os, re, time
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
@@ -24,10 +24,11 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: CORPORATE PPTX GENERATOR")
+print("🚀 APP STARTING: CORPORATE PPTX & AI DOSSIER REPORTS")
 print("="*50 + "\n")
 
 STORY_POINT_CACHE = {} 
+ACTIVE_MODEL = None 
 
 async def get_jira_creds(x_jira_domain: str = Header(...), x_jira_email: str = Header(...), x_jira_token: str = Header(...)):
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
@@ -86,13 +87,12 @@ def extract_adf_text(adf_node):
     return text.strip()
 
 # ================= 🎨 CORPORATE PPTX DRAWING ENGINE =================
-# Exact Palette matching your reference designs
-C_BG = RGBColor(248, 250, 252)         # Very light grey/blue background
-C_WHITE = RGBColor(255, 255, 255)      # Card Background
-C_BLUE_DARK = RGBColor(30, 58, 138)    # Primary Corporate Blue (Text & Accents)
-C_TEXT_DARK = RGBColor(15, 23, 42)     # Main Text
-C_TEXT_MUTED = RGBColor(100, 116, 139) # Subtitles
-C_BORDER = RGBColor(226, 232, 240)     # Card Borders
+C_BG = RGBColor(248, 250, 252)        
+C_WHITE = RGBColor(255, 255, 255)     
+C_BLUE_DARK = RGBColor(30, 58, 138)   
+C_TEXT_DARK = RGBColor(15, 23, 42)    
+C_TEXT_MUTED = RGBColor(100, 116, 139) 
+C_BORDER = RGBColor(226, 232, 240)    
 
 def set_slide_bg(slide, color):
     bg = slide.background
@@ -129,71 +129,50 @@ def generate_corporate_pptx(project, metrics, ai_insights):
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6] 
-    
     date_str = datetime.now().strftime('%m/%d/%Y')
     
-    # --- SLIDE 1: TITLE SLIDE ---
     slide1 = prs.slides.add_slide(blank_layout)
     set_slide_bg(slide1, C_BG)
-    
-    # Right-side blue geometric block
     right_block = slide1.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(8), Inches(0), Inches(5.333), Inches(7.5))
     right_block.fill.solid()
     right_block.fill.fore_color.rgb = C_BLUE_DARK
     right_block.line.fill.background()
-    
     add_text(slide1, "PROJECT STATUS REPORT", Inches(1), Inches(1.5), Inches(6), Inches(0.5), 12, C_TEXT_MUTED, bold=True)
     add_text(slide1, "Weekly Project\nStatus Review", Inches(1), Inches(2), Inches(6), Inches(2), 54, C_TEXT_DARK, bold=True)
     add_text(slide1, f"🗓 {date_str}", Inches(1), Inches(4.5), Inches(6), Inches(0.5), 18, C_TEXT_MUTED)
-    
     add_text(slide1, "PREPARED BY", Inches(1), Inches(5.8), Inches(6), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide1, "IG Agile Intelligence System", Inches(1), Inches(6.1), Inches(6), Inches(0.5), 14, C_TEXT_DARK, bold=True)
 
-    # --- SLIDE 2: AT A GLANCE ---
     slide2 = prs.slides.add_slide(blank_layout)
     set_slide_bg(slide2, C_BG)
     add_text(slide2, "WEEKLY STATUS", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide2, "Agenda & At-a-Glance", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
-    
-    # Left Agenda List
     add_text(slide2, "Meeting Agenda", Inches(0.5), Inches(1.8), Inches(4), Inches(0.5), 18, C_TEXT_DARK, bold=True)
     agenda_items = ["01   Sprint Overview", "02   KPIs / Story Count", "03   Business Value", "04   Risks & Issues"]
     for idx, item in enumerate(agenda_items):
         draw_card(slide2, Inches(0.5), Inches(2.5 + (idx*0.8)), Inches(4.5), Inches(0.6))
         add_text(slide2, item, Inches(0.7), Inches(2.65 + (idx*0.8)), Inches(4), Inches(0.5), 14, C_TEXT_DARK)
-        
-    # Right Summary Card
     draw_card(slide2, Inches(5.5), Inches(1.8), Inches(7.3), Inches(5.2), C_WHITE, C_BORDER)
     add_text(slide2, "⚡ At-a-Glance Summary", Inches(5.8), Inches(2.1), Inches(4), Inches(0.5), 18, C_BLUE_DARK, bold=True)
-    
     draw_card(slide2, Inches(5.8), Inches(2.8), Inches(6.7), Inches(1.2), C_BG)
     add_text(slide2, "TOTAL STORIES IN SCOPE", Inches(6.0), Inches(3.0), Inches(3), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide2, f"{metrics.get('total', 0)}", Inches(11.0), Inches(3.0), Inches(1.2), Inches(0.8), 48, C_BLUE_DARK, bold=True, align=PP_ALIGN.RIGHT)
-    
-    # Bottom sub-cards
     draw_card(slide2, Inches(5.8), Inches(4.2), Inches(3.2), Inches(1.2), C_BG)
     add_text(slide2, "TEAM VELOCITY", Inches(6.0), Inches(4.4), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide2, f"{metrics.get('points', 0)} pts", Inches(6.0), Inches(4.7), Inches(2), Inches(0.5), 24, C_TEXT_DARK, bold=True)
-
     draw_card(slide2, Inches(9.3), Inches(4.2), Inches(3.2), Inches(1.2), C_BG)
     add_text(slide2, "BUGS FOUND", Inches(9.5), Inches(4.4), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide2, f"{metrics.get('bugs', 0)}", Inches(9.5), Inches(4.7), Inches(2), Inches(0.5), 24, C_TEXT_DARK, bold=True)
 
-    # --- SLIDE 3: SPRINT OVERVIEW ---
     slide3 = prs.slides.add_slide(blank_layout)
     set_slide_bg(slide3, C_BG)
     add_text(slide3, "PROJECT STATUS REPORT", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide3, "Sprint Overview", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
-    
-    # Left Big Card (Exec Summary)
     draw_card(slide3, Inches(0.5), Inches(1.8), Inches(7.5), Inches(5.2))
     add_text(slide3, "EXECUTIVE SUMMARY", Inches(0.8), Inches(2.1), Inches(4), Inches(0.3), 12, C_BLUE_DARK, bold=True)
-    tf = add_text(slide3, ai_insights.get('executive_summary', 'Processing...'), Inches(0.8), Inches(2.6), Inches(6.9), Inches(1.5), 16, C_TEXT_DARK)
-    
+    tf = add_text(slide3, ai_insights.get('executive_summary', 'Processing...'), Inches(0.8), Inches(2.6), Inches(6.9), Inches(2), 16, C_TEXT_DARK)
     add_text(slide3, "BUSINESS VALUE", Inches(0.8), Inches(4.6), Inches(4), Inches(0.3), 12, C_BLUE_DARK, bold=True)
     add_text(slide3, ai_insights.get('business_value', 'Processing...'), Inches(0.8), Inches(5.0), Inches(6.9), Inches(1.5), 14, C_TEXT_DARK)
-
-    # Right Column (Active Stories)
     add_text(slide3, "ACTIVE WORKSTREAMS", Inches(8.5), Inches(1.8), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     stories = ai_insights.get('story_progress', [])[:4]
     for idx, story in enumerate(stories):
@@ -201,32 +180,23 @@ def generate_corporate_pptx(project, metrics, ai_insights):
         add_text(slide3, f"{story.get('key')} - {story.get('status')}", Inches(8.7), Inches(2.35 + (idx*1.1)), Inches(4), Inches(0.3), 12, C_TEXT_DARK, bold=True)
         add_text(slide3, story.get('summary')[:40] + "...", Inches(8.7), Inches(2.65 + (idx*1.1)), Inches(4), Inches(0.3), 10, C_TEXT_MUTED)
 
-    # --- SLIDE 4: KPIs ---
     slide4 = prs.slides.add_slide(blank_layout)
     set_slide_bg(slide4, C_BG)
     add_text(slide4, "PROJECT STATUS REPORT", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide4, "KPIs & Story Count", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
-    
-    # Left Tall Blue Card
     left_blue = draw_card(slide4, Inches(0.5), Inches(1.8), Inches(4.5), Inches(5.2), C_BLUE_DARK, None)
     add_text(slide4, "TOTAL USER STORIES", Inches(0.8), Inches(2.2), Inches(4), Inches(0.3), 14, C_WHITE, bold=True)
     add_text(slide4, "Completed & In-Progress", Inches(0.8), Inches(2.5), Inches(4), Inches(0.3), 12, RGBColor(200,200,200))
     add_text(slide4, f"{metrics.get('total', 0)}", Inches(0.8), Inches(3.0), Inches(4), Inches(2.0), 120, C_WHITE, bold=True)
-    
-    # Right Performance Metrics
     add_text(slide4, "Performance Metrics", Inches(5.5), Inches(1.8), Inches(4), Inches(0.3), 14, C_BLUE_DARK, bold=True)
-    
     draw_card(slide4, Inches(5.5), Inches(2.3), Inches(3.5), Inches(1.2))
     add_text(slide4, "VELOCITY", Inches(5.7), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide4, f"{metrics.get('points', 0)} pts", Inches(5.7), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
-
     draw_card(slide4, Inches(9.3), Inches(2.3), Inches(3.5), Inches(1.2))
     add_text(slide4, "CRITICAL BLOCKERS", Inches(9.5), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide4, f"{metrics.get('blockers', 0)}", Inches(9.5), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
-    
     draw_card(slide4, Inches(5.5), Inches(3.8), Inches(7.3), Inches(3.2))
     add_text(slide4, "AI STORY ANALYSIS", Inches(5.8), Inches(4.1), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
-    
     story_analysis_text = ""
     for s in stories[:3]:
         story_analysis_text += f"• {s.get('key')}: {s.get('analysis')}\n"
@@ -237,11 +207,10 @@ def generate_corporate_pptx(project, metrics, ai_insights):
     ppt_buffer.seek(0)
     return ppt_buffer
 
-
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online - Corporate PPTX Engine Active"}
+def home(): return {"status": "Online - Enterprise Dashboard"}
 
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
@@ -329,7 +298,6 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
-# --- ✨ EXPORT ENDPOINT ✨ ---
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     project = payload.get("project", "Unknown")
@@ -338,15 +306,84 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     ai_insights = data.get("ai_insights", {})
     
     ppt_buffer = generate_corporate_pptx(project, metrics, ai_insights)
-    
-    headers = {
-        'Content-Disposition': f'attachment; filename="{project}_Executive_Report.pptx"'
-    }
+    headers = {'Content-Disposition': f'attachment; filename="{project}_Executive_Report.pptx"'}
     return StreamingResponse(ppt_buffer, headers=headers, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
-@app.post("/estimate")
-async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
-    return {"status": "success"}
+# --- ✨ NEW: HIGH-END AI DOSSIER REPORT ✨ ---
+@app.get("/reports/{project_key}/{timeframe}")
+def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
+    sp_field = get_story_point_field(creds)
+    days = 7 if timeframe == "weekly" else (14 if timeframe == "biweekly" else 30)
+    dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    
+    # 1. Fetch ALL tickets updated in this timeframe (Done + Struggling)
+    jql = f"project = {project_key} AND updated >= '{dt}' ORDER BY priority DESC, updated DESC"
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 40, "fields": ["summary", "status", "assignee", sp_field, "issuetype"]})
+    issues = res.json().get('issues', []) if res else []
+    
+    done_count = 0
+    done_pts = 0
+    context_data = []
+
+    for i in issues:
+        f = i['fields']
+        status = f['status']['name']
+        pts = float(f.get(sp_field) or 0)
+        assignee = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
+        
+        if f['status']['statusCategory']['key'] == 'done':
+            done_count += 1
+            done_pts += pts
+            
+        context_data.append({
+            "key": i['key'],
+            "summary": f['summary'],
+            "status": status,
+            "assignee": assignee,
+            "points": pts,
+            "type": f['issuetype']['name']
+        })
+
+    prompt = f"""
+    You are an elite Agile Analyst evaluating a {timeframe} performance period.
+    Analyze these {len(context_data)} recently updated tickets.
+    DATA: {json.dumps(context_data)}
+
+    Generate a blunt, executive-level JSON dossier:
+    {{
+        "ai_verdict": "A detailed 2-3 sentence paragraph on how the team actually performed. Were they fast? Stuck? Fixing too many bugs?",
+        "sprint_vibe": "Select ONE exact phrase: [🔥 Blazing Fast, ⚙️ Steady & Stable, 🚧 Blocked & Struggling, 🐛 Bug Heavy]",
+        "key_accomplishments": [
+            {{"title": "Feature/Ticket Name", "impact": "Why this matters (1 short sentence)"}}
+        ],
+        "hidden_friction": "Identify a bottleneck based on the tickets that are NOT 'Done'. (e.g., 'QA is holding up 4 tickets'). 1-2 sentences.",
+        "top_contributor": "Name of the person who moved the most complex/important tickets to Done, and a brief reason why."
+    }}
+    Ensure response is pure JSON without markdown blocks.
+    """
+    
+    ai_raw = generate_ai_response(prompt, temperature=0.4)
+    ai_dossier = {}
+    if ai_raw:
+        try: ai_dossier = json.loads(ai_raw.replace('```json','').replace('```','').strip())
+        except: pass
+
+    # Fallbacks in case AI fails
+    if not ai_dossier:
+        ai_dossier = {
+            "ai_verdict": "Data processing error. Could not generate AI verdict.",
+            "sprint_vibe": "⚙️ Data Unavailable",
+            "key_accomplishments": [],
+            "hidden_friction": "Unable to calculate friction.",
+            "top_contributor": "Unknown"
+        }
+
+    return {
+        "completed_count": done_count,
+        "completed_points": done_pts,
+        "total_active_in_period": len(issues),
+        "dossier": ai_dossier
+    }
 
 # --- RETRO (JIRA DB) ---
 @app.get("/retro/{project_key}")
@@ -381,9 +418,9 @@ def generate_actions(payload: dict):
         except: pass
     return {"actions": []}
 
-@app.get("/reports/{project_key}/{timeframe}")
-def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
-    return {"completed_count": 0, "completed_points": 0, "ai_summary": {"summary": ""}}
+@app.post("/estimate")
+async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
+    return {"status": "success"}
 
 @app.get("/burndown/{project_key}")
 def get_burndown(project_key: str, creds: dict = Depends(get_jira_creds)):
