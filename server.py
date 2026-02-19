@@ -16,10 +16,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+print("\n" + "="*50)
+print("🚀 APP STARTING: VERSION - ACTIVE FAILOVER CHAIN")
+print("="*50 + "\n")
+
 # --- CONFIGURATION ---
 STORY_POINT_CACHE = {} 
-RETRO_FILE = "retro_data.json"
-ACTIVE_MODEL = None # Will be set automatically
 
 # --- SECURITY & AUTH ---
 async def get_jira_creds(
@@ -30,67 +32,43 @@ async def get_jira_creds(
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- CRITICAL: DYNAMIC MODEL DISCOVERY ---
-def find_working_model():
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("❌ CRITICAL: GEMINI_API_KEY is missing from environment variables!")
-        return None
-
-    print("\n🔍 *** STARTING DYNAMIC MODEL DISCOVERY ***")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    
-    try:
-        response = requests.get(url)
-        if response.status_code != 200:
-            print(f"❌ Failed to list models. Error: {response.text}")
-            return "gemini-1.5-flash" # Last resort fallback
-
-        data = response.json()
-        available_models = [m['name'] for m in data.get('models', []) if 'generateContent' in m['supportedGenerationMethods']]
-        
-        print(f"✅ Found {len(available_models)} available models.")
-
-        priorities = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"]
-        
-        for p in priorities:
-            for model in available_models:
-                if p in model:
-                    clean_name = model.replace("models/", "")
-                    print(f"🚀 SELECTED BEST MODEL: {clean_name}")
-                    return clean_name
-        
-        if available_models:
-            return available_models[0].replace("models/", "")
-            
-    except Exception as e:
-        print(f"❌ Network Error during model discovery: {e}")
-    
-    return "gemini-1.5-flash"
-
-ACTIVE_MODEL = find_working_model()
-
+# --- AI CORE: ACTIVE FAILOVER ---
 def generate_ai_response(prompt, temperature=0.3):
+    """
+    Tries the fastest, best models first based on your available quota.
+    If Google returns 503/429, it instantly catches the error and tries the next model.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
-    model = ACTIVE_MODEL if ACTIVE_MODEL else "gemini-1.5-flash"
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}
-    }
-    
-    try:
-        r = requests.post(url, headers=headers, json=payload)
-        if r.status_code == 200:
-            return r.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            print(f"⚠️ AI Generation Failed ({model}): {r.text[:200]}")
-            return None
-    except Exception as e:
-        print(f"❌ AI Network Error: {e}")
+    if not api_key: 
         return None
+
+    # Priority Chain: Fast models first to ensure snappy UI rendering
+    fallback_chain = [
+        "gemini-2.5-flash",
+        "gemini-3-flash",
+        "gemini-1.5-flash"
+    ]
+    
+    for model in fallback_chain:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}
+        }
+        try:
+            r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+            if r.status_code == 200:
+                print(f"✅ AI Success: {model}")
+                return r.json()['candidates'][0]['content']['parts'][0]['text']
+            else:
+                print(f"⚠️ AI Fail ({model}) [{r.status_code}]: Switching models...")
+                continue # TRY NEXT MODEL IMMEDIATELY
+        except Exception as e:
+            print(f"❌ Network Error on {model}: {e}")
+            continue
+
+    print("❌ ALL AI MODELS IN CHAIN FAILED.")
+    return None
 
 # --- JIRA UTILITIES ---
 def jira_request(method, endpoint, creds, data=None):
@@ -131,22 +109,11 @@ def estimate_story_points(summary, description):
     try: return json.loads(raw.replace('```json','').replace('```','').strip())
     except: return None
 
-# --- DATA STORAGE ---
-def load_retro_data():
-    if not os.path.exists(RETRO_FILE): return {}
-    try: 
-        with open(RETRO_FILE, "r") as f: return json.load(f)
-    except: return {}
-
-def save_retro_data(data):
-    with open(RETRO_FILE, "w") as f: json.dump(data, f)
-
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online", "active_model": ACTIVE_MODEL}
+def home(): return {"status": "Online - Failover Active"}
 
-# --- 1. ANALYTICS ---
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -181,17 +148,15 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += pts
         stats["assignees"][name]["tasks"].append({"key": i['key'], "summary": f['summary'], "priority": f['priority']['name'] if f['priority'] else "Medium", "points": pts})
-        
         context_for_ai.append(f"[{type_name}] {f['summary']} ({pts} pts)")
 
     tickets = "\n".join(context_for_ai[:40])
     prompt = f"""
     Analyze Sprint. Metrics: {stats['points']} pts, {stats['bugs']} bugs.
-    Tickets:
-    {tickets}
+    Tickets: {tickets}
     Return JSON:
     {{
-        "executive_summary": "2 sentences on risks/health.",
+        "executive_summary": "Write 2 sentences on the health and risks. Be decisive.",
         "risk_level": "Low/Medium/High",
         "key_recommendation": "Advice for PM."
     }}
@@ -200,13 +165,30 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
     ai_raw = generate_ai_response(prompt)
     if ai_raw:
         try: ai_data = json.loads(ai_raw.replace('```json','').replace('```','').strip())
-        except: ai_data = {"executive_summary": "Format Error", "risk_level": "Unknown", "key_recommendation": "Check Logs"}
+        except: ai_data = {"executive_summary": "Format Error in AI response.", "risk_level": "Unknown", "key_recommendation": "Check Logs"}
     else:
-        ai_data = {"executive_summary": "AI Unreachable", "risk_level": "Unknown", "key_recommendation": "Check API Key"}
+        ai_data = {"executive_summary": "AI currently overloaded. Please refresh.", "risk_level": "Unknown", "key_recommendation": "Check API Quota"}
 
     return {"metrics": stats, "ai_insights": ai_data}
 
-# --- 2. ESTIMATE ---
+@app.get("/projects")
+def list_projects(creds: dict = Depends(get_jira_creds)):
+    res = jira_request("GET", "project", creds)
+    try: return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
+    except: return []
+
+@app.post("/chat/agent")
+def chat_agent(payload: dict, creds: dict = Depends(get_jira_creds)):
+    jql = f"project = {payload.get('project')} AND sprint in openSprints()"
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status"]})
+    context = str(res.json().get('issues', []))[:3000] if res else ""
+    
+    prompt = f"Context:\n{context}\nUser: {payload.get('query')}\nAnswer concisely. Format with Markdown."
+    
+    # Text generation specifically using the failover chain to ensure uptime
+    response = generate_ai_response(prompt)
+    return {"response": response if response else "AI Error: Model is currently busy, please try again."}
+
 @app.post("/estimate")
 async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
     key = payload.get("key")
@@ -223,41 +205,12 @@ async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: est['points']}})
     jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 AI Estimate: {est['points']} Pts. {est['reasoning']}"}]}]}})
-    
     return {"status": "success", "points": est['points'], "reason": est['reasoning']}
 
-# --- 3. PROJECTS ---
-@app.get("/projects")
-def list_projects(creds: dict = Depends(get_jira_creds)):
-    res = jira_request("GET", "project", creds)
-    try: return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
-    except: return []
-
-# --- 4. CHAT ---
-@app.post("/chat/agent")
-def chat_agent(payload: dict, creds: dict = Depends(get_jira_creds)):
-    jql = f"project = {payload.get('project')} AND sprint in openSprints()"
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status"]})
-    context = str(res.json().get('issues', []))[:3000] if res else ""
-    
-    prompt = f"Context:\n{context}\nUser: {payload.get('query')}\nAnswer concisely."
-    response = generate_ai_response(prompt)
-    return {"response": response if response else "AI Error"}
-
-# --- 5. STANDUP ---
-@app.post("/standup/post")
-async def post_standup(payload: dict, creds: dict = Depends(get_jira_creds)):
-    key, msg = payload.get("key"), payload.get("message")
-    jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 Standup: {msg}"}]}]}})
-    return {"status": "posted"}
-
-# --- 6. RETRO (USING JIRA AS A SECURE DATABASE) ---
+# --- RETRO (JIRA ENTITY PROPERTIES DATABASE) ---
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_creds)):
-    """Fetches Retro data from hidden Jira Project Properties."""
-    # 1. Ask Jira for the hidden property
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
-    
     db_data = {}
     if res and res.status_code == 200:
         db_data = res.json().get('value', {})
@@ -265,41 +218,34 @@ def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_c
     sid = str(sprint_id)
     if sid not in db_data:
         db_data[sid] = {"well": [], "improve": [], "kudos": [], "actions": []}
-        
     return db_data[sid]
 
 @app.post("/retro/update")
 def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """Saves Retro data securely back into Jira."""
     project_key = payload.get("project").upper()
     sid = str(payload.get("sprint"))
     board_data = payload.get("board")
     
-    # 1. Fetch existing data first so we don't overwrite other sprints
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     db_data = {}
     if res and res.status_code == 200:
         db_data = res.json().get('value', {})
         
-    # 2. Update the specific sprint
     db_data[sid] = board_data
-    
-    # 3. Save the entire JSON blob back to Jira's hidden database
     jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
-    
     return {"status": "saved to Jira securely"}
 
 @app.post("/retro/generate_actions")
 def generate_actions(payload: dict):
-    # This stays the same - it just asks AI to read the board and suggest actions
     board = payload.get("board")
     prompt = f"Analyze Retro. GOOD: {board.get('well')} BAD: {board.get('improve')}. Create 3 strategic Action Items. Return JSON array: [\"Action 1\", \"Action 2\"]"
-    try:
-        raw = generate_ai_response(prompt)
-        actions = json.loads(raw.replace('```json','').replace('```','').strip())
-        return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(actions)]}
-    except: 
-        return {"actions": []}
+    raw = generate_ai_response(prompt)
+    if raw:
+        try:
+            actions = json.loads(raw.replace('```json','').replace('```','').strip())
+            return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(actions)]}
+        except: pass
+    return {"actions": []}
 
 @app.get("/sprints/{project_key}")
 def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
@@ -321,7 +267,15 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", sp_field]})
     issues = res.json().get('issues', []) if res else []
     pts = sum([float(i['fields'].get(sp_field) or 0) for i in issues])
-    return {"completed_count": len(issues), "completed_points": pts, "ai_summary": {"summary": f"{len(issues)} tasks done."}}
+    
+    prompt = f"Summarize Report: {len(issues)} tasks done, {pts} points in {days} days. Brief JSON: {{\"summary\": \"text\"}}"
+    ai_text = generate_ai_response(prompt)
+    summary_text = "Great progress."
+    if ai_text:
+        try: summary_text = json.loads(ai_text.replace('```json','').replace('```','').strip())['summary']
+        except: pass
+
+    return {"completed_count": len(issues), "completed_points": pts, "ai_summary": {"summary": summary_text}}
 
 @app.get("/burndown/{project_key}")
 def get_burndown(project_key: str, creds: dict = Depends(get_jira_creds)):
