@@ -28,7 +28,6 @@ print("🚀 APP STARTING: CORPORATE PPTX GENERATOR")
 print("="*50 + "\n")
 
 STORY_POINT_CACHE = {} 
-ACTIVE_MODEL = None 
 
 async def get_jira_creds(x_jira_domain: str = Header(...), x_jira_email: str = Header(...), x_jira_token: str = Header(...)):
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
@@ -87,14 +86,13 @@ def extract_adf_text(adf_node):
     return text.strip()
 
 # ================= 🎨 CORPORATE PPTX DRAWING ENGINE =================
-# Palette matching the provided corporate designs
-C_BG = RGBColor(248, 250, 252)        # Very light grey/blue background
-C_WHITE = RGBColor(255, 255, 255)     # Card Background
-C_BLUE_DARK = RGBColor(30, 58, 138)   # Primary Corporate Blue (Text & Accents)
-C_BLUE_LIGHT = RGBColor(59, 130, 246) # Secondary Blue
-C_TEXT_DARK = RGBColor(15, 23, 42)    # Main Text
+# Exact Palette matching your reference designs
+C_BG = RGBColor(248, 250, 252)         # Very light grey/blue background
+C_WHITE = RGBColor(255, 255, 255)      # Card Background
+C_BLUE_DARK = RGBColor(30, 58, 138)    # Primary Corporate Blue (Text & Accents)
+C_TEXT_DARK = RGBColor(15, 23, 42)     # Main Text
 C_TEXT_MUTED = RGBColor(100, 116, 139) # Subtitles
-C_BORDER = RGBColor(226, 232, 240)    # Card Borders
+C_BORDER = RGBColor(226, 232, 240)     # Card Borders
 
 def set_slide_bg(slide, color):
     bg = slide.background
@@ -190,7 +188,7 @@ def generate_corporate_pptx(project, metrics, ai_insights):
     # Left Big Card (Exec Summary)
     draw_card(slide3, Inches(0.5), Inches(1.8), Inches(7.5), Inches(5.2))
     add_text(slide3, "EXECUTIVE SUMMARY", Inches(0.8), Inches(2.1), Inches(4), Inches(0.3), 12, C_BLUE_DARK, bold=True)
-    tf = add_text(slide3, ai_insights.get('executive_summary', 'Processing...'), Inches(0.8), Inches(2.6), Inches(6.9), Inches(2), 16, C_TEXT_DARK)
+    tf = add_text(slide3, ai_insights.get('executive_summary', 'Processing...'), Inches(0.8), Inches(2.6), Inches(6.9), Inches(1.5), 16, C_TEXT_DARK)
     
     add_text(slide3, "BUSINESS VALUE", Inches(0.8), Inches(4.6), Inches(4), Inches(0.3), 12, C_BLUE_DARK, bold=True)
     add_text(slide3, ai_insights.get('business_value', 'Processing...'), Inches(0.8), Inches(5.0), Inches(6.9), Inches(1.5), 14, C_TEXT_DARK)
