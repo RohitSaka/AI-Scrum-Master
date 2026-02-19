@@ -214,8 +214,8 @@
                         const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        // NEW: It's an interactive HTML deck now!
-                        a.download = `${project}_Smart_Deck.html`;
+                        // CHANGED: Download as a real .pptx file!
+                        a.download = `${project}_Smart_Deck.pptx`;
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
