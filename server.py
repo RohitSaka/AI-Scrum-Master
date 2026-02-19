@@ -17,11 +17,12 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: VERSION - ACTIVE FAILOVER CHAIN")
+print("🚀 APP STARTING: VERSION - EXECUTIVE COMMAND CENTER")
 print("="*50 + "\n")
 
 # --- CONFIGURATION ---
 STORY_POINT_CACHE = {} 
+RETRO_FILE = "retro_data.json"
 
 # --- SECURITY & AUTH ---
 async def get_jira_creds(
@@ -34,20 +35,10 @@ async def get_jira_creds(
 
 # --- AI CORE: ACTIVE FAILOVER ---
 def generate_ai_response(prompt, temperature=0.3):
-    """
-    Tries the fastest, best models first based on your available quota.
-    If Google returns 503/429, it instantly catches the error and tries the next model.
-    """
     api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key: 
-        return None
+    if not api_key: return None
 
-    # Priority Chain: Fast models first to ensure snappy UI rendering
-    fallback_chain = [
-        "gemini-2.5-flash",
-        "gemini-3-flash",
-        "gemini-1.5-flash"
-    ]
+    fallback_chain = ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]
     
     for model in fallback_chain:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
@@ -62,7 +53,7 @@ def generate_ai_response(prompt, temperature=0.3):
                 return r.json()['candidates'][0]['content']['parts'][0]['text']
             else:
                 print(f"⚠️ AI Fail ({model}) [{r.status_code}]: Switching models...")
-                continue # TRY NEXT MODEL IMMEDIATELY
+                continue 
         except Exception as e:
             print(f"❌ Network Error on {model}: {e}")
             continue
@@ -95,6 +86,14 @@ def get_story_point_field(creds):
         except: pass
     return "customfield_10016"
 
+def extract_adf_text(adf_node):
+    """Recursively extracts plain text from Jira's complex Atlassian Document Format."""
+    if not adf_node or not isinstance(adf_node, dict): return ""
+    text = ""
+    if adf_node.get('type') == 'text': text += adf_node.get('text', '') + " "
+    for content in adf_node.get('content', []): text += extract_adf_text(content)
+    return text.strip()
+
 # --- HELPER: ESTIMATION ---
 def estimate_story_points(summary, description):
     prompt = f"""
@@ -112,18 +111,23 @@ def estimate_story_points(summary, description):
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online - Failover Active"}
+def home(): return {"status": "Online - Executive Mode"}
 
 @app.get("/analytics/{project_key}")
-def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
+def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    fields = ["summary", "status", "assignee", "priority", sp_field, "issuetype"]
+    # Added 'comment' and 'description' to the fields we request from Jira
+    fields = ["summary", "status", "assignee", "priority", sp_field, "issuetype", "description", "comment"]
     
-    jql = f"project = {project_key} AND sprint in openSprints()"
+    if sprint_id and sprint_id != "active":
+        jql = f"project = {project_key} AND sprint = {sprint_id}"
+    else:
+        jql = f"project = {project_key} AND sprint in openSprints()"
+        
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": fields})
     issues = res.json().get('issues', []) if res else []
     
-    if not issues:
+    if not issues and not sprint_id:
         jql = f"project = {project_key} AND statusCategory != Done ORDER BY updated DESC"
         res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": fields})
         issues = res.json().get('issues', []) if res else []
@@ -148,26 +152,52 @@ def get_analytics(project_key: str, creds: dict = Depends(get_jira_creds)):
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += pts
         stats["assignees"][name]["tasks"].append({"key": i['key'], "summary": f['summary'], "priority": f['priority']['name'] if f['priority'] else "Medium", "points": pts})
-        context_for_ai.append(f"[{type_name}] {f['summary']} ({pts} pts)")
+        
+        # EXTRACT TEXT FOR AI
+        desc_text = extract_adf_text(f.get('description', {}))[:800] # Limit to 800 chars per issue to save processing
+        comments_obj = f.get('comment', {}).get('comments', [])
+        # Get the last 3 comments for context
+        comments_text = " | ".join([extract_adf_text(c.get('body', {})) for c in comments_obj[-3:]])
+        
+        context_for_ai.append({
+            "key": i['key'],
+            "type": type_name,
+            "status": f['status']['name'],
+            "assignee": name,
+            "summary": f['summary'],
+            "description": desc_text,
+            "latest_comments": comments_text
+        })
 
-    tickets = "\n".join(context_for_ai[:40])
     prompt = f"""
-    Analyze Sprint. Metrics: {stats['points']} pts, {stats['bugs']} bugs.
-    Tickets: {tickets}
-    Return JSON:
+    You are a Chief Delivery Officer analyzing a Sprint. 
+    Read the following JSON dump of sprint tickets, which includes descriptions, acceptance criteria, and assignee comments.
+
+    SPRINT DATA:
+    {json.dumps(context_for_ai)}
+
+    Provide a highly professional JSON response with the following exact keys:
     {{
-        "executive_summary": "Write 2 sentences on the health and risks. Be decisive.",
-        "risk_level": "Low/Medium/High",
-        "key_recommendation": "Advice for PM."
+        "executive_summary": "High-level summary of the sprint's health, bottlenecks, and overall trajectory (2-3 sentences).",
+        "business_value": "Explain the actual business value being delivered this sprint based on the descriptions and acceptance criteria. Speak in business outcomes, not technical jargon (3-4 sentences).",
+        "story_progress": [
+            {{
+                "key": "Ticket ID",
+                "summary": "Short summary",
+                "assignee": "Assignee Name",
+                "status": "Current Status",
+                "analysis": "Read the comments and status. Give a 1-sentence brutally honest update on how this specific story is progressing based strictly on the comments."
+            }}
+        ]
     }}
     """
     
     ai_raw = generate_ai_response(prompt)
     if ai_raw:
         try: ai_data = json.loads(ai_raw.replace('```json','').replace('```','').strip())
-        except: ai_data = {"executive_summary": "Format Error in AI response.", "risk_level": "Unknown", "key_recommendation": "Check Logs"}
+        except: ai_data = {"executive_summary": "Format Error in AI response.", "business_value": "Data parsing failed.", "story_progress": []}
     else:
-        ai_data = {"executive_summary": "AI currently overloaded. Please refresh.", "risk_level": "Unknown", "key_recommendation": "Check API Quota"}
+        ai_data = {"executive_summary": "AI currently overloaded. Please refresh.", "business_value": "Unable to calculate.", "story_progress": []}
 
     return {"metrics": stats, "ai_insights": ai_data}
 
@@ -177,31 +207,27 @@ def list_projects(creds: dict = Depends(get_jira_creds)):
     try: return [{"key": p["key"], "name": p["name"], "avatar": p["avatarUrls"]["48x48"]} for p in res.json()]
     except: return []
 
-@app.post("/chat/agent")
-def chat_agent(payload: dict, creds: dict = Depends(get_jira_creds)):
-    jql = f"project = {payload.get('project')} AND sprint in openSprints()"
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "status"]})
-    context = str(res.json().get('issues', []))[:3000] if res else ""
-    
-    prompt = f"Context:\n{context}\nUser: {payload.get('query')}\nAnswer concisely. Format with Markdown."
-    
-    # Text generation specifically using the failover chain to ensure uptime
-    response = generate_ai_response(prompt)
-    return {"response": response if response else "AI Error: Model is currently busy, please try again."}
+@app.get("/sprints/{project_key}")
+def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
+    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
+    try:
+        sprints = {}
+        for i in res.json().get('issues', []):
+            for s in i['fields'].get('customfield_10020') or []:
+                sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
+        return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
+    except: return []
 
 @app.post("/estimate")
 async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
     key = payload.get("key")
     res = jira_request("GET", f"issue/{key}", creds)
     if not res: return {"status": "error", "message": "Ticket not found"}
-    
     issue = res.json()
     summary = issue['fields']['summary']
-    desc = str(issue['fields'].get('description', ''))[:1000]
-    
+    desc = extract_adf_text(issue['fields'].get('description', {}))[:1000]
     est = estimate_story_points(summary, desc)
     if not est: return {"status": "error", "message": "AI Failed"}
-    
     sp_field = get_story_point_field(creds)
     jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: est['points']}})
     jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 AI Estimate: {est['points']} Pts. {est['reasoning']}"}]}]}})
@@ -212,26 +238,19 @@ async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
 def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     db_data = {}
-    if res and res.status_code == 200:
-        db_data = res.json().get('value', {})
-        
+    if res and res.status_code == 200: db_data = res.json().get('value', {})
     sid = str(sprint_id)
-    if sid not in db_data:
-        db_data[sid] = {"well": [], "improve": [], "kudos": [], "actions": []}
+    if sid not in db_data: db_data[sid] = {"well": [], "improve": [], "kudos": [], "actions": []}
     return db_data[sid]
 
 @app.post("/retro/update")
 def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
     project_key = payload.get("project").upper()
     sid = str(payload.get("sprint"))
-    board_data = payload.get("board")
-    
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     db_data = {}
-    if res and res.status_code == 200:
-        db_data = res.json().get('value', {})
-        
-    db_data[sid] = board_data
+    if res and res.status_code == 200: db_data = res.json().get('value', {})
+    db_data[sid] = payload.get("board")
     jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "saved to Jira securely"}
 
@@ -247,17 +266,6 @@ def generate_actions(payload: dict):
         except: pass
     return {"actions": []}
 
-@app.get("/sprints/{project_key}")
-def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
-    try:
-        sprints = {}
-        for i in res.json().get('issues', []):
-            for s in i['fields'].get('customfield_10020') or []:
-                if s['state'] != 'future': sprints[s['id']] = {"id": s['id'], "name": s['name']}
-        return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
-    except: return []
-
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -267,14 +275,12 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", sp_field]})
     issues = res.json().get('issues', []) if res else []
     pts = sum([float(i['fields'].get(sp_field) or 0) for i in issues])
-    
     prompt = f"Summarize Report: {len(issues)} tasks done, {pts} points in {days} days. Brief JSON: {{\"summary\": \"text\"}}"
     ai_text = generate_ai_response(prompt)
     summary_text = "Great progress."
     if ai_text:
         try: summary_text = json.loads(ai_text.replace('```json','').replace('```','').strip())['summary']
         except: pass
-
     return {"completed_count": len(issues), "completed_points": pts, "ai_summary": {"summary": summary_text}}
 
 @app.get("/burndown/{project_key}")

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IG Agile Intelligence | Enterprise</title>
+    <title>IG Agile Intelligence | Executive</title>
     <link rel="icon" href="data:,">
     
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -38,7 +38,6 @@
         .nav-btn.active { background: var(--primary-dim); color: var(--primary); border-left: 3px solid var(--primary); }
         .input-field { background-color: var(--bg-body); border: 1px solid var(--border); color: var(--text-main); outline: none; transition: border-color 0.2s; }
         .input-field:focus { border-color: var(--primary); }
-        .chat-bubble { position: fixed; bottom: 24px; right: 24px; z-index: 50; }
         .prose strong { color: var(--primary); font-weight: 700; }
         .prose ul { list-style-type: disc; padding-left: 1.2rem; }
         .prose li { margin-bottom: 0.25rem; }
@@ -67,7 +66,7 @@
                 TrendingDown: <><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></>,
                 Sun: <><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></>,
                 Moon: <><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></>,
-                Send: <><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></>
+                Activity: <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{icons[name] || null}</svg>;
         };
@@ -124,8 +123,7 @@
             const [view, setView] = useState('dashboard');
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
-            const [isChatOpen, setIsChatOpen] = useState(false);
-            const [isGlobalLoading, setIsGlobalLoading] = useState(false); // NEW: Track loading state at top level
+            const [isGlobalLoading, setIsGlobalLoading] = useState(false);
 
             useEffect(() => {
                 secureFetch('/projects').then(r => r ? r.json() : []).then(data => {
@@ -143,7 +141,7 @@
                                 <div><h1 className="text-lg font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Agile</h1><p className="text-[10px] uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>{userRole.replace('_', ' ')}</p></div>
                             </div>
                             <nav className="space-y-1">
-                                <NavBtn id="dashboard" icon="BarChart2" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
+                                <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
                                 {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Calendar" label="Timeline" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
                                 {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="reports" icon="FileText" label="Reports" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="burndown" icon="TrendingDown" label="Burndown" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
@@ -152,12 +150,11 @@
                             <ThemeToggle theme={theme} setTheme={setTheme} fullWidth />
                             <div>
                                 <label className="text-[10px] font-bold uppercase mb-2 block" style={{color: 'var(--text-muted)'}}>Active Project</label>
-                                {/* NEW: Disable dropdown and change styling if loading */}
                                 <select 
                                     value={activeProject || ''} 
                                     onChange={e=>setActiveProject(e.target.value)} 
                                     disabled={isGlobalLoading}
-                                    className={`w-full p-2 rounded border text-sm input-field ${isGlobalLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                    className={`w-full p-2 rounded border text-sm input-field transition-all ${isGlobalLoading ? 'opacity-30 cursor-not-allowed bg-slate-800' : 'cursor-pointer hover:bg-slate-700'}`}
                                 >
                                     {projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}
                                 </select>
@@ -168,7 +165,7 @@
                     <main className="flex-1 overflow-auto p-8 relative transition-colors duration-300">
                         {activeProject ? (
                             <>
-                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} />}
+                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                                 {view === 'timeline' && <TimelineView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'standup' && <StandupView project={activeProject} />}
                                 {view === 'retro' && <RetroView project={activeProject} setIsLoading={setIsGlobalLoading} />}
@@ -177,7 +174,7 @@
                             </>
                         ) : <LoadingScreen msg="Connecting to Jira..." />}
                     </main>
-                    <AIChatBubble isOpen={isChatOpen} toggle={() => setIsChatOpen(!isChatOpen)} project={activeProject} />
+                    {/* Chat Bubble completely removed as requested */}
                 </div>
             );
         }
@@ -196,44 +193,117 @@
 
         function MetricCard({ label, value, color, isDanger }) {
             return (
-                <div className="glass-card p-6 border-l-4 transition hover:transform hover:scale-[1.02]" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}>
+                <div className="glass-card p-6 border-l-4 transition" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}>
                     <div className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{color: 'var(--text-muted)'}}>{label}</div>
                     <div className="text-3xl font-bold" style={{color: 'var(--text-main)'}}>{value}</div>
                 </div>
             );
         }
 
-        // --- DASHBOARD ---
-        function DashboardView({ project, role, setIsLoading }) {
+        // --- NEW EXECUTIVE COMMAND CENTER ---
+        function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
             const [data, setData] = useState(null);
-            
+            const [sprints, setSprints] = useState([]);
+            const [activeSprint, setActiveSprint] = useState('active'); // 'active' means openSprints()
+
+            // 1. Fetch Sprints for dropdown
+            useEffect(() => {
+                secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => {
+                    if(d && d.length) setSprints(d);
+                });
+            }, [project]);
+
+            // 2. Fetch Analytics Data when Project or Sprint changes
             useEffect(() => { 
                 setData(null);
                 setIsLoading(true);
-                secureFetch(`/analytics/${project}`)
+                
+                const url = activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`;
+                
+                secureFetch(url)
                     .then(r => r ? r.json() : null)
                     .then(d => { setData(d); setIsLoading(false); })
                     .catch(() => { setIsLoading(false); });
-            }, [project]);
+            }, [project, activeSprint]);
             
-            if (!data) return <LoadingScreen msg="AI is analyzing sprint data..." />;
+            if (!data) return <LoadingScreen msg="AI is reading descriptions, acceptance criteria, and assignee comments..." />;
 
             return (
                 <div className="animate-fade-in space-y-6">
-                    <header className="flex justify-between items-end">
-                        <div><h2 className="text-3xl font-bold" style={{color: 'var(--text-main)'}}>Command Center</h2><p className="text-sm mt-1" style={{color: 'var(--text-muted)'}}>Live sprint health & risk analysis</p></div>
-                        {data.ai_insights?.risk_level && <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide border ${data.ai_insights.risk_level === 'High' ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-emerald-500/10 border-emerald-500 text-emerald-500'}`}>Risk: {data.ai_insights.risk_level}</span>}
+                    {/* Header & Sprint Dropdown */}
+                    <header className="flex justify-between items-end mb-8 border-b pb-4" style={{borderColor: 'var(--border)'}}>
+                        <div>
+                            <h2 className="text-3xl font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Executive Insights</h2>
+                            <p className="text-sm mt-1" style={{color: 'var(--text-muted)'}}>AI-driven delivery analysis & business value</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <span className="text-[10px] font-bold uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>Target Sprint</span>
+                            <select 
+                                value={activeSprint} 
+                                onChange={e=>setActiveSprint(e.target.value)} 
+                                disabled={isGlobalLoading}
+                                className={`p-2 rounded border text-sm input-field font-medium min-w-[200px] ${isGlobalLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                                <option value="active">🟢 Active Sprint (Live)</option>
+                                {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                        </div>
                     </header>
+
+                    {/* Quick Metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <MetricCard label="Velocity (Pts)" value={data.metrics.points} color="primary" />
-                        <MetricCard label="Active Tasks" value={data.metrics.total} color="success" />
+                        <MetricCard label="Total Tickets" value={data.metrics.total} color="success" />
                         <MetricCard label="Blockers" value={data.metrics.blockers} color="danger" isDanger={data.metrics.blockers > 0} />
                         <MetricCard label="Bugs Found" value={data.metrics.bugs} color="warning" />
                     </div>
-                    <div className="glass-card p-8 border-l-4 relative overflow-hidden" style={{borderLeftColor: 'var(--primary)'}}>
-                        <h3 className="text-xs font-bold uppercase tracking-widest mb-3" style={{color: 'var(--primary)'}}>AI Executive Summary</h3>
-                        <p className="text-lg font-light leading-relaxed" style={{color: 'var(--text-main)'}} dangerouslySetInnerHTML={{ __html: marked.parse(data.ai_insights?.executive_summary || "Processing...") }}></p>
-                        {data.ai_insights?.key_recommendation && <div className="mt-6 pt-6 border-t flex gap-2 items-start" style={{borderColor: 'var(--border)'}}><span style={{color: 'var(--warning)'}}>💡</span><div><span className="text-xs font-bold uppercase block mb-1" style={{color: 'var(--text-muted)'}}>Recommendation</span><span className="text-sm" style={{color: 'var(--text-main)'}}>{data.ai_insights.key_recommendation}</span></div></div>}
+
+                    {/* Top Row: Dual Executive Panels */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Summary Panel */}
+                        <div className="glass-card p-6 border-t-4 flex flex-col" style={{borderTopColor: 'var(--primary)'}}>
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2" style={{color: 'var(--text-muted)'}}><Icon name="Activity" size={14}/> Executive Summary</h3>
+                                {data.ai_insights?.risk_level && <span className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wide border ${data.ai_insights.risk_level === 'High' ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-emerald-500/10 border-emerald-500 text-emerald-500'}`}>Risk: {data.ai_insights.risk_level}</span>}
+                            </div>
+                            <p className="text-sm leading-relaxed flex-1" style={{color: 'var(--text-main)'}}>{data.ai_insights?.executive_summary || "Analyzing..."}</p>
+                            {data.ai_insights?.key_recommendation && (
+                                <div className="mt-4 pt-4 border-t" style={{borderColor: 'var(--border)'}}>
+                                    <span className="text-[10px] font-bold uppercase block mb-1" style={{color: 'var(--warning)'}}>AI Recommendation</span>
+                                    <span className="text-xs" style={{color: 'var(--text-muted)'}}>{data.ai_insights.key_recommendation}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Business Value Panel */}
+                        <div className="glass-card p-6 border-t-4 flex flex-col" style={{borderTopColor: 'var(--success)'}}>
+                            <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 mb-4" style={{color: 'var(--text-muted)'}}><Icon name="TrendingDown" size={14}/> Business Value Delivered</h3>
+                            <p className="text-sm leading-relaxed" style={{color: 'var(--text-main)'}} dangerouslySetInnerHTML={{ __html: marked.parse(data.ai_insights?.business_value || "Parsing user stories...") }}></p>
+                        </div>
+                    </div>
+
+                    {/* Bottom Row: Story Progress Details */}
+                    <div>
+                        <h3 className="text-lg font-bold mb-4 mt-4" style={{color: 'var(--text-main)'}}>Deep Story Progress Analysis</h3>
+                        <div className="grid grid-cols-1 gap-3">
+                            {data.ai_insights?.story_progress?.map((story, idx) => (
+                                <div key={idx} className="glass-card p-4 flex gap-4 items-center transition hover:bg-opacity-50">
+                                    <div className="w-24 text-center">
+                                        <div className="text-xs font-bold" style={{color: 'var(--primary)'}}>{story.key}</div>
+                                        <div className="text-[9px] uppercase tracking-wider mt-1 px-2 py-0.5 rounded-full border inline-block" style={{borderColor: 'var(--border)', color: 'var(--text-muted)'}}>{story.status}</div>
+                                    </div>
+                                    <div className="flex-1 border-l pl-4" style={{borderColor: 'var(--border)'}}>
+                                        <div className="text-sm font-semibold mb-1" style={{color: 'var(--text-main)'}}>{story.summary} <span className="font-normal opacity-50 ml-2">({story.assignee})</span></div>
+                                        <div className="text-xs leading-relaxed" style={{color: 'var(--text-muted)'}}>
+                                            <strong style={{color: 'var(--warning)'}}>AI Note: </strong> {story.analysis}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {(!data.ai_insights?.story_progress || data.ai_insights.story_progress.length === 0) && (
+                                <div className="p-8 text-center text-sm italic" style={{color: 'var(--text-muted)'}}>No deep analysis available for specific stories yet.</div>
+                            )}
+                        </div>
                     </div>
                 </div>
             );
@@ -242,14 +312,9 @@
         // --- TIMELINE ---
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
-            
             useEffect(() => { 
-                setData(null);
-                setIsLoading(true);
-                secureFetch(`/analytics/${project}`)
-                    .then(r=>r?.json())
-                    .then(d => { setData(d); setIsLoading(false); })
-                    .catch(() => setIsLoading(false));
+                setData(null); setIsLoading(true);
+                secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(d => { setData(d); setIsLoading(false); }).catch(() => setIsLoading(false));
             }, [project]);
             
             if (!data) return <LoadingScreen msg="Loading assignees..." />;
@@ -296,7 +361,7 @@
             const add = () => { if(!input) return; save({...board, [col]: [...board[col], {id:Date.now(), text:input}]}); setInput(""); };
             const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions:[...board.actions, ...d.actions]}); setLoadingAI(false); }); };
             
-            if(!board) return <LoadingScreen msg="Loading Retrospective..." />;
+            if(!board) return <LoadingScreen msg="Loading Retrospective Database..." />;
 
             return (
                 <div className="h-full flex flex-col pb-6">
@@ -311,23 +376,18 @@
         }
 
         // --- OTHERS ---
-        function StandupView({ project }) { return <div className="text-center p-10 opacity-50 text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Bot Coming Soon</div>; }
-        function BurndownView() { return <div className="text-center p-10 opacity-50 text-xl font-bold" style={{color: 'var(--text-muted)'}}>Burndown Chart Coming Soon</div> }
+        function StandupView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Bot Coming Soon</div>; }
+        function BurndownView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Burndown Chart Coming Soon</div> }
         
         // --- REPORTS ---
         function ReportsView({ project, setIsLoading }) { 
             const [rep, setRep] = useState(null);
-            
             useEffect(()=>{ 
-                setRep(null); 
-                setIsLoading(true);
-                secureFetch(`/reports/${project}/weekly`)
-                    .then(r=>r?.json())
-                    .then(d => { setRep(d); setIsLoading(false); })
-                    .catch(() => { setRep({completed_count: 0, completed_points: 0, ai_summary: {summary: "Failed to load"}}); setIsLoading(false); });
+                setRep(null); setIsLoading(true);
+                secureFetch(`/reports/${project}/weekly`).then(r=>r?.json()).then(d => { setRep(d); setIsLoading(false); }).catch(() => { setRep({completed_count: 0, completed_points: 0, ai_summary: {summary: "Failed to load"}}); setIsLoading(false); });
             },[project]);
             
-            if(!rep) return <LoadingScreen msg="Generating Weekly Report..."/>;
+            if(!rep) return <LoadingScreen msg="Generating Weekly AI Report..."/>;
             return <div className="glass-card p-8"><h2 className="text-2xl font-bold mb-2" style={{color: 'var(--text-main)'}}>Weekly Report</h2><div className="text-4xl font-black mb-4" style={{color: 'var(--primary)'}}>{rep.completed_count} Tasks Completed</div><p className="leading-relaxed" style={{color: 'var(--text-muted)'}}>{rep.ai_summary?.summary || "No summary available."}</p></div> 
         }
 
@@ -338,24 +398,6 @@
                     <div className="text-sm font-medium tracking-wide" style={{color: 'var(--primary)'}}>{msg}</div>
                 </div>
             ); 
-        }
-
-        function AIChatBubble({ isOpen, toggle, project }) {
-            const [input, setInput] = useState(""); const [msgs, setMsgs] = useState([{role:'ai', text:"I'm your Data Analyst. Ask me anything."}]);
-            const ask = () => { if(!input) return; const q=input; setMsgs(p=>[...p,{role:'user', text:q}]); setInput(""); secureFetch('/chat/agent', {method:'POST', body:JSON.stringify({project, query:q})}).then(r=>r?.json()).then(d=>setMsgs(p=>[...p,{role:'ai', text:d.response}])); };
-            const parseMarkdown = (text) => text ? marked.parse(text) : "";
-            return (
-                <div className="chat-bubble">
-                    <AnimatePresence>{isOpen && (
-                        <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} exit={{opacity:0}} className="mb-4 w-96 glass-card flex flex-col overflow-hidden shadow-2xl border" style={{height:'500px', borderColor: 'var(--border)'}}>
-                            <div className="p-3 text-white font-bold flex justify-between text-sm" style={{backgroundColor: 'var(--primary)'}}><span>Analyst AI</span><button onClick={toggle}>✕</button></div>
-                            <div className="flex-1 p-4 overflow-y-auto space-y-3" style={{backgroundColor: 'var(--bg-body)'}}>{msgs.map((m,i) => <div key={i} className={`flex ${m.role==='user'?'justify-end':'justify-start'}`}><div className={`p-3 rounded-lg text-sm max-w-[85%] prose prose-invert`} style={{backgroundColor: m.role==='user'?'var(--primary)':'var(--bg-card)', color: m.role==='user'?'white':'var(--text-main)', border: m.role==='bot'?'1px solid var(--border)':'none'}} dangerouslySetInnerHTML={{ __html: parseMarkdown(m.text) }} /></div>)}</div>
-                            <div className="p-2 flex gap-2 border-t" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-sidebar)'}}><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&ask()} className="flex-1 rounded p-1.5 text-xs input-field" placeholder="Ask..." /><button onClick={ask} className="font-bold text-xs px-2" style={{color: 'var(--primary)'}}><Icon name="Send" size={16}/></button></div>
-                        </motion.div>
-                    )}</AnimatePresence>
-                    <button onClick={toggle} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg transition hover:scale-110 text-white" style={{backgroundColor: 'var(--primary)'}}>✨</button>
-                </div>
-            );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
