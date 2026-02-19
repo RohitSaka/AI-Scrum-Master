@@ -251,34 +251,55 @@ async def post_standup(payload: dict, creds: dict = Depends(get_jira_creds)):
     jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 Standup: {msg}"}]}]}})
     return {"status": "posted"}
 
-# --- 6. RETRO (ADDED MISSING POST ENDPOINT HERE) ---
+# --- 6. RETRO (USING JIRA AS A SECURE DATABASE) ---
 @app.get("/retro/{project_key}")
-def get_retro(project_key: str, sprint_id: str):
-    data = load_retro_data()
-    pk = project_key.upper(); sid = str(sprint_id)
-    if pk not in data: data[pk] = {}
-    if sid not in data[pk]: data[pk][sid] = {"well": [], "improve": [], "kudos": [], "actions": []}
-    return data[pk][sid]
+def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_creds)):
+    """Fetches Retro data from hidden Jira Project Properties."""
+    # 1. Ask Jira for the hidden property
+    res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
+    
+    db_data = {}
+    if res and res.status_code == 200:
+        db_data = res.json().get('value', {})
+        
+    sid = str(sprint_id)
+    if sid not in db_data:
+        db_data[sid] = {"well": [], "improve": [], "kudos": [], "actions": []}
+        
+    return db_data[sid]
 
 @app.post("/retro/update")
-def update_retro(payload: dict):
-    data = load_retro_data()
-    pk = payload.get("project").upper(); sid = str(payload.get("sprint"))
-    if pk not in data: data[pk] = {}
-    data[pk][sid] = payload.get("board")
-    save_retro_data(data)
-    return {"status": "saved"}
+def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Saves Retro data securely back into Jira."""
+    project_key = payload.get("project").upper()
+    sid = str(payload.get("sprint"))
+    board_data = payload.get("board")
+    
+    # 1. Fetch existing data first so we don't overwrite other sprints
+    res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
+    db_data = {}
+    if res and res.status_code == 200:
+        db_data = res.json().get('value', {})
+        
+    # 2. Update the specific sprint
+    db_data[sid] = board_data
+    
+    # 3. Save the entire JSON blob back to Jira's hidden database
+    jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
+    
+    return {"status": "saved to Jira securely"}
 
-# MISSING ENDPOINT RESTORED
 @app.post("/retro/generate_actions")
 def generate_actions(payload: dict):
+    # This stays the same - it just asks AI to read the board and suggest actions
     board = payload.get("board")
     prompt = f"Analyze Retro. GOOD: {board.get('well')} BAD: {board.get('improve')}. Create 3 strategic Action Items. Return JSON array: [\"Action 1\", \"Action 2\"]"
     try:
         raw = generate_ai_response(prompt)
         actions = json.loads(raw.replace('```json','').replace('```','').strip())
         return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(actions)]}
-    except: return {"actions": []}
+    except: 
+        return {"actions": []}
 
 @app.get("/sprints/{project_key}")
 def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
