@@ -1,9 +1,19 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import requests, json, os, re, time
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import io
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -17,7 +27,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: VERSION - EXECUTIVE COMMAND CENTER")
+print("🚀 APP STARTING: VERSION - EXECUTIVE PPT GENERATOR")
 print("="*50 + "\n")
 
 # --- CONFIGURATION ---
@@ -25,21 +35,16 @@ STORY_POINT_CACHE = {}
 RETRO_FILE = "retro_data.json"
 
 # --- SECURITY & AUTH ---
-async def get_jira_creds(
-    x_jira_domain: str = Header(...),
-    x_jira_email: str = Header(...),
-    x_jira_token: str = Header(...)
-):
+async def get_jira_creds(x_jira_domain: str = Header(...), x_jira_email: str = Header(...), x_jira_token: str = Header(...)):
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- AI CORE: ACTIVE FAILOVER ---
+# --- AI CORE ---
 def generate_ai_response(prompt, temperature=0.3):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: return None
 
-    fallback_chain = ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]
-    
+    fallback_chain = ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash", "gemini-2.5-pro"]
     for model in fallback_chain:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         payload = {
@@ -52,13 +57,9 @@ def generate_ai_response(prompt, temperature=0.3):
                 print(f"✅ AI Success: {model}")
                 return r.json()['candidates'][0]['content']['parts'][0]['text']
             else:
-                print(f"⚠️ AI Fail ({model}) [{r.status_code}]: Switching models...")
                 continue 
         except Exception as e:
-            print(f"❌ Network Error on {model}: {e}")
             continue
-
-    print("❌ ALL AI MODELS IN CHAIN FAILED.")
     return None
 
 # --- JIRA UTILITIES ---
@@ -87,42 +88,125 @@ def get_story_point_field(creds):
     return "customfield_10016"
 
 def extract_adf_text(adf_node):
-    """Recursively extracts plain text from Jira's complex Atlassian Document Format."""
     if not adf_node or not isinstance(adf_node, dict): return ""
     text = ""
     if adf_node.get('type') == 'text': text += adf_node.get('text', '') + " "
     for content in adf_node.get('content', []): text += extract_adf_text(content)
     return text.strip()
 
-# --- HELPER: ESTIMATION ---
-def estimate_story_points(summary, description):
-    prompt = f"""
-    Role: Technical Architect.
-    Task: Estimate Jira Ticket (1 pt = 6 hours).
-    Ticket: {summary}
-    Desc: {description}
-    Return JSON: {{ "points": int, "reasoning": "string" }}
-    """
-    raw = generate_ai_response(prompt, temperature=0.1)
-    if not raw: return None
-    try: return json.loads(raw.replace('```json','').replace('```','').strip())
-    except: return None
+# ================= PPTX & EMAIL GENERATION ENGINE =================
+def create_dark_slide(prs, title_text, body_text=""):
+    """Helper to create a beautiful dark-mode enterprise slide"""
+    slide = prs.slides.add_slide(prs.slide_layouts[1]) # Title and Content Layout
+    
+    # Set dark background (Slate-900)
+    background = slide.background
+    fill = background.fill
+    fill.solid()
+    fill.fore_color.rgb = RGBColor(15, 23, 42) 
+    
+    # Format Title
+    title = slide.shapes.title
+    title.text = title_text
+    title.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
+    title.text_frame.paragraphs[0].font.name = 'Arial'
+    title.text_frame.paragraphs[0].font.bold = True
+    
+    # Format Body
+    if body_text and slide.placeholders[1]:
+        body = slide.placeholders[1]
+        body.text = body_text
+        for p in body.text_frame.paragraphs:
+            p.font.color.rgb = RGBColor(200, 200, 200) # Light Grey text
+            p.font.size = Pt(16)
+            p.font.name = 'Arial'
+            
+    return slide
+
+def generate_ppt_buffer(project, metrics, ai_insights):
+    """Draws the presentation dynamically in memory"""
+    prs = Presentation()
+    
+    # Slide 1: Title Slide
+    title_slide = prs.slides.add_slide(prs.slide_layouts[0])
+    title_slide.background.fill.solid()
+    title_slide.background.fill.fore_color.rgb = RGBColor(15, 23, 42)
+    title_slide.shapes.title.text = f"{project} Executive Sprint Report"
+    title_slide.shapes.title.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
+    title_slide.placeholders[1].text = f"Generated by IG Agile Intelligence\nDate: {datetime.now().strftime('%b %d, %Y')}"
+    title_slide.placeholders[1].text_frame.paragraphs[0].font.color.rgb = RGBColor(99, 102, 241) # Indigo primary
+    
+    # Slide 2: Metrics Overview
+    body = f"Velocity (Points): {metrics.get('points', 0)}\nActive Tasks: {metrics.get('total', 0)}\nCritical Blockers: {metrics.get('blockers', 0)}\nBugs Found: {metrics.get('bugs', 0)}"
+    create_dark_slide(prs, "Sprint Velocity & Health", body)
+    
+    # Slide 3: Executive Summary
+    create_dark_slide(prs, "AI Executive Summary", ai_insights.get('executive_summary', 'No summary available.'))
+    
+    # Slide 4: Business Value
+    create_dark_slide(prs, "Business Value Delivered", ai_insights.get('business_value', 'No value data available.'))
+    
+    # Slide 5: Deep Story Analysis
+    story_text = ""
+    for story in ai_insights.get('story_progress', [])[:4]: # Limit to top 4 for slide space
+        story_text += f"• [{story.get('key')}] {story.get('summary')}\n   Status: {story.get('status')} | AI Note: {story.get('analysis')}\n\n"
+    
+    if story_text:
+        create_dark_slide(prs, "Key Story Progress", story_text)
+    
+    # Save to memory buffer
+    ppt_buffer = io.BytesIO()
+    prs.save(ppt_buffer)
+    ppt_buffer.seek(0)
+    return ppt_buffer
+
+def send_ppt_email(target_email, project, ppt_buffer):
+    """Sends the email silently in the background"""
+    sender_email = os.getenv("SMTP_EMAIL")
+    sender_password = os.getenv("SMTP_PASSWORD")
+    
+    if not sender_email or not sender_password:
+        print("⚠️ Email skipped: SMTP_EMAIL or SMTP_PASSWORD not found in Render Environment Variables.")
+        return
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = target_email
+        msg['Subject'] = f"📊 IG Agile: {project} Executive Report"
+        
+        body = f"Hello,\n\nPlease find the auto-generated Executive Sprint Report for {project} attached.\n\nGenerated by IG Agile Intelligence."
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Attach PPT
+        part = MIMEBase('application', "vnd.openxmlformats-officedocument.presentationml.presentation")
+        part.set_payload(ppt_buffer.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{project}_Executive_Report.pptx"')
+        msg.attach(part)
+        
+        # Send
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        print(f"📧 Email successfully sent to {target_email}")
+    except Exception as e:
+        print(f"❌ Email sending failed: {e}")
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online - Executive Mode"}
+def home(): return {"status": "Online - Executive PPT Mode"}
 
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    # Added 'comment' and 'description' to the fields we request from Jira
     fields = ["summary", "status", "assignee", "priority", sp_field, "issuetype", "description", "comment"]
     
-    if sprint_id and sprint_id != "active":
-        jql = f"project = {project_key} AND sprint = {sprint_id}"
-    else:
-        jql = f"project = {project_key} AND sprint in openSprints()"
+    if sprint_id and sprint_id != "active": jql = f"project = {project_key} AND sprint = {sprint_id}"
+    else: jql = f"project = {project_key} AND sprint in openSprints()"
         
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": fields})
     issues = res.json().get('issues', []) if res else []
@@ -153,41 +237,25 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         stats["assignees"][name]["points"] += pts
         stats["assignees"][name]["tasks"].append({"key": i['key'], "summary": f['summary'], "priority": f['priority']['name'] if f['priority'] else "Medium", "points": pts})
         
-        # EXTRACT TEXT FOR AI
-        desc_text = extract_adf_text(f.get('description', {}))[:800] # Limit to 800 chars per issue to save processing
+        desc_text = extract_adf_text(f.get('description', {}))[:800] 
         comments_obj = f.get('comment', {}).get('comments', [])
-        # Get the last 3 comments for context
         comments_text = " | ".join([extract_adf_text(c.get('body', {})) for c in comments_obj[-3:]])
         
         context_for_ai.append({
-            "key": i['key'],
-            "type": type_name,
-            "status": f['status']['name'],
-            "assignee": name,
-            "summary": f['summary'],
-            "description": desc_text,
-            "latest_comments": comments_text
+            "key": i['key'], "type": type_name, "status": f['status']['name'],
+            "assignee": name, "summary": f['summary'], "description": desc_text, "latest_comments": comments_text
         })
 
     prompt = f"""
     You are a Chief Delivery Officer analyzing a Sprint. 
-    Read the following JSON dump of sprint tickets, which includes descriptions, acceptance criteria, and assignee comments.
+    SPRINT DATA: {json.dumps(context_for_ai)}
 
-    SPRINT DATA:
-    {json.dumps(context_for_ai)}
-
-    Provide a highly professional JSON response with the following exact keys:
+    Provide a highly professional JSON response with exact keys:
     {{
-        "executive_summary": "High-level summary of the sprint's health, bottlenecks, and overall trajectory (2-3 sentences).",
-        "business_value": "Explain the actual business value being delivered this sprint based on the descriptions and acceptance criteria. Speak in business outcomes, not technical jargon (3-4 sentences).",
+        "executive_summary": "High-level summary of health and bottlenecks (2-3 sentences).",
+        "business_value": "Explain the actual business value being delivered this sprint based on descriptions (3-4 sentences).",
         "story_progress": [
-            {{
-                "key": "Ticket ID",
-                "summary": "Short summary",
-                "assignee": "Assignee Name",
-                "status": "Current Status",
-                "analysis": "Read the comments and status. Give a 1-sentence brutally honest update on how this specific story is progressing based strictly on the comments."
-            }}
+            {{"key": "ID", "summary": "Short summary", "assignee": "Name", "status": "Status", "analysis": "1-sentence brutally honest update based on comments."}}
         ]
     }}
     """
@@ -195,9 +263,9 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
     ai_raw = generate_ai_response(prompt)
     if ai_raw:
         try: ai_data = json.loads(ai_raw.replace('```json','').replace('```','').strip())
-        except: ai_data = {"executive_summary": "Format Error in AI response.", "business_value": "Data parsing failed.", "story_progress": []}
+        except: ai_data = {"executive_summary": "Format Error.", "business_value": "Parse failed.", "story_progress": []}
     else:
-        ai_data = {"executive_summary": "AI currently overloaded. Please refresh.", "business_value": "Unable to calculate.", "story_progress": []}
+        ai_data = {"executive_summary": "AI overloaded.", "business_value": "Unavailable.", "story_progress": []}
 
     return {"metrics": stats, "ai_insights": ai_data}
 
@@ -217,6 +285,30 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
                 sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
+
+# --- ✨ THE NEW PPT GENERATOR ENDPOINT ✨ ---
+@app.post("/generate_ppt")
+async def generate_ppt(payload: dict, background_tasks: BackgroundTasks, creds: dict = Depends(get_jira_creds)):
+    project = payload.get("project", "Unknown")
+    email = payload.get("email") # The logged-in user's email
+    data = payload.get("data", {})
+    
+    metrics = data.get("metrics", {})
+    ai_insights = data.get("ai_insights", {})
+    
+    # 1. Draw the PPT slides in memory
+    ppt_buffer = generate_ppt_buffer(project, metrics, ai_insights)
+    
+    # 2. Tell the server to try emailing it in the background (will silently skip if no SMTP info is given)
+    if email:
+        email_buffer = io.BytesIO(ppt_buffer.getvalue()) 
+        background_tasks.add_task(send_ppt_email, email, project, email_buffer)
+    
+    # 3. Instantly return the file so the browser downloads it
+    headers = {
+        'Content-Disposition': f'attachment; filename="{project}_Executive_Report.pptx"'
+    }
+    return StreamingResponse(ppt_buffer, headers=headers, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 @app.post("/estimate")
 async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):

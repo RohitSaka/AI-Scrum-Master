@@ -66,7 +66,8 @@
                 TrendingDown: <><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></>,
                 Sun: <><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></>,
                 Moon: <><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></>,
-                Activity: <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></>
+                Activity: <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></>,
+                Download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{icons[name] || null}</svg>;
         };
@@ -87,7 +88,7 @@
             const [theme, setTheme] = useState(localStorage.getItem('ig_theme') || 'dark');
             useEffect(() => { document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode'; localStorage.setItem('ig_theme', theme); }, [theme]);
             if (!config || !config.token) return <LoginScreen onLogin={(c) => setConfig(c)} theme={theme} setTheme={setTheme} />;
-            return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
+            return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} userEmail={config.email} />;
         }
 
         function LoginScreen({ onLogin, theme, setTheme }) {
@@ -119,11 +120,11 @@
             );
         }
 
-        function DashboardLayout({ userRole, theme, setTheme }) {
+        function DashboardLayout({ userRole, theme, setTheme, userEmail }) {
             const [view, setView] = useState('dashboard');
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
-            const [isGlobalLoading, setIsGlobalLoading] = useState(false);
+            const [isGlobalLoading, setIsGlobalLoading] = useState(false); 
 
             useEffect(() => {
                 secureFetch('/projects').then(r => r ? r.json() : []).then(data => {
@@ -165,7 +166,7 @@
                     <main className="flex-1 overflow-auto p-8 relative transition-colors duration-300">
                         {activeProject ? (
                             <>
-                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
+                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} userEmail={userEmail} />}
                                 {view === 'timeline' && <TimelineView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'standup' && <StandupView project={activeProject} />}
                                 {view === 'retro' && <RetroView project={activeProject} setIsLoading={setIsGlobalLoading} />}
@@ -174,7 +175,6 @@
                             </>
                         ) : <LoadingScreen msg="Connecting to Jira..." />}
                     </main>
-                    {/* Chat Bubble completely removed as requested */}
                 </div>
             );
         }
@@ -201,23 +201,21 @@
         }
 
         // --- NEW EXECUTIVE COMMAND CENTER ---
-        function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
+        function DashboardView({ project, role, setIsLoading, isGlobalLoading, userEmail }) {
             const [data, setData] = useState(null);
             const [sprints, setSprints] = useState([]);
-            const [activeSprint, setActiveSprint] = useState('active'); // 'active' means openSprints()
+            const [activeSprint, setActiveSprint] = useState('active'); 
+            const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
 
-            // 1. Fetch Sprints for dropdown
             useEffect(() => {
                 secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => {
                     if(d && d.length) setSprints(d);
                 });
             }, [project]);
 
-            // 2. Fetch Analytics Data when Project or Sprint changes
             useEffect(() => { 
                 setData(null);
                 setIsLoading(true);
-                
                 const url = activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`;
                 
                 secureFetch(url)
@@ -225,28 +223,70 @@
                     .then(d => { setData(d); setIsLoading(false); })
                     .catch(() => { setIsLoading(false); });
             }, [project, activeSprint]);
+
+            const handleDownloadPPT = async () => {
+                if(!data) return;
+                setIsGeneratingPPT(true);
+                try {
+                    const res = await secureFetch('/generate_ppt', {
+                        method: 'POST',
+                        body: JSON.stringify({ project: project, email: userEmail, data: data })
+                    });
+                    
+                    if(res && res.ok) {
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${project}_Executive_Report.pptx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        alert(`PPT Downloaded! An email copy was also sent to ${userEmail}.`);
+                    } else {
+                        alert("Failed to generate PPT.");
+                    }
+                } catch(e) {
+                    console.error(e);
+                    alert("Error downloading PPT.");
+                }
+                setIsGeneratingPPT(false);
+            };
             
             if (!data) return <LoadingScreen msg="AI is reading descriptions, acceptance criteria, and assignee comments..." />;
 
             return (
                 <div className="animate-fade-in space-y-6">
-                    {/* Header & Sprint Dropdown */}
+                    {/* Header & Controls */}
                     <header className="flex justify-between items-end mb-8 border-b pb-4" style={{borderColor: 'var(--border)'}}>
                         <div>
                             <h2 className="text-3xl font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Executive Insights</h2>
                             <p className="text-sm mt-1" style={{color: 'var(--text-muted)'}}>AI-driven delivery analysis & business value</p>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-bold uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>Target Sprint</span>
-                            <select 
-                                value={activeSprint} 
-                                onChange={e=>setActiveSprint(e.target.value)} 
-                                disabled={isGlobalLoading}
-                                className={`p-2 rounded border text-sm input-field font-medium min-w-[200px] ${isGlobalLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>Target Sprint</span>
+                                <select 
+                                    value={activeSprint} 
+                                    onChange={e=>setActiveSprint(e.target.value)} 
+                                    disabled={isGlobalLoading}
+                                    className={`p-2 rounded border text-sm input-field font-medium min-w-[200px] ${isGlobalLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                                >
+                                    <option value="active">🟢 Active Sprint (Live)</option>
+                                    {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            
+                            {/* PPT DOWNLOAD BUTTON */}
+                            <button 
+                                onClick={handleDownloadPPT} 
+                                disabled={isGeneratingPPT || isGlobalLoading}
+                                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded shadow-lg transition disabled:opacity-50"
+                                style={{backgroundColor: 'var(--primary)'}}
                             >
-                                <option value="active">🟢 Active Sprint (Live)</option>
-                                {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
+                                {isGeneratingPPT ? <span className="loader" style={{width:'14px', height:'14px'}}></span> : <Icon name="Download" size={16}/>}
+                                {isGeneratingPPT ? 'Generating...' : 'Export PPT'}
+                            </button>
                         </div>
                     </header>
 
@@ -260,7 +300,6 @@
 
                     {/* Top Row: Dual Executive Panels */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Summary Panel */}
                         <div className="glass-card p-6 border-t-4 flex flex-col" style={{borderTopColor: 'var(--primary)'}}>
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2" style={{color: 'var(--text-muted)'}}><Icon name="Activity" size={14}/> Executive Summary</h3>
@@ -275,7 +314,6 @@
                             )}
                         </div>
 
-                        {/* Business Value Panel */}
                         <div className="glass-card p-6 border-t-4 flex flex-col" style={{borderTopColor: 'var(--success)'}}>
                             <h3 className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 mb-4" style={{color: 'var(--text-muted)'}}><Icon name="TrendingDown" size={14}/> Business Value Delivered</h3>
                             <p className="text-sm leading-relaxed" style={{color: 'var(--text-main)'}} dangerouslySetInnerHTML={{ __html: marked.parse(data.ai_insights?.business_value || "Parsing user stories...") }}></p>
@@ -312,6 +350,7 @@
         // --- TIMELINE ---
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
+            
             useEffect(() => { 
                 setData(null); setIsLoading(true);
                 secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(d => { setData(d); setIsLoading(false); }).catch(() => setIsLoading(false));
@@ -376,7 +415,7 @@
         }
 
         // --- OTHERS ---
-        function StandupView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Bot Coming Soon</div>; }
+        function StandupView({ project }) { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Bot Coming Soon</div>; }
         function BurndownView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Burndown Chart Coming Soon</div> }
         
         // --- REPORTS ---
