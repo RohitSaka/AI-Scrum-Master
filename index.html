@@ -60,12 +60,6 @@
             const icons = {
                 BarChart2: <><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></>,
                 Calendar: <><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></>,
-                MessageSquare: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></>,
-                RefreshCcw: <><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></>,
-                FileText: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></>,
-                TrendingDown: <><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></>,
-                Sun: <><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></>,
-                Moon: <><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></>,
                 Activity: <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></>,
                 Download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></>
             };
@@ -85,13 +79,12 @@
 
         function App() {
             const [config, setConfig] = useState(JSON.parse(localStorage.getItem('ig_config')));
-            const [theme, setTheme] = useState(localStorage.getItem('ig_theme') || 'dark');
-            useEffect(() => { document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode'; localStorage.setItem('ig_theme', theme); }, [theme]);
-            if (!config || !config.token) return <LoginScreen onLogin={(c) => setConfig(c)} theme={theme} setTheme={setTheme} />;
-            return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} userEmail={config.email} />;
+            useEffect(() => { document.body.className = 'dark-mode'; }, []);
+            if (!config || !config.token) return <LoginScreen onLogin={(c) => setConfig(c)} />;
+            return <DashboardLayout userRole={config.role || 'scrum_master'} />;
         }
 
-        function LoginScreen({ onLogin, theme, setTheme }) {
+        function LoginScreen({ onLogin }) {
             const [form, setForm] = useState({ domain: '', email: '', token: '', role: 'scrum_master' });
             const [loading, setLoading] = useState(false);
             const handleLogin = () => {
@@ -101,7 +94,6 @@
             };
             return (
                 <div className="h-screen flex items-center justify-center relative transition-colors duration-500" style={{backgroundColor: 'var(--bg-body)'}}>
-                    <div className="absolute top-4 right-4"><ThemeToggle theme={theme} setTheme={setTheme} /></div>
                     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-[400px] glass-card p-10 z-10 shadow-2xl">
                         <div className="mb-8 text-center">
                             <h1 className="text-2xl font-bold tracking-tight" style={{color: 'var(--text-main)'}}>IG Agile</h1>
@@ -120,7 +112,7 @@
             );
         }
 
-        function DashboardLayout({ userRole, theme, setTheme, userEmail }) {
+        function DashboardLayout({ userRole }) {
             const [view, setView] = useState('dashboard');
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
@@ -143,12 +135,9 @@
                             </div>
                             <nav className="space-y-1">
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
-                                {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Calendar" label="Timeline" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
-                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="reports" icon="FileText" label="Reports" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="burndown" icon="TrendingDown" label="Burndown" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
                         </div>
                         <div className="p-4 border-t space-y-4" style={{borderColor: 'var(--border)'}}>
-                            <ThemeToggle theme={theme} setTheme={setTheme} fullWidth />
                             <div>
                                 <label className="text-[10px] font-bold uppercase mb-2 block" style={{color: 'var(--text-muted)'}}>Active Project</label>
                                 <select 
@@ -166,24 +155,11 @@
                     <main className="flex-1 overflow-auto p-8 relative transition-colors duration-300">
                         {activeProject ? (
                             <>
-                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} userEmail={userEmail} />}
-                                {view === 'timeline' && <TimelineView project={activeProject} setIsLoading={setIsGlobalLoading} />}
-                                {view === 'standup' && <StandupView project={activeProject} />}
-                                {view === 'retro' && <RetroView project={activeProject} setIsLoading={setIsGlobalLoading} />}
-                                {view === 'reports' && <ReportsView project={activeProject} setIsLoading={setIsGlobalLoading} />}
-                                {view === 'burndown' && <BurndownView project={activeProject} />}
+                                {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                             </>
                         ) : <LoadingScreen msg="Connecting to Jira..." />}
                     </main>
                 </div>
-            );
-        }
-
-        function ThemeToggle({ theme, setTheme, fullWidth }) {
-            return (
-                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-2 rounded border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 transition hover:opacity-80 ${fullWidth ? 'w-full' : ''}`} style={{borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-card)'}}>
-                    <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={14} /> {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-                </button>
             );
         }
 
@@ -200,8 +176,8 @@
             );
         }
 
-        // --- NEW EXECUTIVE COMMAND CENTER ---
-        function DashboardView({ project, role, setIsLoading, isGlobalLoading, userEmail }) {
+        // --- EXECUTIVE COMMAND CENTER ---
+        function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
             const [data, setData] = useState(null);
             const [sprints, setSprints] = useState([]);
             const [activeSprint, setActiveSprint] = useState('active'); 
@@ -230,7 +206,7 @@
                 try {
                     const res = await secureFetch('/generate_ppt', {
                         method: 'POST',
-                        body: JSON.stringify({ project: project, email: userEmail, data: data })
+                        body: JSON.stringify({ project: project, data: data })
                     });
                     
                     if(res && res.ok) {
@@ -238,17 +214,16 @@
                         const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.href = url;
-                        a.download = `${project}_Executive_Report.pptx`;
+                        // NEW: It's an interactive HTML deck now!
+                        a.download = `${project}_Smart_Deck.html`;
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
-                        alert(`PPT Downloaded! An email copy was also sent to ${userEmail}.`);
                     } else {
-                        alert("Failed to generate PPT.");
+                        alert("Failed to generate Presentation.");
                     }
                 } catch(e) {
                     console.error(e);
-                    alert("Error downloading PPT.");
                 }
                 setIsGeneratingPPT(false);
             };
@@ -257,7 +232,6 @@
 
             return (
                 <div className="animate-fade-in space-y-6">
-                    {/* Header & Controls */}
                     <header className="flex justify-between items-end mb-8 border-b pb-4" style={{borderColor: 'var(--border)'}}>
                         <div>
                             <h2 className="text-3xl font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Executive Insights</h2>
@@ -277,20 +251,19 @@
                                 </select>
                             </div>
                             
-                            {/* PPT DOWNLOAD BUTTON */}
+                            {/* SMART DECK EXPORT BUTTON */}
                             <button 
                                 onClick={handleDownloadPPT} 
                                 disabled={isGeneratingPPT || isGlobalLoading}
-                                className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white rounded shadow-lg transition disabled:opacity-50"
-                                style={{backgroundColor: 'var(--primary)'}}
+                                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-lg shadow-lg hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100"
+                                style={{background: 'linear-gradient(to right, #6366f1, #a855f7)'}}
                             >
-                                {isGeneratingPPT ? <span className="loader" style={{width:'14px', height:'14px'}}></span> : <Icon name="Download" size={16}/>}
-                                {isGeneratingPPT ? 'Generating...' : 'Export PPT'}
+                                {isGeneratingPPT ? <span className="loader" style={{width:'16px', height:'16px'}}></span> : <Icon name="Download" size={18}/>}
+                                {isGeneratingPPT ? 'Generating Deck...' : '✨ Export Smart Deck'}
                             </button>
                         </div>
                     </header>
 
-                    {/* Quick Metrics */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <MetricCard label="Velocity (Pts)" value={data.metrics.points} color="primary" />
                         <MetricCard label="Total Tickets" value={data.metrics.total} color="success" />
@@ -298,7 +271,6 @@
                         <MetricCard label="Bugs Found" value={data.metrics.bugs} color="warning" />
                     </div>
 
-                    {/* Top Row: Dual Executive Panels */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="glass-card p-6 border-t-4 flex flex-col" style={{borderTopColor: 'var(--primary)'}}>
                             <div className="flex justify-between items-center mb-4">
@@ -320,7 +292,6 @@
                         </div>
                     </div>
 
-                    {/* Bottom Row: Story Progress Details */}
                     <div>
                         <h3 className="text-lg font-bold mb-4 mt-4" style={{color: 'var(--text-main)'}}>Deep Story Progress Analysis</h3>
                         <div className="grid grid-cols-1 gap-3">
@@ -345,89 +316,6 @@
                     </div>
                 </div>
             );
-        }
-
-        // --- TIMELINE ---
-        function TimelineView({ project, setIsLoading }) {
-            const [data, setData] = useState(null);
-            
-            useEffect(() => { 
-                setData(null); setIsLoading(true);
-                secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(d => { setData(d); setIsLoading(false); }).catch(() => setIsLoading(false));
-            }, [project]);
-            
-            if (!data) return <LoadingScreen msg="Loading assignees..." />;
-
-            return (
-                <div className="animate-fade-in">
-                    <h2 className="text-2xl font-bold mb-6" style={{color: 'var(--text-main)'}}>Delivery Timeline</h2>
-                    <div className="glass-card rounded-xl overflow-hidden">
-                        {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} className="flex border-b p-4 transition items-center hover:bg-opacity-50" style={{borderColor: 'var(--border)'}}>
-                                <div className="w-48 flex items-center gap-3">
-                                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{backgroundColor: 'var(--border)'}}>{name.charAt(0)}</div>
-                                    <div><div className="text-sm font-medium" style={{color: 'var(--text-main)'}}>{name.split(" ")[0]}</div><div className="text-[10px]" style={{color: 'var(--text-muted)'}}>{stats.points} pts</div></div>
-                                </div>
-                                <div className="flex-1 flex gap-2 flex-wrap">
-                                    {stats.tasks?.map(t => (
-                                        <div key={t.key} className="px-3 py-1.5 rounded text-xs border cursor-pointer hover:scale-105 transition shadow-sm" style={{borderColor: t.priority==='High' ? 'var(--danger)' : 'var(--primary)', backgroundColor: 'var(--bg-body)', color: 'var(--text-main)'}}>
-                                            <span className="font-bold opacity-70 mr-1">{t.key}</span> {t.summary.substring(0, 25)}...
-                                        </div>
-                                    ))}
-                                    {(!stats.tasks || stats.tasks.length === 0) && <span className="text-xs text-slate-500 italic">No tasks listed</span>}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            );
-        }
-
-        // --- RETRO ---
-        function RetroView({ project, setIsLoading }) {
-            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
-            
-            useEffect(() => { 
-                setSprints([]); setActiveSprint(null); setBoard(null); setIsLoading(true);
-                secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { setSprints(d); if(d.length) setActiveSprint(d[0].id); setIsLoading(false); }); 
-            }, [project]);
-            
-            useEffect(() => { 
-                if(activeSprint) { setBoard(null); secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r=>r?.json()).then(setBoard); } 
-            }, [project, activeSprint]);
-            
-            const save = (nb) => { setBoard(nb); secureFetch(`/retro/update`, {method:'POST', body:JSON.stringify({project, sprint:activeSprint, board:nb})}); };
-            const add = () => { if(!input) return; save({...board, [col]: [...board[col], {id:Date.now(), text:input}]}); setInput(""); };
-            const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions:[...board.actions, ...d.actions]}); setLoadingAI(false); }); };
-            
-            if(!board) return <LoadingScreen msg="Loading Retrospective Database..." />;
-
-            return (
-                <div className="h-full flex flex-col pb-6">
-                    <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold" style={{color: 'var(--text-main)'}}>Retrospective</h2><select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} className="p-2 rounded border text-xs input-field">{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-                    <div className="flex gap-2 mb-6"><div className="flex p-1 rounded-lg border" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)'}}>{['well', 'improve', 'kudos'].map(c => <button key={c} onClick={()=>setCol(c)} className="px-4 py-1.5 rounded-md text-xs font-bold capitalize transition" style={{backgroundColor: col===c ? 'var(--primary)' : 'transparent', color: col===c ? 'white' : 'var(--text-muted)'}}>{c}</button>)}</div><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder={`Add to ${col}...`} className="flex-1 rounded-lg px-4 text-sm input-field" /><button onClick={add} className="text-white px-6 rounded-lg font-bold text-sm" style={{backgroundColor: 'var(--primary)'}}>Post</button></div>
-                    <div className="grid grid-cols-4 gap-4 flex-1 min-h-0">
-                        {['well','improve','kudos'].map(c=><div key={c} className="glass-card p-4 rounded-xl flex flex-col overflow-hidden"><h3 className="font-bold uppercase text-[10px] mb-4" style={{color: 'var(--text-muted)'}}>{c}</h3><div className="overflow-y-auto space-y-3 flex-1">{board[c]?.map(i=><div key={i.id} className="p-3 rounded border text-sm" style={{backgroundColor: 'var(--bg-body)', borderColor: 'var(--border)', color: 'var(--text-main)'}}>{i.text}</div>)}</div></div>)}
-                        <div className="glass-card p-4 rounded-xl flex flex-col border-l-2" style={{borderLeftColor: 'var(--primary)'}}><h3 className="font-bold uppercase text-[10px] mb-4 flex justify-between" style={{color: 'var(--primary)'}}>Actions <button onClick={genActions} disabled={loadingAI} className="px-2 py-1 rounded text-[10px]" style={{backgroundColor: 'var(--primary-dim)', color: 'var(--primary)'}}>{loadingAI?"...":"✨ AI"}</button></h3><div className="overflow-y-auto space-y-3 flex-1">{board.actions?.map(i=><div key={i.id} className="p-3 rounded border text-sm" style={{borderColor: 'var(--primary)', backgroundColor: 'var(--primary-dim)', color: 'var(--text-main)'}}>{i.text}</div>)}</div></div>
-                    </div>
-                </div>
-            );
-        }
-
-        // --- OTHERS ---
-        function StandupView({ project }) { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Bot Coming Soon</div>; }
-        function BurndownView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Burndown Chart Coming Soon</div> }
-        
-        // --- REPORTS ---
-        function ReportsView({ project, setIsLoading }) { 
-            const [rep, setRep] = useState(null);
-            useEffect(()=>{ 
-                setRep(null); setIsLoading(true);
-                secureFetch(`/reports/${project}/weekly`).then(r=>r?.json()).then(d => { setRep(d); setIsLoading(false); }).catch(() => { setRep({completed_count: 0, completed_points: 0, ai_summary: {summary: "Failed to load"}}); setIsLoading(false); });
-            },[project]);
-            
-            if(!rep) return <LoadingScreen msg="Generating Weekly AI Report..."/>;
-            return <div className="glass-card p-8"><h2 className="text-2xl font-bold mb-2" style={{color: 'var(--text-main)'}}>Weekly Report</h2><div className="text-4xl font-black mb-4" style={{color: 'var(--primary)'}}>{rep.completed_count} Tasks Completed</div><p className="leading-relaxed" style={{color: 'var(--text-muted)'}}>{rep.ai_summary?.summary || "No summary available."}</p></div> 
         }
 
         function LoadingScreen({ msg = "Loading..." }) { 
