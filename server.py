@@ -4,8 +4,9 @@ from fastapi.responses import StreamingResponse
 import requests, json, os, time
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
+
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
@@ -23,10 +24,11 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: ADVANCED PPTX GENERATOR")
+print("🚀 APP STARTING: CORPORATE PPTX GENERATOR")
 print("="*50 + "\n")
 
 STORY_POINT_CACHE = {} 
+ACTIVE_MODEL = None 
 
 async def get_jira_creds(x_jira_domain: str = Header(...), x_jira_email: str = Header(...), x_jira_token: str = Header(...)):
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
@@ -37,7 +39,6 @@ def generate_ai_response(prompt, temperature=0.3):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: return None
 
-    # Priority Chain
     fallback_chain = ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]
     for model in fallback_chain:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
@@ -85,138 +86,154 @@ def extract_adf_text(adf_node):
     for content in adf_node.get('content', []): text += extract_adf_text(content)
     return text.strip()
 
-# ================= 🎨 ADVANCED PPTX DRAWING ENGINE =================
+# ================= 🎨 CORPORATE PPTX DRAWING ENGINE =================
+# Palette matching the provided corporate designs
+C_BG = RGBColor(248, 250, 252)        # Very light grey/blue background
+C_WHITE = RGBColor(255, 255, 255)     # Card Background
+C_BLUE_DARK = RGBColor(30, 58, 138)   # Primary Corporate Blue (Text & Accents)
+C_BLUE_LIGHT = RGBColor(59, 130, 246) # Secondary Blue
+C_TEXT_DARK = RGBColor(15, 23, 42)    # Main Text
+C_TEXT_MUTED = RGBColor(100, 116, 139) # Subtitles
+C_BORDER = RGBColor(226, 232, 240)    # Card Borders
 
-def set_bg(slide):
-    """Sets the dark slate background"""
-    background = slide.background
-    fill = background.fill
+def set_slide_bg(slide, color):
+    bg = slide.background
+    fill = bg.fill
     fill.solid()
-    fill.fore_color.rgb = RGBColor(15, 23, 42) # Slate-900
+    fill.fore_color.rgb = color
 
-def add_title(slide, text):
-    """Adds a modern title to a blank slide"""
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1))
+def add_text(slide, text, left, top, width, height, font_size, font_color, bold=False, align=PP_ALIGN.LEFT):
+    txBox = slide.shapes.add_textbox(left, top, width, height)
     tf = txBox.text_frame
+    tf.word_wrap = True
     p = tf.paragraphs[0]
-    p.text = text
-    p.font.bold = True
-    p.font.size = Pt(36)
-    p.font.color.rgb = RGBColor(255, 255, 255)
+    p.text = str(text)
+    p.font.size = Pt(font_size)
+    p.font.color.rgb = font_color
+    p.font.bold = bold
+    p.font.name = 'Arial'
+    p.alignment = align
+    return tf
 
-def draw_glass_card(slide, left, top, width, height, title, subtitle, body, accent_rgb):
-    """Draws a custom rounded rectangle mimicking the Tailwind UI"""
-    # Main Card Body
+def draw_card(slide, left, top, width, height, bg_color=C_WHITE, border_color=C_BORDER):
     shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
     shape.fill.solid()
-    shape.fill.fore_color.rgb = RGBColor(30, 41, 59) # Slate-800
-    shape.line.color.rgb = accent_rgb
-    shape.line.width = Pt(1.5)
-    
-    # Text Frame
-    tf = shape.text_frame
-    tf.word_wrap = True
-    tf.margin_top = Inches(0.2)
-    tf.margin_left = Inches(0.2)
-    tf.margin_right = Inches(0.2)
-    
-    # Title
-    p = tf.paragraphs[0]
-    p.text = title
-    p.font.bold = True
-    p.font.size = Pt(18)
-    p.font.color.rgb = RGBColor(255, 255, 255)
-    
-    # Subtitle
-    p2 = tf.add_paragraph()
-    p2.text = subtitle + "\n"
-    p2.font.size = Pt(12)
-    p2.font.color.rgb = RGBColor(148, 163, 184) # Slate-400
-    
-    # Body
-    p3 = tf.add_paragraph()
-    p3.text = body
-    p3.font.size = Pt(14)
-    p3.font.color.rgb = RGBColor(226, 232, 240) # Slate-200
+    shape.fill.fore_color.rgb = bg_color
+    if border_color:
+        shape.line.color.rgb = border_color
+        shape.line.width = Pt(1)
+    else:
+        shape.line.fill.background()
+    return shape
 
-def generate_advanced_pptx(project, metrics, ai_insights):
-    """Orchestrates the drawing of the entire deck"""
+def generate_corporate_pptx(project, metrics, ai_insights):
     prs = Presentation()
-    # Force widescreen 16:9
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6] 
     
-    # COLOR PALETTE
-    c_primary = RGBColor(99, 102, 241) # Indigo
-    c_success = RGBColor(16, 185, 129) # Emerald
-    c_danger = RGBColor(239, 68, 68)   # Red
-    c_warning = RGBColor(245, 158, 11) # Amber
-
-    # --- SLIDE 1: TITLE ---
+    date_str = datetime.now().strftime('%m/%d/%Y')
+    
+    # --- SLIDE 1: TITLE SLIDE ---
     slide1 = prs.slides.add_slide(blank_layout)
-    set_bg(slide1)
+    set_slide_bg(slide1, C_BG)
     
-    txBox = slide1.shapes.add_textbox(Inches(1), Inches(2.5), Inches(11), Inches(2))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
-    p.text = f"{project}\nExecutive Sprint Report"
-    p.font.bold = True
-    p.font.size = Pt(54)
-    p.font.color.rgb = RGBColor(255, 255, 255)
+    # Right-side blue geometric block
+    right_block = slide1.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(8), Inches(0), Inches(5.333), Inches(7.5))
+    right_block.fill.solid()
+    right_block.fill.fore_color.rgb = C_BLUE_DARK
+    right_block.line.fill.background()
     
-    p2 = tf.add_paragraph()
-    p2.text = f"Generated by IG Agile Intelligence • {datetime.now().strftime('%B %d, %Y')}"
-    p2.font.size = Pt(24)
-    p2.font.color.rgb = c_primary
+    add_text(slide1, "PROJECT STATUS REPORT", Inches(1), Inches(1.5), Inches(6), Inches(0.5), 12, C_TEXT_MUTED, bold=True)
+    add_text(slide1, "Weekly Project\nStatus Review", Inches(1), Inches(2), Inches(6), Inches(2), 54, C_TEXT_DARK, bold=True)
+    add_text(slide1, f"🗓 {date_str}", Inches(1), Inches(4.5), Inches(6), Inches(0.5), 18, C_TEXT_MUTED)
+    
+    add_text(slide1, "PREPARED BY", Inches(1), Inches(5.8), Inches(6), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide1, "IG Agile Intelligence System", Inches(1), Inches(6.1), Inches(6), Inches(0.5), 14, C_TEXT_DARK, bold=True)
 
-    # --- SLIDE 2: METRICS & SUMMARY ---
+    # --- SLIDE 2: AT A GLANCE ---
     slide2 = prs.slides.add_slide(blank_layout)
-    set_bg(slide2)
-    add_title(slide2, "Sprint Health & Summary")
+    set_slide_bg(slide2, C_BG)
+    add_text(slide2, "WEEKLY STATUS", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide2, "Agenda & At-a-Glance", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
     
-    # Metrics row
-    draw_glass_card(slide2, Inches(0.5), Inches(1.5), Inches(2.8), Inches(1.5), str(metrics.get('points', 0)), "Velocity (Pts)", "", c_primary)
-    draw_glass_card(slide2, Inches(3.6), Inches(1.5), Inches(2.8), Inches(1.5), str(metrics.get('total', 0)), "Active Tasks", "", c_success)
-    draw_glass_card(slide2, Inches(6.7), Inches(1.5), Inches(2.8), Inches(1.5), str(metrics.get('blockers', 0)), "Critical Blockers", "", c_danger)
-    draw_glass_card(slide2, Inches(9.8), Inches(1.5), Inches(2.8), Inches(1.5), str(metrics.get('bugs', 0)), "Bugs Found", "", c_warning)
+    # Left Agenda List
+    add_text(slide2, "Meeting Agenda", Inches(0.5), Inches(1.8), Inches(4), Inches(0.5), 18, C_TEXT_DARK, bold=True)
+    agenda_items = ["01   Sprint Overview", "02   KPIs / Story Count", "03   Business Value", "04   Risks & Issues"]
+    for idx, item in enumerate(agenda_items):
+        draw_card(slide2, Inches(0.5), Inches(2.5 + (idx*0.8)), Inches(4.5), Inches(0.6))
+        add_text(slide2, item, Inches(0.7), Inches(2.65 + (idx*0.8)), Inches(4), Inches(0.5), 14, C_TEXT_DARK)
+        
+    # Right Summary Card
+    draw_card(slide2, Inches(5.5), Inches(1.8), Inches(7.3), Inches(5.2), C_WHITE, C_BORDER)
+    add_text(slide2, "⚡ At-a-Glance Summary", Inches(5.8), Inches(2.1), Inches(4), Inches(0.5), 18, C_BLUE_DARK, bold=True)
+    
+    draw_card(slide2, Inches(5.8), Inches(2.8), Inches(6.7), Inches(1.2), C_BG)
+    add_text(slide2, "TOTAL STORIES IN SCOPE", Inches(6.0), Inches(3.0), Inches(3), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide2, f"{metrics.get('total', 0)}", Inches(11.0), Inches(3.0), Inches(1.2), Inches(0.8), 48, C_BLUE_DARK, bold=True, align=PP_ALIGN.RIGHT)
+    
+    # Bottom sub-cards
+    draw_card(slide2, Inches(5.8), Inches(4.2), Inches(3.2), Inches(1.2), C_BG)
+    add_text(slide2, "TEAM VELOCITY", Inches(6.0), Inches(4.4), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide2, f"{metrics.get('points', 0)} pts", Inches(6.0), Inches(4.7), Inches(2), Inches(0.5), 24, C_TEXT_DARK, bold=True)
 
-    # Summary box
-    exec_sum = ai_insights.get('executive_summary', 'Processing...')
-    rec = ai_insights.get('key_recommendation', '')
-    draw_glass_card(slide2, Inches(0.5), Inches(3.5), Inches(12.1), Inches(3.5), "AI Executive Summary", "High-level trajectory", f"{exec_sum}\n\nRecommendation: {rec}", c_primary)
+    draw_card(slide2, Inches(9.3), Inches(4.2), Inches(3.2), Inches(1.2), C_BG)
+    add_text(slide2, "BUGS FOUND", Inches(9.5), Inches(4.4), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide2, f"{metrics.get('bugs', 0)}", Inches(9.5), Inches(4.7), Inches(2), Inches(0.5), 24, C_TEXT_DARK, bold=True)
 
-    # --- SLIDE 3: BUSINESS VALUE ---
+    # --- SLIDE 3: SPRINT OVERVIEW ---
     slide3 = prs.slides.add_slide(blank_layout)
-    set_bg(slide3)
-    add_title(slide3, "Business Value Delivered")
-    biz_val = ai_insights.get('business_value', 'Processing...')
-    draw_glass_card(slide3, Inches(0.5), Inches(1.5), Inches(12.1), Inches(5), "Sprint Impact", "Business outcomes derived from technical tickets", biz_val, c_success)
-
-    # --- SLIDE 4: STORY TRAJECTORY (The 2x2 Grid) ---
-    slide4 = prs.slides.add_slide(blank_layout)
-    set_bg(slide4)
-    add_title(slide4, "Key Story Trajectory")
+    set_slide_bg(slide3, C_BG)
+    add_text(slide3, "PROJECT STATUS REPORT", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide3, "Sprint Overview", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
     
-    stories = ai_insights.get('story_progress', [])[:4] # Take top 4
+    # Left Big Card (Exec Summary)
+    draw_card(slide3, Inches(0.5), Inches(1.8), Inches(7.5), Inches(5.2))
+    add_text(slide3, "EXECUTIVE SUMMARY", Inches(0.8), Inches(2.1), Inches(4), Inches(0.3), 12, C_BLUE_DARK, bold=True)
+    tf = add_text(slide3, ai_insights.get('executive_summary', 'Processing...'), Inches(0.8), Inches(2.6), Inches(6.9), Inches(2), 16, C_TEXT_DARK)
     
-    # Coordinates for a 2x2 grid
-    positions = [
-        (Inches(0.5), Inches(1.5)), # Top Left
-        (Inches(6.8), Inches(1.5)), # Top Right
-        (Inches(0.5), Inches(4.5)), # Bottom Left
-        (Inches(6.8), Inches(4.5))  # Bottom Right
-    ]
+    add_text(slide3, "BUSINESS VALUE", Inches(0.8), Inches(4.6), Inches(4), Inches(0.3), 12, C_BLUE_DARK, bold=True)
+    add_text(slide3, ai_insights.get('business_value', 'Processing...'), Inches(0.8), Inches(5.0), Inches(6.9), Inches(1.5), 14, C_TEXT_DARK)
 
+    # Right Column (Active Stories)
+    add_text(slide3, "ACTIVE WORKSTREAMS", Inches(8.5), Inches(1.8), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    stories = ai_insights.get('story_progress', [])[:4]
     for idx, story in enumerate(stories):
-        if idx < 4:
-            left, top = positions[idx]
-            title = f"[{story.get('key')}] {story.get('status')}"
-            sub = f"{story.get('summary')} (Assignee: {story.get('assignee')})"
-            body = f"AI Note: {story.get('analysis')}"
-            draw_glass_card(slide4, left, top, Inches(6), Inches(2.5), title, sub, body, c_primary)
+        draw_card(slide3, Inches(8.5), Inches(2.2 + (idx*1.1)), Inches(4.3), Inches(0.9))
+        add_text(slide3, f"{story.get('key')} - {story.get('status')}", Inches(8.7), Inches(2.35 + (idx*1.1)), Inches(4), Inches(0.3), 12, C_TEXT_DARK, bold=True)
+        add_text(slide3, story.get('summary')[:40] + "...", Inches(8.7), Inches(2.65 + (idx*1.1)), Inches(4), Inches(0.3), 10, C_TEXT_MUTED)
 
-    # Save to memory
+    # --- SLIDE 4: KPIs ---
+    slide4 = prs.slides.add_slide(blank_layout)
+    set_slide_bg(slide4, C_BG)
+    add_text(slide4, "PROJECT STATUS REPORT", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide4, "KPIs & Story Count", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
+    
+    # Left Tall Blue Card
+    left_blue = draw_card(slide4, Inches(0.5), Inches(1.8), Inches(4.5), Inches(5.2), C_BLUE_DARK, None)
+    add_text(slide4, "TOTAL USER STORIES", Inches(0.8), Inches(2.2), Inches(4), Inches(0.3), 14, C_WHITE, bold=True)
+    add_text(slide4, "Completed & In-Progress", Inches(0.8), Inches(2.5), Inches(4), Inches(0.3), 12, RGBColor(200,200,200))
+    add_text(slide4, f"{metrics.get('total', 0)}", Inches(0.8), Inches(3.0), Inches(4), Inches(2.0), 120, C_WHITE, bold=True)
+    
+    # Right Performance Metrics
+    add_text(slide4, "Performance Metrics", Inches(5.5), Inches(1.8), Inches(4), Inches(0.3), 14, C_BLUE_DARK, bold=True)
+    
+    draw_card(slide4, Inches(5.5), Inches(2.3), Inches(3.5), Inches(1.2))
+    add_text(slide4, "VELOCITY", Inches(5.7), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide4, f"{metrics.get('points', 0)} pts", Inches(5.7), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
+
+    draw_card(slide4, Inches(9.3), Inches(2.3), Inches(3.5), Inches(1.2))
+    add_text(slide4, "CRITICAL BLOCKERS", Inches(9.5), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide4, f"{metrics.get('blockers', 0)}", Inches(9.5), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
+    
+    draw_card(slide4, Inches(5.5), Inches(3.8), Inches(7.3), Inches(3.2))
+    add_text(slide4, "AI STORY ANALYSIS", Inches(5.8), Inches(4.1), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    
+    story_analysis_text = ""
+    for s in stories[:3]:
+        story_analysis_text += f"• {s.get('key')}: {s.get('analysis')}\n"
+    add_text(slide4, story_analysis_text, Inches(5.8), Inches(4.5), Inches(6.5), Inches(2.2), 12, C_TEXT_DARK)
+
     ppt_buffer = io.BytesIO()
     prs.save(ppt_buffer)
     ppt_buffer.seek(0)
@@ -226,7 +243,7 @@ def generate_advanced_pptx(project, metrics, ai_insights):
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online - Advanced PPTX Active"}
+def home(): return {"status": "Online - Corporate PPTX Engine Active"}
 
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
@@ -314,7 +331,7 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
-# --- ✨ THE ADVANCED PPTX EXPORT ENDPOINT ✨ ---
+# --- ✨ EXPORT ENDPOINT ✨ ---
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     project = payload.get("project", "Unknown")
@@ -322,12 +339,10 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     metrics = data.get("metrics", {})
     ai_insights = data.get("ai_insights", {})
     
-    # Generate the custom drawn PPTX in memory
-    ppt_buffer = generate_advanced_pptx(project, metrics, ai_insights)
+    ppt_buffer = generate_corporate_pptx(project, metrics, ai_insights)
     
-    # Return as real PPTX file
     headers = {
-        'Content-Disposition': f'attachment; filename="{project}_Smart_Deck.pptx"'
+        'Content-Disposition': f'attachment; filename="{project}_Executive_Report.pptx"'
     }
     return StreamingResponse(ppt_buffer, headers=headers, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
