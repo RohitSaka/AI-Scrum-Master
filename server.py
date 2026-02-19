@@ -24,7 +24,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V5 - COMMAND CENTER & AI TIMELINE")
+print("🚀 APP STARTING: V6 - AI STORY CREATION & SYNC")
 print("="*50 + "\n")
 
 STORY_POINT_CACHE = {} 
@@ -180,6 +180,28 @@ def generate_corporate_pptx(project, metrics, ai_insights):
         add_text(slide3, f"{story.get('key')} - {story.get('status')}", Inches(8.7), Inches(2.35 + (idx*1.1)), Inches(4), Inches(0.3), 12, C_TEXT_DARK, bold=True)
         add_text(slide3, story.get('summary')[:40] + "...", Inches(8.7), Inches(2.65 + (idx*1.1)), Inches(4), Inches(0.3), 10, C_TEXT_MUTED)
 
+    slide4 = prs.slides.add_slide(blank_layout)
+    set_slide_bg(slide4, C_BG)
+    add_text(slide4, "PROJECT STATUS REPORT", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide4, "KPIs & Story Count", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
+    left_blue = draw_card(slide4, Inches(0.5), Inches(1.8), Inches(4.5), Inches(5.2), C_BLUE_DARK, None)
+    add_text(slide4, "TOTAL USER STORIES", Inches(0.8), Inches(2.2), Inches(4), Inches(0.3), 14, C_WHITE, bold=True)
+    add_text(slide4, "Completed & In-Progress", Inches(0.8), Inches(2.5), Inches(4), Inches(0.3), 12, RGBColor(200,200,200))
+    add_text(slide4, f"{metrics.get('total', 0)}", Inches(0.8), Inches(3.0), Inches(4), Inches(2.0), 120, C_WHITE, bold=True)
+    add_text(slide4, "Performance Metrics", Inches(5.5), Inches(1.8), Inches(4), Inches(0.3), 14, C_BLUE_DARK, bold=True)
+    draw_card(slide4, Inches(5.5), Inches(2.3), Inches(3.5), Inches(1.2))
+    add_text(slide4, "VELOCITY", Inches(5.7), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide4, f"{metrics.get('points', 0)} pts", Inches(5.7), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
+    draw_card(slide4, Inches(9.3), Inches(2.3), Inches(3.5), Inches(1.2))
+    add_text(slide4, "CRITICAL BLOCKERS", Inches(9.5), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    add_text(slide4, f"{metrics.get('blockers', 0)}", Inches(9.5), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
+    draw_card(slide4, Inches(5.5), Inches(3.8), Inches(7.3), Inches(3.2))
+    add_text(slide4, "AI STORY ANALYSIS", Inches(5.8), Inches(4.1), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
+    story_analysis_text = ""
+    for s in stories[:3]:
+        story_analysis_text += f"• {s.get('key')}: {s.get('analysis')}\n"
+    add_text(slide4, story_analysis_text, Inches(5.8), Inches(4.5), Inches(6.5), Inches(2.2), 12, C_TEXT_DARK)
+
     ppt_buffer = io.BytesIO()
     prs.save(ppt_buffer)
     ppt_buffer.seek(0)
@@ -259,13 +281,12 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
 
     return {"metrics": stats, "ai_insights": ai_data}
 
-# --- ✨ NEW: AI TIMELINE STORY GENERATOR ✨ ---
+# --- ✨ AI TIMELINE STORY GENERATOR ✨ ---
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
     project = payload.get("project")
     user_prompt = payload.get("prompt")
 
-    # 1. Fetch current sprint context to calculate capacity and infer tech stack
     sp_field = get_story_point_field(creds)
     jql = f"project = {project} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "assignee", sp_field, "description"]})
@@ -280,10 +301,8 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         pts = float(f.get(sp_field) or 0)
         desc = extract_adf_text(f.get('description', {}))[:200]
 
-        if assignee not in team_capacity:
-            team_capacity[assignee] = 0
+        if assignee not in team_capacity: team_capacity[assignee] = 0
         team_capacity[assignee] += pts
-
         board_context.append(f"Task: {f['summary']} | Desc: {desc} | Assignee: {assignee}")
 
     context_str = "\n".join(board_context[:30])
@@ -303,7 +322,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
     - Deduce the tech stack from the board context.
     - Write a realistic description and precise Acceptance Criteria.
     - Estimate the story points (Fibonacci: 1, 2, 3, 5, 8).
-    - Assign it to the best team member based on their inferred role from the board and their current capacity (pick someone with lower capacity or the most relevant skillset).
+    - Assign it to the best team member based on their inferred role from the board and their current capacity.
 
     Return exactly this JSON:
     {{
@@ -316,13 +335,55 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
     }}
     """
     
-    raw = generate_ai_response(ai_prompt)
+    raw = generate_ai_response(prompt=ai_prompt, temperature=0.5)
     try:
         story = json.loads(raw.replace('```json','').replace('```','').strip())
         return {"status": "success", "story": story}
     except:
         return {"status": "error", "message": "Failed to generate story."}
 
+# --- ✨ NEW: CREATE ISSUE IN JIRA ✨ ---
+@app.post("/timeline/create_issue")
+async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
+    project_key = payload.get("project")
+    story = payload.get("story", {})
+    
+    # Format Acceptance Criteria into ADF Bulleted List
+    ac_items = [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": ac}]}]} for ac in story.get("acceptance_criteria", [])]
+    
+    # Format Description Body
+    description_adf = {
+        "type": "doc",
+        "version": 1,
+        "content": [
+            {"type": "paragraph", "content": [{"type": "text", "text": story.get("description", "")}]},
+            {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]},
+            {"type": "bulletList", "content": ac_items},
+            {"type": "paragraph", "content": [{"type": "text", "text": f"🤖 AI Recommendation: Ideal Assignee is {story.get('assignee', 'Unassigned')} | Estimated at {story.get('points', 0)} pts"}]}
+        ]
+    }
+    
+    # Attempt to create as 'Story'
+    issue_data = {
+        "fields": {
+            "project": {"key": project_key},
+            "summary": story.get("title", "AI Generated Story"),
+            "description": description_adf,
+            "issuetype": {"name": "Story"}
+        }
+    }
+    
+    res = jira_request("POST", "issue", creds, issue_data)
+    if res and res.status_code == 201:
+        return {"status": "success", "key": res.json().get("key")}
+    
+    # Fallback to 'Task' if 'Story' issuetype doesn't exist in project
+    issue_data["fields"]["issuetype"]["name"] = "Task"
+    res2 = jira_request("POST", "issue", creds, issue_data)
+    if res2 and res2.status_code == 201:
+        return {"status": "success", "key": res2.json().get("key")}
+        
+    return {"status": "error", "message": "Failed to push to Jira. Check Issue Types."}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
