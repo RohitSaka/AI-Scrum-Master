@@ -24,7 +24,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: CORPORATE PPTX & AI DOSSIER REPORTS")
+print("🚀 APP STARTING: V5 - COMMAND CENTER & AI TIMELINE")
 print("="*50 + "\n")
 
 STORY_POINT_CACHE = {} 
@@ -180,28 +180,6 @@ def generate_corporate_pptx(project, metrics, ai_insights):
         add_text(slide3, f"{story.get('key')} - {story.get('status')}", Inches(8.7), Inches(2.35 + (idx*1.1)), Inches(4), Inches(0.3), 12, C_TEXT_DARK, bold=True)
         add_text(slide3, story.get('summary')[:40] + "...", Inches(8.7), Inches(2.65 + (idx*1.1)), Inches(4), Inches(0.3), 10, C_TEXT_MUTED)
 
-    slide4 = prs.slides.add_slide(blank_layout)
-    set_slide_bg(slide4, C_BG)
-    add_text(slide4, "PROJECT STATUS REPORT", Inches(0.5), Inches(0.4), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
-    add_text(slide4, "KPIs & Story Count", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
-    left_blue = draw_card(slide4, Inches(0.5), Inches(1.8), Inches(4.5), Inches(5.2), C_BLUE_DARK, None)
-    add_text(slide4, "TOTAL USER STORIES", Inches(0.8), Inches(2.2), Inches(4), Inches(0.3), 14, C_WHITE, bold=True)
-    add_text(slide4, "Completed & In-Progress", Inches(0.8), Inches(2.5), Inches(4), Inches(0.3), 12, RGBColor(200,200,200))
-    add_text(slide4, f"{metrics.get('total', 0)}", Inches(0.8), Inches(3.0), Inches(4), Inches(2.0), 120, C_WHITE, bold=True)
-    add_text(slide4, "Performance Metrics", Inches(5.5), Inches(1.8), Inches(4), Inches(0.3), 14, C_BLUE_DARK, bold=True)
-    draw_card(slide4, Inches(5.5), Inches(2.3), Inches(3.5), Inches(1.2))
-    add_text(slide4, "VELOCITY", Inches(5.7), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
-    add_text(slide4, f"{metrics.get('points', 0)} pts", Inches(5.7), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
-    draw_card(slide4, Inches(9.3), Inches(2.3), Inches(3.5), Inches(1.2))
-    add_text(slide4, "CRITICAL BLOCKERS", Inches(9.5), Inches(2.5), Inches(2), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
-    add_text(slide4, f"{metrics.get('blockers', 0)}", Inches(9.5), Inches(2.8), Inches(3), Inches(0.5), 24, C_TEXT_DARK, bold=True)
-    draw_card(slide4, Inches(5.5), Inches(3.8), Inches(7.3), Inches(3.2))
-    add_text(slide4, "AI STORY ANALYSIS", Inches(5.8), Inches(4.1), Inches(4), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
-    story_analysis_text = ""
-    for s in stories[:3]:
-        story_analysis_text += f"• {s.get('key')}: {s.get('analysis')}\n"
-    add_text(slide4, story_analysis_text, Inches(5.8), Inches(4.5), Inches(6.5), Inches(2.2), 12, C_TEXT_DARK)
-
     ppt_buffer = io.BytesIO()
     prs.save(ppt_buffer)
     ppt_buffer.seek(0)
@@ -247,7 +225,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         
         stats["assignees"][name]["count"] += 1
         stats["assignees"][name]["points"] += pts
-        stats["assignees"][name]["tasks"].append({"key": i['key'], "summary": f['summary'], "priority": f['priority']['name'] if f['priority'] else "Medium", "points": pts})
+        stats["assignees"][name]["tasks"].append({"key": i['key'], "summary": f['summary'], "priority": f['priority']['name'] if f['priority'] else "Medium", "points": pts, "status": f['status']['name']})
         
         desc_text = extract_adf_text(f.get('description', {}))[:800] 
         comments_obj = f.get('comment', {}).get('comments', [])
@@ -267,7 +245,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         "executive_summary": "High-level summary of health and bottlenecks (2-3 sentences).",
         "business_value": "Explain the actual business value being delivered this sprint based on descriptions (3-4 sentences).",
         "story_progress": [
-            {{"key": "ID", "summary": "Short summary", "assignee": "Name", "status": "Status", "analysis": "1-sentence brutally honest update based on comments."}}
+            {{"key": "ID", "summary": "Short summary", "assignee": "Name", "status": "Status", "analysis": "1-sentence brutally honest update based on comments and descriptions."}}
         ]
     }}
     """
@@ -280,6 +258,71 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         ai_data = {"executive_summary": "AI overloaded.", "business_value": "Unavailable.", "story_progress": []}
 
     return {"metrics": stats, "ai_insights": ai_data}
+
+# --- ✨ NEW: AI TIMELINE STORY GENERATOR ✨ ---
+@app.post("/timeline/generate_story")
+async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
+    project = payload.get("project")
+    user_prompt = payload.get("prompt")
+
+    # 1. Fetch current sprint context to calculate capacity and infer tech stack
+    sp_field = get_story_point_field(creds)
+    jql = f"project = {project} AND sprint in openSprints()"
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["summary", "assignee", sp_field, "description"]})
+    issues = res.json().get('issues', []) if res else []
+
+    team_capacity = {}
+    board_context = []
+
+    for i in issues:
+        f = i['fields']
+        assignee = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
+        pts = float(f.get(sp_field) or 0)
+        desc = extract_adf_text(f.get('description', {}))[:200]
+
+        if assignee not in team_capacity:
+            team_capacity[assignee] = 0
+        team_capacity[assignee] += pts
+
+        board_context.append(f"Task: {f['summary']} | Desc: {desc} | Assignee: {assignee}")
+
+    context_str = "\n".join(board_context[:30])
+    cap_str = json.dumps(team_capacity)
+
+    ai_prompt = f"""
+    You are an elite Agile Product Owner. 
+    The user wants to create a new user story based on this requirement: "{user_prompt}"
+
+    Context of the current board (use this to infer the technology stack and context):
+    {context_str}
+
+    Current Team Capacity (Story Points assigned to each person):
+    {cap_str}
+
+    Draft a highly professional, human-sounding User Story.
+    - Deduce the tech stack from the board context.
+    - Write a realistic description and precise Acceptance Criteria.
+    - Estimate the story points (Fibonacci: 1, 2, 3, 5, 8).
+    - Assign it to the best team member based on their inferred role from the board and their current capacity (pick someone with lower capacity or the most relevant skillset).
+
+    Return exactly this JSON:
+    {{
+        "title": "Story Title",
+        "description": "As a [role], I want to [action] so that [benefit].\n\nContext: ...",
+        "acceptance_criteria": ["Given... When... Then...", "The system should..."],
+        "points": 5,
+        "assignee": "Name",
+        "tech_stack_inferred": "Brief note on why this person and stack was chosen"
+    }}
+    """
+    
+    raw = generate_ai_response(ai_prompt)
+    try:
+        story = json.loads(raw.replace('```json','').replace('```','').strip())
+        return {"status": "success", "story": story}
+    except:
+        return {"status": "error", "message": "Failed to generate story."}
+
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -309,21 +352,17 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     headers = {'Content-Disposition': f'attachment; filename="{project}_Executive_Report.pptx"'}
     return StreamingResponse(ppt_buffer, headers=headers, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
-# --- ✨ NEW: HIGH-END AI DOSSIER REPORT ✨ ---
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (14 if timeframe == "biweekly" else 30)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     
-    # 1. Fetch ALL tickets updated in this timeframe (Done + Struggling)
     jql = f"project = {project_key} AND updated >= '{dt}' ORDER BY priority DESC, updated DESC"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 40, "fields": ["summary", "status", "assignee", sp_field, "issuetype"]})
     issues = res.json().get('issues', []) if res else []
     
-    done_count = 0
-    done_pts = 0
-    context_data = []
+    done_count = 0; done_pts = 0; context_data = []
 
     for i in issues:
         f = i['fields']
@@ -332,34 +371,22 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
         assignee = f['assignee']['displayName'] if f['assignee'] else "Unassigned"
         
         if f['status']['statusCategory']['key'] == 'done':
-            done_count += 1
-            done_pts += pts
+            done_count += 1; done_pts += pts
             
-        context_data.append({
-            "key": i['key'],
-            "summary": f['summary'],
-            "status": status,
-            "assignee": assignee,
-            "points": pts,
-            "type": f['issuetype']['name']
-        })
+        context_data.append({"key": i['key'], "summary": f['summary'], "status": status, "assignee": assignee, "points": pts, "type": f['issuetype']['name']})
 
     prompt = f"""
     You are an elite Agile Analyst evaluating a {timeframe} performance period.
-    Analyze these {len(context_data)} recently updated tickets.
     DATA: {json.dumps(context_data)}
 
-    Generate a blunt, executive-level JSON dossier:
+    Generate a blunt JSON dossier:
     {{
-        "ai_verdict": "A detailed 2-3 sentence paragraph on how the team actually performed. Were they fast? Stuck? Fixing too many bugs?",
+        "ai_verdict": "A detailed 2-3 sentence paragraph on how the team actually performed.",
         "sprint_vibe": "Select ONE exact phrase: [🔥 Blazing Fast, ⚙️ Steady & Stable, 🚧 Blocked & Struggling, 🐛 Bug Heavy]",
-        "key_accomplishments": [
-            {{"title": "Feature/Ticket Name", "impact": "Why this matters (1 short sentence)"}}
-        ],
-        "hidden_friction": "Identify a bottleneck based on the tickets that are NOT 'Done'. (e.g., 'QA is holding up 4 tickets'). 1-2 sentences.",
-        "top_contributor": "Name of the person who moved the most complex/important tickets to Done, and a brief reason why."
+        "key_accomplishments": [{{"title": "Feature Name", "impact": "Why this matters (1 short sentence)"}}],
+        "hidden_friction": "Identify a bottleneck based on tickets NOT 'Done'. 1-2 sentences.",
+        "top_contributor": "Name of the person who moved the most complex/important tickets to Done, and why."
     }}
-    Ensure response is pure JSON without markdown blocks.
     """
     
     ai_raw = generate_ai_response(prompt, temperature=0.4)
@@ -368,24 +395,11 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
         try: ai_dossier = json.loads(ai_raw.replace('```json','').replace('```','').strip())
         except: pass
 
-    # Fallbacks in case AI fails
     if not ai_dossier:
-        ai_dossier = {
-            "ai_verdict": "Data processing error. Could not generate AI verdict.",
-            "sprint_vibe": "⚙️ Data Unavailable",
-            "key_accomplishments": [],
-            "hidden_friction": "Unable to calculate friction.",
-            "top_contributor": "Unknown"
-        }
+        ai_dossier = {"ai_verdict": "Data error.", "sprint_vibe": "⚙️ Data Unavailable", "key_accomplishments": [], "hidden_friction": "Unable to calculate.", "top_contributor": "Unknown"}
 
-    return {
-        "completed_count": done_count,
-        "completed_points": done_pts,
-        "total_active_in_period": len(issues),
-        "dossier": ai_dossier
-    }
+    return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(issues), "dossier": ai_dossier}
 
-# --- RETRO (JIRA DB) ---
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
