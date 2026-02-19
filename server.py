@@ -1,19 +1,11 @@
-from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-import requests, json, os, re, time
+import requests, json, os, time
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import io
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email import encoders
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -27,24 +19,29 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: VERSION - EXECUTIVE PPT GENERATOR")
+print("🚀 APP STARTING: GENSPARK-STYLE SMART DECK GENERATOR")
 print("="*50 + "\n")
 
 # --- CONFIGURATION ---
 STORY_POINT_CACHE = {} 
-RETRO_FILE = "retro_data.json"
 
 # --- SECURITY & AUTH ---
 async def get_jira_creds(x_jira_domain: str = Header(...), x_jira_email: str = Header(...), x_jira_token: str = Header(...)):
     clean_domain = x_jira_domain.replace("https://", "").replace("http://", "").strip("/")
     return { "domain": clean_domain, "email": x_jira_email, "token": x_jira_token }
 
-# --- AI CORE ---
+# --- AI CORE: ACTIVE FAILOVER ---
 def generate_ai_response(prompt, temperature=0.3):
+    """
+    Tries the fastest, best models first. If Google returns 503/429,
+    it instantly catches the error and tries the next model.
+    """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key: return None
 
-    fallback_chain = ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash", "gemini-2.5-pro"]
+    # Priority Chain: Fast models first to ensure snappy UI rendering
+    fallback_chain = ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]
+    
     for model in fallback_chain:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         payload = {
@@ -57,9 +54,13 @@ def generate_ai_response(prompt, temperature=0.3):
                 print(f"✅ AI Success: {model}")
                 return r.json()['candidates'][0]['content']['parts'][0]['text']
             else:
-                continue 
+                print(f"⚠️ AI Fail ({model}) [{r.status_code}]: Switching models...")
+                continue # TRY NEXT MODEL IMMEDIATELY
         except Exception as e:
+            print(f"❌ Network Error on {model}: {e}")
             continue
+
+    print("❌ ALL AI MODELS IN CHAIN FAILED.")
     return None
 
 # --- JIRA UTILITIES ---
@@ -88,125 +89,179 @@ def get_story_point_field(creds):
     return "customfield_10016"
 
 def extract_adf_text(adf_node):
+    """Recursively extracts plain text from Jira's complex Atlassian Document Format."""
     if not adf_node or not isinstance(adf_node, dict): return ""
     text = ""
     if adf_node.get('type') == 'text': text += adf_node.get('text', '') + " "
     for content in adf_node.get('content', []): text += extract_adf_text(content)
     return text.strip()
 
-# ================= PPTX & EMAIL GENERATION ENGINE =================
-def create_dark_slide(prs, title_text, body_text=""):
-    """Helper to create a beautiful dark-mode enterprise slide"""
-    slide = prs.slides.add_slide(prs.slide_layouts[1]) # Title and Content Layout
+# ================= 🎨 THE HTML SMART DECK ENGINE =================
+def generate_interactive_html_deck(project, metrics, ai_insights):
+    """Generates a beautiful, Genspark-style interactive web presentation"""
     
-    # Set dark background (Slate-900)
-    background = slide.background
-    fill = background.fill
-    fill.solid()
-    fill.fore_color.rgb = RGBColor(15, 23, 42) 
-    
-    # Format Title
-    title = slide.shapes.title
-    title.text = title_text
-    title.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
-    title.text_frame.paragraphs[0].font.name = 'Arial'
-    title.text_frame.paragraphs[0].font.bold = True
-    
-    # Format Body
-    if body_text and slide.placeholders[1]:
-        body = slide.placeholders[1]
-        body.text = body_text
-        for p in body.text_frame.paragraphs:
-            p.font.color.rgb = RGBColor(200, 200, 200) # Light Grey text
-            p.font.size = Pt(16)
-            p.font.name = 'Arial'
-            
-    return slide
+    points = metrics.get('points', 0)
+    tasks = metrics.get('total', 0)
+    blockers = metrics.get('blockers', 0)
+    bugs = metrics.get('bugs', 0)
+    exec_summary = ai_insights.get('executive_summary', 'No summary available.')
+    biz_value = ai_insights.get('business_value', 'No value data available.')
+    stories = ai_insights.get('story_progress', [])[:4]
 
-def generate_ppt_buffer(project, metrics, ai_insights):
-    """Draws the presentation dynamically in memory"""
-    prs = Presentation()
-    
-    # Slide 1: Title Slide
-    title_slide = prs.slides.add_slide(prs.slide_layouts[0])
-    title_slide.background.fill.solid()
-    title_slide.background.fill.fore_color.rgb = RGBColor(15, 23, 42)
-    title_slide.shapes.title.text = f"{project} Executive Sprint Report"
-    title_slide.shapes.title.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
-    title_slide.placeholders[1].text = f"Generated by IG Agile Intelligence\nDate: {datetime.now().strftime('%b %d, %Y')}"
-    title_slide.placeholders[1].text_frame.paragraphs[0].font.color.rgb = RGBColor(99, 102, 241) # Indigo primary
-    
-    # Slide 2: Metrics Overview
-    body = f"Velocity (Points): {metrics.get('points', 0)}\nActive Tasks: {metrics.get('total', 0)}\nCritical Blockers: {metrics.get('blockers', 0)}\nBugs Found: {metrics.get('bugs', 0)}"
-    create_dark_slide(prs, "Sprint Velocity & Health", body)
-    
-    # Slide 3: Executive Summary
-    create_dark_slide(prs, "AI Executive Summary", ai_insights.get('executive_summary', 'No summary available.'))
-    
-    # Slide 4: Business Value
-    create_dark_slide(prs, "Business Value Delivered", ai_insights.get('business_value', 'No value data available.'))
-    
-    # Slide 5: Deep Story Analysis
-    story_text = ""
-    for story in ai_insights.get('story_progress', [])[:4]: # Limit to top 4 for slide space
-        story_text += f"• [{story.get('key')}] {story.get('summary')}\n   Status: {story.get('status')} | AI Note: {story.get('analysis')}\n\n"
-    
-    if story_text:
-        create_dark_slide(prs, "Key Story Progress", story_text)
-    
-    # Save to memory buffer
-    ppt_buffer = io.BytesIO()
-    prs.save(ppt_buffer)
-    ppt_buffer.seek(0)
-    return ppt_buffer
+    story_cards_html = ""
+    for s in stories:
+        story_cards_html += f"""
+        <div class="glass p-6 rounded-xl border-l-4 border-indigo-500 shadow-xl transition-all hover:scale-[1.02]">
+            <div class="flex justify-between items-start mb-2">
+                <span class="text-indigo-400 font-bold text-lg">{s.get('key')}</span>
+                <span class="px-3 py-1 bg-white/10 rounded-full text-xs font-semibold tracking-wider uppercase">{s.get('status')}</span>
+            </div>
+            <h4 class="text-xl font-semibold mb-1 text-white">{s.get('summary')}</h4>
+            <p class="text-slate-400 text-sm mb-4">Assignee: {s.get('assignee')}</p>
+            <div class="p-4 bg-indigo-500/10 rounded-lg text-indigo-100 text-sm leading-relaxed">
+                <strong class="text-indigo-300">AI Note:</strong> {s.get('analysis')}
+            </div>
+        </div>
+        """
 
-def send_ppt_email(target_email, project, ppt_buffer):
-    """Sends the email silently in the background"""
-    sender_email = os.getenv("SMTP_EMAIL")
-    sender_password = os.getenv("SMTP_PASSWORD")
-    
-    if not sender_email or not sender_password:
-        print("⚠️ Email skipped: SMTP_EMAIL or SMTP_PASSWORD not found in Render Environment Variables.")
-        return
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{project} - Executive Deck</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+        body {{ font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; overflow: hidden; margin: 0; }}
+        .glass {{ background: rgba(30, 41, 59, 0.6); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }}
+        .gradient-text {{ background: linear-gradient(to right, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }}
+        
+        /* Slide Animations */
+        .slide {{ position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 6rem 10vw; opacity: 0; pointer-events: none; transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform: translateY(30px) scale(0.98); }}
+        .slide.active {{ opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }}
+        
+        /* Background Orbs */
+        .orb-1 {{ position: absolute; top: -10%; left: -10%; width: 50vw; height: 50vw; background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, rgba(15,23,42,0) 70%); border-radius: 50%; z-index: -1; }}
+        .orb-2 {{ position: absolute; bottom: -20%; right: -10%; width: 60vw; height: 60vw; background: radial-gradient(circle, rgba(168,85,247,0.15) 0%, rgba(15,23,42,0) 70%); border-radius: 50%; z-index: -1; }}
+    </style>
+</head>
+<body>
+    <div class="orb-1"></div><div class="orb-2"></div>
 
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = sender_email
-        msg['To'] = target_email
-        msg['Subject'] = f"📊 IG Agile: {project} Executive Report"
+    <div class="fixed bottom-6 right-8 text-slate-500 text-sm z-50 flex items-center gap-2">
+        <span>Use</span>
+        <kbd class="px-2 py-1 bg-slate-800 rounded border border-slate-700 font-mono">←</kbd>
+        <kbd class="px-2 py-1 bg-slate-800 rounded border border-slate-700 font-mono">→</kbd>
+        <span>to navigate</span>
+    </div>
+
+    <div class="slide active">
+        <div class="max-w-4xl">
+            <h2 class="text-indigo-400 font-bold tracking-widest uppercase mb-4 text-sm">IG Agile Intelligence</h2>
+            <h1 class="text-7xl font-extrabold tracking-tight mb-6 leading-tight">Sprint Execution<br><span class="gradient-text">Executive Report</span></h1>
+            <p class="text-2xl text-slate-400 font-light border-l-4 border-indigo-500 pl-6">Project: <strong>{project}</strong><br>Generated on {datetime.now().strftime('%B %d, %Y')}</p>
+        </div>
+    </div>
+
+    <div class="slide">
+        <h2 class="text-4xl font-bold mb-12">Sprint <span class="gradient-text">Health Metrics</span></h2>
+        <div class="grid grid-cols-2 gap-8 w-full max-w-5xl">
+            <div class="glass p-10 rounded-2xl border-t-4 border-indigo-500">
+                <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Velocity Delivered</p>
+                <p class="text-6xl font-black text-white">{points} <span class="text-2xl text-slate-500 font-light">pts</span></p>
+            </div>
+            <div class="glass p-10 rounded-2xl border-t-4 border-emerald-500">
+                <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Active Tasks</p>
+                <p class="text-6xl font-black text-white">{tasks}</p>
+            </div>
+            <div class="glass p-10 rounded-2xl border-t-4 border-red-500">
+                <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Critical Blockers</p>
+                <p class="text-6xl font-black text-white">{blockers}</p>
+            </div>
+            <div class="glass p-10 rounded-2xl border-t-4 border-amber-500">
+                <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Bugs Found</p>
+                <p class="text-6xl font-black text-white">{bugs}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="slide">
+        <div class="max-w-5xl">
+            <h2 class="text-4xl font-bold mb-10 border-b border-white/10 pb-6"><span class="gradient-text">AI Executive</span> Summary</h2>
+            <p class="text-3xl leading-relaxed text-slate-200 font-light">{exec_summary}</p>
+        </div>
+    </div>
+
+    <div class="slide">
+        <div class="max-w-5xl">
+            <h2 class="text-4xl font-bold mb-10 border-b border-white/10 pb-6"><span class="gradient-text">Business Value</span> Delivered</h2>
+            <div class="glass p-12 rounded-3xl relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-2 h-full bg-gradient-to-b from-indigo-500 to-purple-500"></div>
+                <p class="text-2xl leading-relaxed text-slate-200 font-light">{biz_value}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="slide" style="padding-top: 4rem;">
+        <h2 class="text-4xl font-bold mb-10"><span class="gradient-text">Key Story</span> Trajectory</h2>
+        <div class="grid grid-cols-2 gap-6 w-full max-w-6xl">
+            {story_cards_html}
+        </div>
+    </div>
+
+    <script>
+        let current = 0;
+        const slides = document.querySelectorAll('.slide');
         
-        body = f"Hello,\n\nPlease find the auto-generated Executive Sprint Report for {project} attached.\n\nGenerated by IG Agile Intelligence."
-        msg.attach(MIMEText(body, 'plain'))
+        function showSlide(index) {{
+            slides.forEach((slide, i) => {{
+                if(i === index) {{
+                    slide.classList.add('active');
+                }} else {{
+                    slide.classList.remove('active');
+                }}
+            }});
+        }}
+
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'ArrowRight' || e.key === ' ') {{
+                current = Math.min(current + 1, slides.length - 1);
+                showSlide(current);
+            }} else if (e.key === 'ArrowLeft') {{
+                current = Math.max(current - 1, 0);
+                showSlide(current);
+            }}
+        }});
         
-        # Attach PPT
-        part = MIMEBase('application', "vnd.openxmlformats-officedocument.presentationml.presentation")
-        part.set_payload(ppt_buffer.read())
-        encoders.encode_base64(part)
-        part.add_header('Content-Disposition', f'attachment; filename="{project}_Executive_Report.pptx"')
-        msg.attach(part)
-        
-        # Send
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
-        print(f"📧 Email successfully sent to {target_email}")
-    except Exception as e:
-        print(f"❌ Email sending failed: {e}")
+        document.body.addEventListener('click', (e) => {{
+            if(e.clientX < window.innerWidth / 3) {{
+                current = Math.max(current - 1, 0);
+            }} else {{
+                current = Math.min(current + 1, slides.length - 1);
+            }}
+            showSlide(current);
+        }});
+    </script>
+</body>
+</html>"""
+    
+    return io.BytesIO(html_content.encode('utf-8'))
 
 # ================= ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online - Executive PPT Mode"}
+def home(): return {"status": "Online - Executive Mode"}
 
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     fields = ["summary", "status", "assignee", "priority", sp_field, "issuetype", "description", "comment"]
     
-    if sprint_id and sprint_id != "active": jql = f"project = {project_key} AND sprint = {sprint_id}"
-    else: jql = f"project = {project_key} AND sprint in openSprints()"
+    if sprint_id and sprint_id != "active": 
+        jql = f"project = {project_key} AND sprint = {sprint_id}"
+    else: 
+        jql = f"project = {project_key} AND sprint in openSprints()"
         
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": fields})
     issues = res.json().get('issues', []) if res else []
@@ -286,30 +341,24 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
-# --- ✨ THE NEW PPT GENERATOR ENDPOINT ✨ ---
+# --- ✨ THE SMART DECK EXPORT ENDPOINT ✨ ---
 @app.post("/generate_ppt")
-async def generate_ppt(payload: dict, background_tasks: BackgroundTasks, creds: dict = Depends(get_jira_creds)):
+async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Generates and downloads an interactive HTML Presentation."""
     project = payload.get("project", "Unknown")
-    email = payload.get("email") # The logged-in user's email
     data = payload.get("data", {})
     
     metrics = data.get("metrics", {})
     ai_insights = data.get("ai_insights", {})
     
-    # 1. Draw the PPT slides in memory
-    ppt_buffer = generate_ppt_buffer(project, metrics, ai_insights)
+    html_buffer = generate_interactive_html_deck(project, metrics, ai_insights)
     
-    # 2. Tell the server to try emailing it in the background (will silently skip if no SMTP info is given)
-    if email:
-        email_buffer = io.BytesIO(ppt_buffer.getvalue()) 
-        background_tasks.add_task(send_ppt_email, email, project, email_buffer)
-    
-    # 3. Instantly return the file so the browser downloads it
     headers = {
-        'Content-Disposition': f'attachment; filename="{project}_Executive_Report.pptx"'
+        'Content-Disposition': f'attachment; filename="{project}_Smart_Deck.html"'
     }
-    return StreamingResponse(ppt_buffer, headers=headers, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    return StreamingResponse(html_buffer, headers=headers, media_type="text/html")
 
+# --- HELPER ESTIMATION ENDPOINT ---
 @app.post("/estimate")
 async def estimate_ticket(payload: dict, creds: dict = Depends(get_jira_creds)):
     key = payload.get("key")
@@ -358,6 +407,7 @@ def generate_actions(payload: dict):
         except: pass
     return {"actions": []}
 
+# --- REPORTS & BURNDOWN ---
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
