@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V26 - PREMIUM UI, ROBUST JIRA ERRORS & VISION AI")
+print("🚀 APP STARTING: V26 - STRICT AI SCHEMA & ENHANCED LOGGING")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -138,21 +138,28 @@ STORY_POINT_CACHE = {}
 
 def call_gemini(prompt, temperature=0.3, image_data=None):
     api_key = os.getenv("GEMINI_API_KEY")
-    model = "gemini-1.5-flash" # 1.5 Flash supports vision nicely
-    
     contents = [{"parts": [{"text": prompt}]}]
+    
     if image_data:
-        # Assuming image_data is base64 data URL e.g., "data:image/png;base64,iVBORw..."
         try:
             header, encoded = image_data.split(",", 1)
             mime_type = header.split(":")[1].split(";")[0]
             contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
-        except: pass # Failed to parse image data, proceed with text only
+        except Exception as e:
+            print(f"❌ Image Parse Error: {e}")
 
-    try:
-        r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json={"contents": contents, "generationConfig": {"temperature": temperature}})
-        if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
-    except: return None
+    for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+        try:
+            # ✨ FIX: Forced responseMimeType to application/json so it NEVER returns markdown
+            payload = {"contents": contents, "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}}
+            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json=payload)
+            if r.status_code == 200: 
+                return r.json()['candidates'][0]['content']['parts'][0]['text']
+            else:
+                print(f"❌ Gemini API Error ({model}): {r.status_code} - {r.text}")
+        except Exception as e:
+            print(f"❌ Gemini Exception ({model}): {str(e)}")
+            continue
     return None
 
 def call_openai(prompt, temperature=0.3, image_data=None):
@@ -162,15 +169,15 @@ def call_openai(prompt, temperature=0.3, image_data=None):
     messages = [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON array output."}]
     user_content = [{"type": "text", "text": prompt}]
     
-    if image_data:
-        user_content.append({"type": "image_url", "image_url": {"url": image_data}})
-        
+    if image_data: user_content.append({"type": "image_url", "image_url": {"url": image_data}})
     messages.append({"role": "user", "content": user_content})
 
     try:
         r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": messages, "temperature": temperature, "response_format": {"type": "json_object"}})
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
-    except: pass
+        else: print(f"❌ OpenAI API Error: {r.text}")
+    except Exception as e: print(f"❌ OpenAI Exception: {str(e)}")
+    
     return call_gemini(prompt, temperature, image_data)
 
 def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None):
@@ -235,7 +242,6 @@ def draw_shape(slide, shape_type, left, top, width, height, bg_color):
     return shape
 
 def generate_native_editable_pptx(slides_data):
-    """Dynamically creates highly-styled, fully editable PowerPoint slides"""
     prs = Presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6] 
     
@@ -317,7 +323,7 @@ def generate_native_editable_pptx(slides_data):
 @app.get("/")
 def home(): 
     if os.path.exists("index.html"): return FileResponse("index.html")
-    return {"status": "Backend is running, but index.html is missing!"}
+    return {"status": "Backend running."}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -331,7 +337,7 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
     try:
         sprints = {}
         for i in res.json().get('issues', []):
-            for s in i.get('fields', {}).get('customfield_10020') or []: sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
+            for s in (i.get('fields') or {}).get('customfield_10020') or []: sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
@@ -417,7 +423,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     Return EXACTLY a JSON array matching this structure:
     [
       {{ "id": 1, "layout": "hero", "title": "Sprint Review", "subtitle": "{context['current_date']}", "icon": "🚀" }},
-      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Write a real 2-sentence summary of the sprint progress.", "Write a real sentence about team capacity."] }},
+      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Real full sentence summary 1", "Real full sentence summary 2"] }},
       {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}}, {{"label": "Total Points", "value": "{total_pts}", "icon": "🎯"}}] }},
       {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker", "text": "Describe blocker from context", "icon": "🛑"}}] }},
       {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Write real insights drawn from the retro data provided."] }},
@@ -426,8 +432,11 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
-    try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: return {"status": "error", "message": "Failed to orchestrate slides."}
+    try: 
+        return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
+    except Exception as e: 
+        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}")
+        return {"status": "error", "message": "Failed to orchestrate slides."}
 
 # --- ✨ MULTI-AGENT WBR/MBR/QBR DECK ENGINE ✨ ---
 @app.get("/report_deck/{project_key}/{timeframe}")
@@ -458,8 +467,8 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
           {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }},
           {{ "layout": "kpi_grid", "title": "Key Metrics", "items": [{{"label": "Issues", "value": "{done_count}", "icon": "✅"}}, {{"label": "Points", "value": "{done_pts}", "icon": "📈"}}] }},
           {{ "layout": "standard", "title": "Accomplishments", "content": ["Real bullet 1", "Real bullet 2"] }},
-          {{ "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "...", "text": "...", "icon": "🛑"}}] }},
-          {{ "layout": "flowchart", "title": "Next Steps", "items": [{{"title": "..."}}, {{"title": "..."}}] }}
+          {{ "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker description", "text": "Impact", "icon": "🛑"}}] }},
+          {{ "layout": "flowchart", "title": "Next Steps", "items": [{{"title": "Review Backlog"}}, {{"title": "Sprint Planning"}}] }}
         ]
         """,
         "monthly": f"""
@@ -467,18 +476,18 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
           {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }},
           {{ "layout": "standard", "title": "Executive Summary", "content": ["Real bullet 1", "Real bullet 2"] }},
           {{ "layout": "kpi_grid", "title": "KPIs", "items": [{{"label": "Velocity", "value": "{done_pts}", "icon": "📈"}}] }},
-          {{ "layout": "icon_columns", "title": "Operational Wins", "items": [{{"title": "...", "text": "...", "icon": "⭐"}}] }},
+          {{ "layout": "icon_columns", "title": "Operational Wins", "items": [{{"title": "Win 1", "text": "Details", "icon": "⭐"}}] }},
           {{ "layout": "standard", "title": "Risks & Mitigation", "content": ["Real bullet 1", "Real bullet 2"] }},
-          {{ "layout": "flowchart", "title": "Strategic Initiatives", "items": [{{"title": "..."}}] }}
+          {{ "layout": "flowchart", "title": "Strategic Initiatives", "items": [{{"title": "Goal 1"}}] }}
         ]
         """,
         "quarterly": f"""
         [
           {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }},
           {{ "layout": "standard", "title": "Quarterly Reflection", "content": ["Real bullet 1", "Real bullet 2"] }},
-          {{ "layout": "icon_columns", "title": "Business Impact", "items": [{{"title": "...", "text": "...", "icon": "💡"}}] }},
+          {{ "layout": "icon_columns", "title": "Business Impact", "items": [{{"title": "Impact 1", "text": "Details", "icon": "💡"}}] }},
           {{ "layout": "kpi_grid", "title": "Quarterly Metrics", "items": [{{"label": "Total Velocity", "value": "{done_pts}", "icon": "📈"}}] }},
-          {{ "layout": "flowchart", "title": "Future Roadmap", "items": [{{"title": "..."}}] }}
+          {{ "layout": "flowchart", "title": "Future Roadmap", "items": [{{"title": "Milestone 1"}}] }}
         ]
         """
     }
@@ -492,8 +501,11 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
-    try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: return {"status": "error", "message": f"Failed to orchestrate {timeframe} slides."}
+    try: 
+        return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
+    except Exception as e: 
+        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}")
+        return {"status": "error", "message": f"Failed to orchestrate {timeframe} slides."}
 
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
@@ -531,6 +543,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         if not raw_response: return {"status": "error", "message": "AI model failed to generate response."}
         return {"status": "success", "story": json.loads(raw_response.replace('```json','').replace('```','').strip())}
     except Exception as e: 
+        print(f"❌ AI Story Generation Error: {e}")
         return {"status": "error", "message": str(e)}
 
 # --- UPDATED: ROBUST JIRA ERROR HANDLING ---
@@ -578,6 +591,7 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         except:
             error_message = res.text or f"Jira returned status code {res.status_code}"
 
+    print(f"❌ Jira Creation Failed: {error_message}")
     return {"status": "error", "message": error_message}
 
 @app.get("/reports/{project_key}/{timeframe}")
