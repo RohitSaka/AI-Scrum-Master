@@ -30,7 +30,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V21 - GENDARME ENGINE (BULLETPROOF API PARSING)")
+print("🚀 APP STARTING: V22 - STRICT SCHEMA AI ORCHESTRATION")
 print("="*50 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -146,9 +146,9 @@ def call_gemini(prompt, temperature=0.3):
 
 def call_openai(prompt, temperature=0.3):
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: return call_gemini(prompt, temperature) # Seamless fallback
+    if not api_key: return call_gemini(prompt, temperature)
     try:
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON."}, {"role": "user", "content": prompt}], "temperature": temperature, "response_format": {"type": "json_object"}})
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON array output."}, {"role": "user", "content": prompt}], "temperature": temperature})
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
     except: pass
     return call_gemini(prompt, temperature)
@@ -388,20 +388,19 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
 
+    # ✨ STRICT SCHEMA ENFORCEMENT ✨
     prompt = f"""
     Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}.
     
-    CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE "Point 1", "...", or "Insert Text".
-    YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
-    
-    Return EXACTLY a JSON array matching this structure:
+    CRITICAL INSTRUCTION: You MUST WRITE REAL TEXT based on the data. NO PLACEHOLDERS.
+    Return EXACTLY a JSON array matching this strict schema:
     [
       {{ "id": 1, "layout": "hero", "title": "Sprint Review", "subtitle": "{context['current_date']}", "icon": "🚀" }},
-      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Write a real 2-sentence summary of the sprint progress.", "Write a real sentence about team capacity."] }},
-      {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}}, {{"label": "Total Points", "value": "{total_pts}", "icon": "🎯"}}] }},
-      {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker", "text": "Describe blocker from context", "icon": "🛑"}}] }},
-      {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Write real insights drawn from the retro data provided."] }},
-      {{ "id": 6, "layout": "flowchart", "title": "Look Ahead: Next Sprint", "items": [{{"title": "Read backlog_preview and put item 1 here"}}, {{"title": "Item 2"}}] }}
+      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Real bullet 1", "Real bullet 2"] }},
+      {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}}] }},
+      {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "...", "text": "...", "icon": "🛑"}}] }},
+      {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Real bullet 1", "Real bullet 2"] }},
+      {{ "id": 6, "layout": "flowchart", "title": "Look Ahead: Next Sprint", "items": [{{"title": "..."}}, {{"title": "..."}}] }}
     ]
     """
     
@@ -412,7 +411,6 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
 # --- ✨ MULTI-AGENT WBR/MBR/QBR DECK ENGINE ✨ ---
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
-    """Orchestrates specific Agendas for Weekly, Monthly, and Quarterly Business Reviews"""
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -423,8 +421,7 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
         f = i.get('fields') or {}
-        status = f.get('status') or {}
-        status_category = status.get('statusCategory') or {}
+        status_category = (f.get('status') or {}).get('statusCategory') or {}
         priority = f.get('priority') or {}
 
         pts = extract_story_points(f, sp_field)
@@ -434,41 +431,44 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
 
     context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
 
+    # ✨ STRICT SCHEMA ENFORCEMENT FOR REPORTS ✨
     agendas = {
         "weekly": f"""
-        1. "hero" layout: Title '{timeframe.capitalize()} Business Review'.
-        2. "kpi_grid" layout: 'Story Count' and 'Velocity Delivered'.
-        3. "standard" layout: 'Accomplishments' (Write out the accomplishments list as bullets).
-        4. "icon_columns" layout: 'Risks & Blockers' (Describe blockers).
-        5. "flowchart" layout: 'Next Steps'.
+        [
+          {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }},
+          {{ "layout": "kpi_grid", "title": "Key Metrics", "items": [{{"label": "Issues", "value": "{done_count}", "icon": "✅"}}, {{"label": "Points", "value": "{done_pts}", "icon": "📈"}}] }},
+          {{ "layout": "standard", "title": "Accomplishments", "content": ["Real bullet 1", "Real bullet 2"] }},
+          {{ "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "...", "text": "...", "icon": "🛑"}}] }},
+          {{ "layout": "flowchart", "title": "Next Steps", "items": [{{"title": "..."}}, {{"title": "..."}}] }}
+        ]
         """,
         "monthly": f"""
-        1. "hero": '{timeframe.capitalize()} Business Review'.
-        2. "standard": 'Executive Summary'.
-        3. "kpi_grid": 'KPIs & Metric Review'.
-        4. "standard": 'Major Project Updates'.
-        5. "icon_columns": 'Operational Wins'.
-        6. "icon_columns": 'Risks & Mitigation'.
-        7. "flowchart": 'Strategic Initiatives'.
+        [
+          {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }},
+          {{ "layout": "standard", "title": "Executive Summary", "content": ["Real bullet 1", "Real bullet 2"] }},
+          {{ "layout": "kpi_grid", "title": "KPIs", "items": [{{"label": "Velocity", "value": "{done_pts}", "icon": "📈"}}] }},
+          {{ "layout": "icon_columns", "title": "Operational Wins", "items": [{{"title": "...", "text": "...", "icon": "⭐"}}] }},
+          {{ "layout": "standard", "title": "Risks & Mitigation", "content": ["Real bullet 1", "Real bullet 2"] }},
+          {{ "layout": "flowchart", "title": "Strategic Initiatives", "items": [{{"title": "..."}}] }}
+        ]
         """,
         "quarterly": f"""
-        1. "hero": '{timeframe.capitalize()} Business Review'.
-        2. "standard": 'Quarterly Reflection'.
-        3. "icon_columns": 'Objectives & Business Impact'.
-        4. "kpi_grid": 'Quarterly Metrics'.
-        5. "flowchart": 'Future Roadmap'.
+        [
+          {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }},
+          {{ "layout": "standard", "title": "Quarterly Reflection", "content": ["Real bullet 1", "Real bullet 2"] }},
+          {{ "layout": "icon_columns", "title": "Business Impact", "items": [{{"title": "...", "text": "...", "icon": "💡"}}] }},
+          {{ "layout": "kpi_grid", "title": "Quarterly Metrics", "items": [{{"label": "Total Velocity", "value": "{done_pts}", "icon": "📈"}}] }},
+          {{ "layout": "flowchart", "title": "Future Roadmap", "items": [{{"title": "..."}}] }}
+        ]
         """
     }
 
     prompt = f"""
     Act as an Elite Enterprise Designer. Create a {timeframe.capitalize()} Business Review Deck for project {project_key} based ONLY on this data: {json.dumps(context)}.
     
-    CRITICAL: WRITE REAL TEXT AND BULLET POINTS. DO NOT OUTPUT PLACEHOLDERS LIKE "Point 1" OR "Text here".
-    
-    Follow this exact slide agenda and layout mapping:
+    CRITICAL: WRITE REAL TEXT AND BULLET POINTS. DO NOT OUTPUT PLACEHOLDERS.
+    Return EXACTLY a JSON array using this precise schema outline:
     {agendas[timeframe]}
-    
-    Return EXACTLY a JSON array of slide objects matching the schema.
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
@@ -477,8 +477,6 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
 
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """Receives JSON from React and NATIVELY draws the PPTX file using mathematics."""
-    project = payload.get("project", "Unknown")
     slides_data = payload.get("slides", [])
     ppt_buffer = generate_native_editable_pptx(slides_data)
     return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project", "Project")}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
@@ -489,21 +487,7 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
-    issues = res.json().get('issues', []) if res else []
-    
-    context_data = []
-    for i in issues:
-        f = i.get('fields') or {}
-        priority = f.get('priority') or {}
-        issuetype = f.get('issuetype') or {}
-        status = f.get('status') or {}
-        
-        priority_name = priority.get('name') or "Medium"
-        type_name = issuetype.get('name') or "Task"
-        status_name = status.get('name') or "To Do"
-        
-        context_data.append({"key": i.get('key'), "summary": f.get('summary', 'Unknown'), "type": type_name, "priority": priority_name, "status": status_name})
-
+    context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res]
     prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
     try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
     except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
@@ -514,10 +498,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={payload.get('project')} AND sprint in openSprints()", "fields": ["*all"]})
     team_capacity = {}; board_context = []
     for i in res.json().get('issues', []) if res else []:
-        f = i.get('fields') or {}
-        assignee_dict = f.get('assignee') or {}
-        assignee = assignee_dict.get('displayName') or "Unassigned"
-        pts = extract_story_points(f, sp_field)
+        f = i.get('fields') or {}; assignee = (f.get('assignee') or {}).get('displayName') or "Unassigned"; pts = extract_story_points(f, sp_field)
         team_capacity[assignee] = team_capacity.get(assignee, 0) + pts
         board_context.append(f"Task: {f.get('summary')} | Desc: {extract_adf_text(f.get('description', {}))[:200]} | Assignee: {assignee}")
     try: return {"status": "success", "story": json.loads(generate_ai_response(f"Product Owner. '{payload.get('prompt')}'. Context: {' '.join(board_context[:20])}. Workload: {json.dumps(team_capacity)}. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}", temperature=0.5).replace('```json','').replace('```','').strip())}
