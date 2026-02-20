@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V27 - JIRA RAW ERROR EXTRACTION & TYPOGRAPHY FIX")
+print("🚀 APP STARTING: V28 - JIRA SCREEN BYPASS FIX")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -154,10 +154,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None):
             r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json=payload)
             if r.status_code == 200: 
                 return r.json()['candidates'][0]['content']['parts'][0]['text']
-            else:
-                print(f"❌ Gemini API Error ({model}): {r.status_code} - {r.text}")
         except Exception as e:
-            print(f"❌ Gemini Exception ({model}): {str(e)}")
             continue
     return None
 
@@ -175,13 +172,8 @@ def call_openai(prompt, temperature=0.3, image_data=None):
         r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": messages, "temperature": temperature, "response_format": {"type": "json_object"}})
         if r.status_code == 200: 
             return r.json()['choices'][0]['message']['content']
-        else: 
-            print(f"❌ OpenAI API Error: {r.text}")
-    except Exception as e: 
-        print(f"❌ OpenAI Exception: {str(e)}")
+    except Exception as e: pass
     
-    # Seamless Fallback!
-    print("⚠️ Falling back to Gemini due to OpenAI error.")
     return call_gemini(prompt, temperature, image_data)
 
 def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None):
@@ -228,11 +220,11 @@ def extract_adf_text(adf_node):
     return text.strip()
 
 # ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
-C_BG = RGBColor(11, 17, 33)      # Deep Premium Slate
-C_CARD = RGBColor(30, 41, 59)    # Slate-800
+C_BG = RGBColor(11, 17, 33)      
+C_CARD = RGBColor(30, 41, 59)    
 C_WHITE = RGBColor(255, 255, 255)
-C_MUTED = RGBColor(148, 163, 184) # slate-400
-C_ACCENT = RGBColor(217, 119, 6)  # Amber/Gold for premium feel
+C_MUTED = RGBColor(148, 163, 184) 
+C_ACCENT = RGBColor(217, 119, 6)  
 
 def add_text(slide, text, left, top, width, height, font_size, font_color, bold=False, align=PP_ALIGN.LEFT):
     tf = slide.shapes.add_textbox(left, top, width, height).text_frame
@@ -387,7 +379,6 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
     except: ai_data = {"executive_summary": "Format Error.", "business_value": "Error", "story_progress": []}
     return {"metrics": stats, "ai_insights": ai_data}
 
-# --- ✨ MULTI-AGENT SPRINT DECK ✨ ---
 @app.get("/super_deck/{project_key}")
 def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -436,13 +427,9 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
-    try: 
-        return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: 
-        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}")
-        return {"status": "error", "message": "Failed to orchestrate slides."}
+    try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
+    except Exception as e: return {"status": "error", "message": "Failed to orchestrate slides."}
 
-# --- ✨ MULTI-AGENT WBR/MBR/QBR DECK ENGINE ✨ ---
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -505,11 +492,8 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
-    try: 
-        return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: 
-        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}")
-        return {"status": "error", "message": f"Failed to orchestrate {timeframe} slides."}
+    try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
+    except Exception as e: return {"status": "error", "message": f"Failed to orchestrate {timeframe} slides."}
 
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
@@ -517,7 +501,7 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     ppt_buffer = generate_native_editable_pptx(slides_data)
     return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project", "Project")}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
-# --- ROADMAP & TIMELINE ---
+
 @app.get("/roadmap/{project_key}")
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
@@ -538,17 +522,15 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         board_context.append(f"Task: {f.get('summary')} | Desc: {extract_adf_text(f.get('description', {}))[:200]} | Assignee: {assignee}")
     
     prompt_text = f"Product Owner. User Request: '{payload.get('prompt')}'. Current Sprint Context: {' '.join(board_context[:20])}. Team Workload: {json.dumps(team_capacity)}. Generate a detailed user story. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}"
-    image_data = payload.get("image_data") # Base64 string
+    image_data = payload.get("image_data") 
 
     try: 
         raw_response = generate_ai_response(prompt_text, temperature=0.5, image_data=image_data)
         if not raw_response: return {"status": "error", "message": "AI model failed to generate response."}
         return {"status": "success", "story": json.loads(raw_response.replace('```json','').replace('```','').strip())}
-    except Exception as e: 
-        print(f"❌ AI Story Generation Error: {e}")
-        return {"status": "error", "message": str(e)}
+    except Exception as e: return {"status": "error", "message": str(e)}
 
-# --- ✨ UPDATED: BULLETPROOF JIRA ERROR HANDLING ✨ ---
+# --- ✨ FIXED: CREATE ISSUE WITH POST-CREATION PUT FOR CUSTOM FIELDS ✨ ---
 @app.post("/timeline/create_issue")
 async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     story = payload.get("story", {})
@@ -563,38 +545,47 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         if server_info and server_info.status_code == 200:
             base_url = server_info.json().get("baseUrl", "")
 
+    # 1. Create the issue WITHOUT the custom field (avoids screen mapping errors)
     issue_data = {
         "fields": {
             "project": {"key": payload.get("project")}, 
             "summary": story.get("title", "AI Story"), 
-            "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": story.get("description", "")}]}, {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]}, {"type": "bulletList", "content": [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": ac}]}]} for ac in story.get("acceptance_criteria", [])]}]}, 
+            "description": {
+                "type": "doc", "version": 1, "content": [
+                    {"type": "paragraph", "content": [{"type": "text", "text": story.get("description", "")}]}, 
+                    {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]}, 
+                    {"type": "bulletList", "content": [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": ac}]}]} for ac in story.get("acceptance_criteria", [])]}
+                ]
+            }, 
             "issuetype": {"name": "Story"}
         }
     }
     
-    # Only add story points if valid to prevent mapping errors
-    points = safe_float(story.get("points", 0))
-    if points > 0:
-        issue_data["fields"][sp_field] = points
-        
-    if assignee_id: issue_data["fields"]["assignee"] = {"accountId": assignee_id}
+    if assignee_id: 
+        issue_data["fields"]["assignee"] = {"accountId": assignee_id}
     
     res = jira_request("POST", "issue", creds, issue_data)
     
-    # If standard push fails, don't just blindly retry. Try basic Task.
-    if res and res.status_code == 400 and "issuetype" in res.text.lower(): 
+    # Fallback to Task if Story type doesn't exist
+    if not res or res.status_code != 201: 
         issue_data["fields"]["issuetype"]["name"] = "Task"
         res_fallback = jira_request("POST", "issue", creds, issue_data)
         if res_fallback and res_fallback.status_code == 201:
             res = res_fallback
-        
+            
     if res and res.status_code == 201:
         new_key = res.json().get("key")
+        
+        # 2. Add the Story Points via a PUT request AFTER creation
+        points = safe_float(story.get("points", 0))
+        if points > 0:
+            jira_request("PUT", f"issue/{new_key}", creds, {"fields": {sp_field: points}})
+            
         jira_request("POST", f"issue/{new_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
         issue_url = f"{base_url}/browse/{new_key}" if base_url else f"https://id.atlassian.com/browse/{new_key}"
         return {"status": "success", "key": new_key, "url": issue_url}
     
-    # ✨ FIX: Deep Jira Error Extraction ✨
+    # 3. Aggressive Error Extraction if creation completely fails
     error_message = "Unknown Jira API Error"
     if res is not None:
         try:
@@ -606,16 +597,13 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
                 for field, msg in error_data["errors"].items():
                     messages.append(f"[{field}] {msg}")
             
-            if messages: 
-                error_message = " | ".join(messages)
-            else: 
-                error_message = f"Status {res.status_code}: {res.text}"
+            if messages: error_message = " | ".join(messages)
+            else: error_message = f"Status {res.status_code}: {res.text}"
         except:
             error_message = f"Status {res.status_code}: {res.text}"
     else:
         error_message = "Failed to connect to Jira API."
 
-    print(f"❌ Jira Creation Failed: {error_message}")
     return {"status": "error", "message": error_message}
 
 @app.get("/reports/{project_key}/{timeframe}")
