@@ -30,7 +30,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V17 - NATIVE EDITABLE PPTX SUPER ENGINE")
+print("🚀 APP STARTING: V18 - MULTI-AGENT NATIVE PPTX ORCHESTRATOR")
 print("="*50 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -133,16 +133,30 @@ def jira_request(method, endpoint, creds, data=None):
     except: return None
 
 
-# ================= 🧠 AI CORE & VELOCITY UTILS =================
+# ================= 🧠 MULTI-MODEL AI CORE =================
 STORY_POINT_CACHE = {} 
-def generate_ai_response(prompt, temperature=0.3):
+
+def call_gemini(prompt, temperature=0.3):
     api_key = os.getenv("GEMINI_API_KEY")
     for model in ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]:
         try:
-            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}})
+            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": temperature}})
             if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
         except: continue
     return None
+
+def call_openai(prompt, temperature=0.3):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key: return call_gemini(prompt, temperature) # Fallback to Gemini if OpenAI isn't configured
+    try:
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Designer."}, {"role": "user", "content": prompt}], "temperature": temperature, "response_format": {"type": "json_object"}})
+        if r.status_code == 200: return r.json()['choices'][0]['message']['content']
+    except: pass
+    return call_gemini(prompt, temperature) # Ultimate fallback
+
+def generate_ai_response(prompt, temperature=0.3, force_openai=False):
+    if force_openai: return call_openai(prompt, temperature)
+    return call_gemini(prompt, temperature)
 
 def safe_float(val):
     try: return float(val) if val is not None else 0.0
@@ -183,78 +197,113 @@ def extract_adf_text(adf_node):
     for content in adf_node.get('content', []): text += extract_adf_text(content)
     return text.strip()
 
-# ================= 🎨 NATIVE EDITABLE PPTX ENGINE =================
-C_BG = RGBColor(15, 23, 42)      # Tailwind slate-900
-C_CARD = RGBColor(30, 41, 59)    # Tailwind slate-800
+# ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
+C_BG = RGBColor(15, 23, 42)      # slate-900
+C_CARD = RGBColor(30, 41, 59)    # slate-800
 C_WHITE = RGBColor(255, 255, 255)
-C_MUTED = RGBColor(148, 163, 184) # Tailwind slate-400
-C_ACCENT = RGBColor(99, 102, 241) # Tailwind indigo-500  
+C_MUTED = RGBColor(148, 163, 184) # slate-400
+C_ACCENT = RGBColor(99, 102, 241) # indigo-500  
 
 def add_text(slide, text, left, top, width, height, font_size, font_color, bold=False, align=PP_ALIGN.LEFT):
     tf = slide.shapes.add_textbox(left, top, width, height).text_frame
     tf.word_wrap = True; p = tf.paragraphs[0]; p.text = str(text); p.font.size = Pt(font_size); p.font.color.rgb = font_color; p.font.bold = bold; p.font.name = 'Arial'; p.alignment = align
     return tf
 
-def draw_card(slide, left, top, width, height, bg_color):
-    shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+def draw_shape(slide, shape_type, left, top, width, height, bg_color):
+    shape = slide.shapes.add_shape(shape_type, left, top, width, height)
     shape.fill.solid(); shape.fill.fore_color.rgb = bg_color
-    shape.line.fill.background() # No border
+    shape.line.fill.background()
     return shape
 
-def generate_native_editable_pptx(project, slides_data):
-    """Dynamically creates highly-styled, 100% native editable PowerPoint slides"""
+def generate_native_editable_pptx(slides_data):
+    """Dynamically creates highly-styled, fully editable PowerPoint slides using Mathematical Layouts"""
     prs = Presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6] 
     
-    for slide_dict in slides_data:
+    for slide_data in slides_data:
         slide = prs.slides.add_slide(blank_layout)
         
-        # 1. Dark Theme Background
-        bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height)
-        bg.fill.solid(); bg.fill.fore_color.rgb = C_BG; bg.line.fill.background()
+        # Solid Background
+        draw_shape(slide, MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height, C_BG)
         
-        pptx_data = slide_dict.get("pptx", {})
-        layout = pptx_data.get("layout", "standard")
-        title = pptx_data.get("title", slide_dict.get("title", "Presentation Slide"))
-        subtitle = pptx_data.get("subtitle", "")
+        layout = slide_data.get("layout", "standard")
+        title = slide_data.get("title", "Presentation Slide")
+        subtitle = slide_data.get("subtitle", "")
         
+        # ----------------- HERO LAYOUT -----------------
         if layout == "hero":
-            # Title centered
-            add_text(slide, title, Inches(1), Inches(2.5), Inches(11.33), Inches(1.5), 60, C_WHITE, bold=True, align=PP_ALIGN.CENTER)
+            draw_shape(slide, MSO_SHAPE.RECTANGLE, Inches(6), Inches(0), Inches(7.33), Inches(7.5), C_CARD)
+            add_text(slide, title, Inches(1), Inches(2.5), Inches(11.33), Inches(1.5), 54, C_WHITE, bold=True, align=PP_ALIGN.CENTER)
             if subtitle: add_text(slide, subtitle, Inches(1), Inches(4.2), Inches(11.33), Inches(1), 24, C_ACCENT, align=PP_ALIGN.CENTER)
+            if slide_data.get("icon"): add_text(slide, slide_data.get("icon"), Inches(1), Inches(1.2), Inches(11.33), Inches(1), 48, C_WHITE, align=PP_ALIGN.CENTER)
             
-        elif layout == "kpi":
-            # Grid Layout
+        # ----------------- KPI GRID LAYOUT -----------------
+        elif layout == "kpi_grid":
             add_text(slide, title, Inches(0.8), Inches(0.6), Inches(11), Inches(1), 36, C_WHITE, bold=True)
             if subtitle: add_text(slide, subtitle, Inches(0.8), Inches(1.3), Inches(11), Inches(0.5), 18, C_MUTED)
             
-            kpis = pptx_data.get("kpis", [])
-            card_w = Inches(2.6); card_h = Inches(2.2); start_x = Inches(0.8); start_y = Inches(3.0); gap = Inches(0.4)
-            for i, kpi in enumerate(kpis[:4]):
-                cx = start_x + (i * (card_w + gap))
-                draw_card(slide, cx, start_y, card_w, card_h, C_CARD)
-                add_text(slide, kpi.get("value", ""), cx + Inches(0.2), start_y + Inches(0.5), card_w - Inches(0.4), Inches(0.8), 44, C_ACCENT, bold=True, align=PP_ALIGN.CENTER)
-                add_text(slide, kpi.get("label", ""), cx + Inches(0.2), start_y + Inches(1.5), card_w - Inches(0.4), Inches(0.5), 14, C_WHITE, align=PP_ALIGN.CENTER)
+            kpis = slide_data.get("items", [])
+            num_cards = min(len(kpis), 4)
+            if num_cards > 0:
+                gap = 0.4
+                card_w = (13.333 - 1.6 - (gap * (num_cards - 1))) / num_cards
+                start_x = 0.8; start_y = 2.5; card_h = 3.5
                 
+                for i, kpi in enumerate(kpis):
+                    cx = start_x + (i * (card_w + gap))
+                    draw_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(cx), Inches(start_y), Inches(card_w), Inches(card_h), C_CARD)
+                    if kpi.get("icon"): add_text(slide, kpi.get("icon"), Inches(cx), Inches(start_y + 0.3), Inches(card_w), Inches(0.8), 32, C_WHITE, align=PP_ALIGN.CENTER)
+                    add_text(slide, kpi.get("value", ""), Inches(cx), Inches(start_y + 1.2), Inches(card_w), Inches(1.0), 48, C_ACCENT, bold=True, align=PP_ALIGN.CENTER)
+                    add_text(slide, kpi.get("label", ""), Inches(cx), Inches(start_y + 2.4), Inches(card_w), Inches(0.8), 16, C_WHITE, align=PP_ALIGN.CENTER)
+
+        # ----------------- FLOWCHART LAYOUT -----------------
+        elif layout == "flowchart":
+            add_text(slide, title, Inches(0.8), Inches(0.6), Inches(11), Inches(1), 36, C_WHITE, bold=True)
+            steps = slide_data.get("items", [])
+            num_steps = min(len(steps), 5)
+            if num_steps > 0:
+                gap = 0.2
+                step_w = (13.333 - 1.6 - (gap * (num_steps - 1))) / num_steps
+                start_x = 0.8; start_y = 3.0; step_h = 1.8
+                
+                for i, step in enumerate(steps):
+                    cx = start_x + (i * (step_w + gap))
+                    # Draw Chevron shape
+                    draw_shape(slide, MSO_SHAPE.CHEVRON, Inches(cx), Inches(start_y), Inches(step_w), Inches(step_h), C_CARD if i < num_steps-1 else C_ACCENT)
+                    add_text(slide, step.get("title", ""), Inches(cx + 0.3), Inches(start_y + 0.6), Inches(step_w - 0.6), Inches(1), 18, C_WHITE, bold=True, align=PP_ALIGN.CENTER)
+
+        # ----------------- ICON COLUMNS LAYOUT -----------------
+        elif layout == "icon_columns":
+            add_text(slide, title, Inches(0.8), Inches(0.6), Inches(11), Inches(1), 36, C_WHITE, bold=True)
+            cols = slide_data.get("items", [])
+            num_cols = min(len(cols), 3)
+            if num_cols > 0:
+                gap = 0.6
+                col_w = (13.333 - 1.6 - (gap * (num_cols - 1))) / num_cols
+                start_x = 0.8; start_y = 2.2; col_h = 4.5
+                
+                for i, col in enumerate(cols):
+                    cx = start_x + (i * (col_w + gap))
+                    draw_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(cx), Inches(start_y), Inches(col_w), Inches(col_h), C_CARD)
+                    if col.get("icon"): add_text(slide, col.get("icon"), Inches(cx + 0.3), Inches(start_y + 0.4), Inches(0.6), Inches(0.6), 28, C_WHITE)
+                    add_text(slide, col.get("title", ""), Inches(cx + 0.3), Inches(start_y + 1.2), Inches(col_w - 0.6), Inches(0.6), 20, C_ACCENT, bold=True)
+                    add_text(slide, col.get("text", ""), Inches(cx + 0.3), Inches(start_y + 1.8), Inches(col_w - 0.6), Inches(2.2), 14, C_MUTED)
+
+        # ----------------- STANDARD TEXT LAYOUT -----------------
         else: 
-            # Standard layout
-            # Accent Bar
-            bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.8), Inches(0.15), Inches(0.6))
-            bar.fill.solid(); bar.fill.fore_color.rgb = C_ACCENT; bar.line.fill.background()
-            
+            # Accent line
+            draw_shape(slide, MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.8), Inches(0.15), Inches(0.6), C_ACCENT)
             add_text(slide, title, Inches(0.8), Inches(0.7), Inches(11), Inches(1), 32, C_WHITE, bold=True)
             
-            # Content Card
-            draw_card(slide, Inches(0.8), Inches(2), Inches(11.7), Inches(4.8), C_CARD)
+            draw_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(0.8), Inches(2), Inches(11.7), Inches(4.8), C_CARD)
             
-            content = pptx_data.get("content", [])
+            content = slide_data.get("content", [])
             if isinstance(content, list):
-                # Native Bullet Points
                 tf = slide.shapes.add_textbox(Inches(1.2), Inches(2.4), Inches(10.9), Inches(4.0)).text_frame
                 tf.word_wrap = True
                 for i, bullet in enumerate(content):
                     p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
-                    p.text = str(bullet)
+                    p.text = f"•  {bullet}"
                     p.font.size = Pt(20)
                     p.font.color.rgb = C_WHITE
                     p.space_after = Pt(16)
@@ -268,10 +317,11 @@ def generate_native_editable_pptx(project, slides_data):
 
 
 # ================= APP ENDPOINTS =================
+
 @app.get("/")
 def home(): 
     if os.path.exists("index.html"): return FileResponse("index.html")
-    return {"status": "Backend running."}
+    return {"status": "Backend is running, but index.html is missing!"}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -325,6 +375,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
 
 @app.get("/super_deck/{project_key}")
 def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
+    """AGENT ORCHESTRATION: Fetches Data, Calls OpenAI to define Mathematical Layouts."""
     sp_field = get_story_point_field(creds)
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["*all"]})
@@ -339,50 +390,86 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
         if f.get('priority', {}).get('name') in ["High", "Highest", "Critical"]: blockers += 1
         if f.get('assignee'): active_users.add(f.get('assignee', {}).get('displayName', ''))
         
-    context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_issues": len(issues), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers, "team_size": len(active_users), "sample_issues": [i.get('fields', {}).get('summary', '') for i in issues[:5]]}
+    context = {
+        "project": project_key, 
+        "current_date": datetime.now().strftime("%B %d, %Y"), 
+        "total_issues": len(issues), "total_points": total_pts, "completed_points": done_pts, 
+        "blockers": blockers, "team_size": len(active_users), 
+        "sample_issues": [i.get('fields', {}).get('summary', '') for i in issues[:5]]
+    }
 
     prompt = f"""
     You are an elite UX/UI Designer and Enterprise Delivery Director.
-    Create a stunning, 10-slide HTML presentation for an executive review of this project: {json.dumps(context)}.
+    Create a stunning, 10-slide presentation for an executive review of this project: {json.dumps(context)}.
     
-    Return EXACTLY this JSON array format (NO markdown blocks):
+    You MUST respond with EXACTLY this JSON array format (NO markdown blocks, just raw JSON).
+    You have 4 Layout Types to choose from for each slide: 'hero', 'kpi_grid', 'flowchart', 'icon_columns', or 'standard'.
+    Use emojis as icons (e.g., 🚀, 🛑, 👥, 📈).
+    
     [
       {{
-        "id": 1, 
-        "title": "Slide Title", 
-        "html": "<div class='w-full h-full p-16 flex flex-col justify-center text-white bg-slate-900 relative overflow-hidden'>...</div>",
-        "pptx": {{
-            "layout": "hero", 
-            "title": "Project Update",
-            "subtitle": "{context['current_date']}",
-            "content": ["Point 1", "Point 2"],
-            "kpis": [{{"label": "Velocity", "value": "45"}}]
-        }}
+        "id": 1,
+        "layout": "hero",
+        "title": "Project {project_key} Update",
+        "subtitle": "{context['current_date']}",
+        "icon": "🚀"
+      }},
+      {{
+        "id": 2,
+        "layout": "kpi_grid",
+        "title": "Sprint Health at a Glance",
+        "items": [
+           {{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}},
+           {{"label": "Active Blockers", "value": "{blockers}", "icon": "🛑"}}
+        ]
+      }},
+      {{
+        "id": 3,
+        "layout": "icon_columns",
+        "title": "Key Focus Areas",
+        "items": [
+           {{"title": "Stability", "text": "Fixing core bugs.", "icon": "🛡️"}},
+           {{"title": "Delivery", "text": "Shipping UI components.", "icon": "⚡"}}
+        ]
+      }},
+      {{
+        "id": 4,
+        "layout": "flowchart",
+        "title": "Delivery Pipeline",
+        "items": [
+           {{"title": "Backlog"}}, {{"title": "In Progress"}}, {{"title": "Testing"}}, {{"title": "Deployed"}}
+        ]
+      }},
+      {{
+        "id": 5,
+        "layout": "standard",
+        "title": "Executive Summary",
+        "content": ["Point 1", "Point 2", "Point 3"]
       }}
     ]
     
-    Rules for "pptx.layout":
-    - Use "hero" for the title slide.
-    - Use "kpi" for slides displaying numbers (At a Glance). Provide up to 4 items in "kpis".
-    - Use "standard" for all other slides. Provide bullet points as an array of strings in "content".
-
-    Rules for "html":
-    - Use Tailwind CSS. Dark theme (bg-slate-900 text-white). Large text (text-4xl).
-    
-    Slide Order: 1. Title, 2. Exec Summary, 3. KPIs, 4. Team, 5. Roadmap, 6. Delivery, 7. Workstreams, 8. Quality, 9. Risks, 10. Next Steps.
+    Ensure you output exactly 10 slides. Mix the layouts beautifully.
     """
     
-    raw = generate_ai_response(prompt, temperature=0.5)
-    try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: return {"status": "error", "message": "Failed to orchestrate slides."}
+    # Try OpenAI first, fallback to Gemini
+    raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
+    try: 
+        slides = json.loads(raw.replace('```json','').replace('```','').strip())
+        return {"status": "success", "slides": slides}
+    except Exception as e: 
+        return {"status": "error", "message": "Failed to orchestrate slides. Check API keys."}
 
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """Receives AI payload and natively draws an editable PPTX matching the Tailwind CSS layout."""
+    """Receives JSON from React and NATIVELY draws the PPTX file."""
     project = payload.get("project", "Unknown")
     slides_data = payload.get("slides", [])
-    ppt_buffer = generate_native_editable_pptx(project, slides_data)
-    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{project}_Enterprise_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    if slides_data:
+        ppt_buffer = generate_native_editable_pptx(slides_data)
+    else:
+        ppt_buffer = generate_corporate_pptx_fallback(project, payload.get("data", {}).get("metrics", {}), payload.get("data", {}).get("ai_insights", {}))
+    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{project}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
 
 # --- ROADMAP & TIMELINE ---
 @app.get("/roadmap/{project_key}")
