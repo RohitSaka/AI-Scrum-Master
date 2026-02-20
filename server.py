@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V31 - BULLETPROOF WEBHOOK & ASSIGNMENT FIX")
+print("🚀 APP STARTING: V31 - THREAD-SAFE AGENTS & TYPOGRAPHY FIX")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -116,23 +116,28 @@ async def get_jira_creds(x_jira_domain: str = Header(None), x_jira_email: str = 
     if x_license_key:
         user = get_valid_oauth_session(x_license_key, db)
         if not user: raise HTTPException(status_code=401, detail="Invalid License")
-        return {"auth_type": "oauth", "user": user}
-    if x_jira_domain and x_jira_email and x_jira_token: return {"auth_type": "basic", "domain": x_jira_domain.replace("https://", "").replace("http://", "").strip("/"), "email": x_jira_email, "token": x_jira_token}
+        # Extract raw strings immediately to prevent SQLAlchemy Thread Detachment errors
+        return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
+    if x_jira_domain and x_jira_email and x_jira_token: 
+        return {"auth_type": "basic", "domain": x_jira_domain.replace("https://", "").replace("http://", "").strip("/"), "email": x_jira_email, "token": x_jira_token}
     raise HTTPException(status_code=401, detail="Missing Auth")
 
 def jira_request(method, endpoint, creds, data=None):
-    if creds.get("auth_type") == "oauth":
-        url = f"https://api.atlassian.com/ex/jira/{creds['user'].cloud_id}/rest/api/3/{endpoint}"
-        headers = {"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {creds['user'].access_token}"}; auth = None
-    else:
-        url = f"https://{creds['domain']}/rest/api/3/{endpoint}"
-        headers = {"Accept": "application/json", "Content-Type": "application/json"}; auth = HTTPBasicAuth(creds['email'], creds['token'])
     try:
+        if creds.get("auth_type") == "oauth":
+            url = f"https://api.atlassian.com/ex/jira/{creds['cloud_id']}/rest/api/3/{endpoint}"
+            headers = {"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {creds['access_token']}"}
+            auth = None
+        else:
+            url = f"https://{creds['domain']}/rest/api/3/{endpoint}"
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            auth = HTTPBasicAuth(creds['email'], creds['token'])
+
         if method == "POST": return requests.post(url, json=data, headers=headers, auth=auth, timeout=15)
         elif method == "GET": return requests.get(url, headers=headers, auth=auth, timeout=15)
         elif method == "PUT": return requests.put(url, json=data, headers=headers, auth=auth, timeout=15)
     except Exception as e: 
-        print(f"❌ Jira HTTP Error ({endpoint}): {e}")
+        print(f"❌ Jira HTTP Error ({endpoint}): {e}", flush=True)
         return None
 
 # ================= 🧠 MULTI-MODEL AI CORE WITH VISION =================
@@ -148,7 +153,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None):
             mime_type = header.split(":")[1].split(";")[0]
             contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
         except Exception as e:
-            print(f"❌ Image Parse Error: {e}")
+            print(f"❌ Image Parse Error: {e}", flush=True)
 
     for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
         try:
@@ -157,7 +162,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None):
             if r.status_code == 200: 
                 return r.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception as e:
-            print(f"⚠️ Gemini request failed: {e}")
+            print(f"⚠️ Gemini request failed: {e}", flush=True)
             continue
     return None
 
@@ -165,8 +170,7 @@ def call_openai(prompt, temperature=0.3, image_data=None):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: return call_gemini(prompt, temperature, image_data)
     
-    # FIX: Made the system prompt generic to avoid format conflicts with JSON Object schemas
-    messages = [{"role": "system", "content": "You are an elite Enterprise AI. Return ONLY valid JSON."}]
+    messages = [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON array output."}]
     user_content = [{"type": "text", "text": prompt}]
     
     if image_data: user_content.append({"type": "image_url", "image_url": {"url": image_data}})
@@ -177,11 +181,11 @@ def call_openai(prompt, temperature=0.3, image_data=None):
         if r.status_code == 200: 
             return r.json()['choices'][0]['message']['content']
         else:
-            print(f"⚠️ OpenAI Rejected Request: {r.text}")
+            print(f"⚠️ OpenAI Rejected Request: {r.text}", flush=True)
     except Exception as e: 
-        print(f"⚠️ OpenAI Request Crashed: {str(e)}")
+        print(f"⚠️ OpenAI Request Crashed: {str(e)}", flush=True)
         
-    print("🔄 Seamless Fallback to Google Gemini...")
+    print("🔄 Seamless Fallback to Google Gemini...", flush=True)
     return call_gemini(prompt, temperature, image_data)
 
 def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None):
@@ -193,7 +197,7 @@ def safe_float(val):
     except: return 0.0
 
 def get_story_point_field(creds):
-    domain_key = creds.get('domain') or creds.get('user').cloud_id
+    domain_key = creds.get('domain') or creds.get('cloud_id')
     if domain_key in STORY_POINT_CACHE: return STORY_POINT_CACHE[domain_key]
     res = jira_request("GET", "field", creds)
     if res and res.status_code == 200:
@@ -216,7 +220,6 @@ def extract_story_points(issue_fields, sp_field):
 
 def get_jira_account_id(display_name, creds):
     if not display_name or display_name == "Unassigned": return None
-    # Fix: URL encode the query to avoid breakages on spaces/special characters
     safe_query = urllib.parse.quote(display_name)
     res = jira_request("GET", f"user/search?query={safe_query}", creds)
     if res and res.status_code == 200 and res.json(): return res.json()[0].get("accountId")
@@ -323,6 +326,7 @@ def generate_native_editable_pptx(slides_data):
     prs.save(ppt_buffer)
     ppt_buffer.seek(0)
     return ppt_buffer
+
 
 # ================= APP ENDPOINTS =================
 @app.get("/")
@@ -439,7 +443,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     try: 
         return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
     except Exception as e: 
-        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}")
+        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}", flush=True)
         return {"status": "error", "message": "Failed to orchestrate slides."}
 
 @app.get("/report_deck/{project_key}/{timeframe}")
@@ -507,7 +511,7 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     try: 
         return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
     except Exception as e: 
-        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}")
+        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}", flush=True)
         return {"status": "error", "message": f"Failed to orchestrate {timeframe} slides."}
 
 @app.post("/generate_ppt")
@@ -535,7 +539,6 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         team_capacity[assignee] = team_capacity.get(assignee, 0) + pts
         board_context.append(f"Task: {f.get('summary')} | Desc: {extract_adf_text(f.get('description', {}))[:200]} | Assignee: {assignee}")
     
-    # ✨ FIX: Strict instruction to copy the exact Name String from the provided dictionary
     prompt_text = f"Product Owner. User Request: '{payload.get('prompt')}'. Current Sprint Context: {' '.join(board_context[:20])}. Team Workload (You MUST pick the EXACT NAME STRING from these keys): {json.dumps(team_capacity)}. Generate a detailed user story. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Exact Name\", \"tech_stack_inferred\": \"...\"}}"
     image_data = payload.get("image_data") 
 
@@ -544,7 +547,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         if not raw_response: return {"status": "error", "message": "AI model failed to generate response."}
         return {"status": "success", "story": json.loads(raw_response.replace('```json','').replace('```','').strip())}
     except Exception as e: 
-        print(f"❌ AI Story Generation Error: {e}")
+        print(f"❌ AI Story Generation Error: {e}", flush=True)
         return {"status": "error", "message": str(e)}
 
 @app.post("/timeline/create_issue")
@@ -561,8 +564,7 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         if server_info and server_info.status_code == 200:
             base_url = server_info.json().get("baseUrl", "")
 
-    # ✨ FIX: THE TWO-STEP INJECTION (Bypasses Jira Screen Errors) ✨
-    # Step 1: Create Issue using ONLY strictly universal fields.
+    # STEP 1: CREATE ISSUE (Safest possible payload to bypass screen errors)
     content_blocks = [{"type": "paragraph", "content": [{"type": "text", "text": story.get("description", "AI Generated Story")}]}]
     if story.get("acceptance_criteria"):
         content_blocks.append({"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]})
@@ -588,7 +590,7 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     if res and res.status_code == 201:
         new_key = res.json().get("key")
         
-        # Step 2: Post-Creation PUT overrides. Inject Assignee and Custom Story Points AFTER the ticket is safely created.
+        # STEP 2: SECONDARY PUT OVERRIDES (Assignee & Points)
         if assignee_id:
             jira_request("PUT", f"issue/{new_key}", creds, {"fields": {"assignee": {"accountId": assignee_id}}})
             
@@ -596,7 +598,7 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         if points > 0:
             pts_res = jira_request("PUT", f"issue/{new_key}", creds, {"fields": {sp_field: points}})
             if pts_res and pts_res.status_code not in [200, 204]:
-                print(f"⚠️ Warning: Could not set Story Points. Field {sp_field} likely not on screen. {pts_res.text}")
+                print(f"⚠️ Warning: Could not set Story Points on {new_key}. Field {sp_field} likely not on screen.", flush=True)
                 
         jira_request("POST", f"issue/{new_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
         issue_url = f"{base_url}/browse/{new_key}" if base_url else f"https://id.atlassian.com/browse/{new_key}"
@@ -615,7 +617,7 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         except: error_message = f"Status {res.status_code}: {res.text}"
     else: error_message = "Failed to connect to Jira API (Network Error)."
 
-    print(f"❌ Jira Creation Failed: {error_message}")
+    print(f"❌ Jira Creation Failed: {error_message}", flush=True)
     return {"status": "error", "message": error_message}
 
 @app.get("/reports/{project_key}/{timeframe}")
@@ -664,15 +666,14 @@ def generate_actions(payload: dict):
     try: return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(json.loads(generate_ai_response(f"Analyze Retro. GOOD: {payload.get('board').get('well')} BAD: {payload.get('board').get('improve')}. Return JSON array: [\"Action 1\"]").replace('```json','').replace('```','').strip()))]}
     except: return {"actions": []}
 
-
-# --- ✨ FIXED: ROBUST SILENT WEBHOOK WITH TWO-STEP INJECTION ✨ ---
-def process_silent_webhook(issue_key, summary, desc_text, project_key, creds):
+# --- ✨ FIXED: THREAD-SAFE SILENT WEBHOOK ✨ ---
+def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:
-        print(f"🤖 [1/5] Silent Agent started for: {issue_key}")
-        sp_field = get_story_point_field(creds)
+        print(f"🤖 [1/5] Silent Agent started for: {issue_key}", flush=True)
+        sp_field = get_story_point_field(creds_dict)
         
-        print(f"🤖 [2/5] Fetching project context...")
-        res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
+        print(f"🤖 [2/5] Fetching project context...", flush=True)
+        res = jira_request("POST", "search/jql", creds_dict, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
         team_cap = {}
         if res and res.status_code == 200:
             for i in res.json().get('issues', []):
@@ -691,21 +692,20 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds):
         2. Choose the best assignee from the Workload list (Use EXACT name).
         3. If the Description is very short or empty, write a proper technical description.
         
-        Return STRICT JSON OBJECT: {{"points": 3, "assignee": "Exact Name", "generated_description": "Full description", "reasoning": "Explanation"}}
+        Return STRICT JSON OBJECT ONLY: {{"points": 3, "assignee": "Exact Name", "generated_description": "Full description", "reasoning": "Explanation"}}
         """
         
-        print(f"🤖 [3/5] Querying AI Model...")
-        # Note: Set force_openai to False temporarily if your OpenAI tokens are exhausted to ensure Gemini fallback is primarily used.
-        raw = generate_ai_response(prompt, temperature=0.4, force_openai=False)
+        print(f"🤖 [3/5] Querying AI Model...", flush=True)
+        raw = generate_ai_response(prompt, temperature=0.4, force_openai=False) 
         
         if not raw: 
-            print(f"❌ [Webhook Error] AI returned None (Timeout or Quota Issue)")
+            print(f"❌ [Webhook Error] AI returned None (Timeout or Quota Issue)", flush=True)
             return
             
         est = json.loads(raw.replace('```json','').replace('```','').strip())
-        print(f"🧠 [4/5] AI Decision: {est}")
+        print(f"🧠 [4/5] AI Decision: {est}", flush=True)
         
-        assignee_id = get_jira_account_id(est.get('assignee', ''), creds)
+        assignee_id = get_jira_account_id(est.get('assignee', ''), creds_dict)
         
         # 1. Update Assignee and Description (Universally Accepted)
         update_fields_basic = {}
@@ -720,23 +720,23 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds):
             }
             
         if update_fields_basic:
-            res1 = jira_request("PUT", f"issue/{issue_key}", creds, {"fields": update_fields_basic})
-            if res1 and res1.status_code not in [200, 204]: print(f"⚠️ Webhook Basic Update Failed: {res1.text}")
+            res1 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
+            if res1 and res1.status_code not in [200, 204]: print(f"⚠️ Webhook Basic Update Failed: {res1.text}", flush=True)
             
-        # 2. Update Story Points Separately (To prevent screen restriction blocks)
+        # 2. Update Story Points Separately
         points = safe_float(est.get('points', 0))
         if points > 0:
-            res2 = jira_request("PUT", f"issue/{issue_key}", creds, {"fields": {sp_field: points}})
-            if res2 and res2.status_code not in [200, 204]: print(f"⚠️ Webhook Points Update Blocked by Jira Screen: {res2.text}")
+            res2 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
+            if res2 and res2.status_code not in [200, 204]: print(f"⚠️ Webhook Points Update Blocked by Jira Screen: {res2.text}", flush=True)
             
         # 3. Add Insight Comment
-        print(f"🤖 [5/5] Posting Comment to Jira...")
-        jira_request("POST", f"issue/{issue_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🚀 IG Agile Auto-Triage\nEstimated at: {points} pts.\nAssigned to: {est.get('assignee', 'Unassigned')}\nReasoning: {est.get('reasoning', '')}"}]}]}})
+        print(f"🤖 [5/5] Posting Comment to Jira...", flush=True)
+        jira_request("POST", f"issue/{issue_key}/comment", creds_dict, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🚀 IG Agile Auto-Triage\nEstimated at: {points} pts.\nAssigned to: {est.get('assignee', 'Unassigned')}\nReasoning: {est.get('reasoning', '')}"}]}]}})
         
-        print(f"✅ Webhook Process Complete for {issue_key}")
+        print(f"✅ Webhook Process Complete for {issue_key}", flush=True)
         
     except Exception as e: 
-        print(f"❌ FATAL Webhook Exception for {issue_key}: {e}")
+        print(f"❌ FATAL Webhook Exception for {issue_key}: {e}", flush=True)
         traceback.print_exc()
 
 @app.post("/webhook")
@@ -746,7 +746,6 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
         if payload.get("webhookEvent") != "jira:issue_created": return {"status": "ignored"}
         issue = payload.get("issue", {}); key = issue.get("key"); fields = issue.get("fields", {})
         
-        # Ensure description extraction doesn't crash on missing fields
         desc_raw = fields.get("description")
         desc = ""
         if desc_raw:
@@ -754,26 +753,31 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
             else: desc = extract_adf_text(desc_raw)[:500]
             
         summary = fields.get("summary", "")
-        project_dict = fields.get("project") or {}
-        project_key = project_dict.get("key", "")
+        project_key = (fields.get("project") or {}).get("key", "")
         
-        print(f"\n🔔 WEBHOOK FIRED: New Issue {key} detected in project {project_key}.")
+        # Prevent the AI from triggering a loop if an agent creates a ticket
+        if "IG Agile AI Insights" in desc or "AI Generated Description" in desc:
+            print(f"⏭️ Skipping Webhook for {key}: Issue was created actively by the UI.", flush=True)
+            return {"status": "ignored"}
+
+        print(f"\n🔔 WEBHOOK FIRED: New Issue {key} detected in project {project_key}.", flush=True)
         
-        creds = None
+        # ✨ FIX: THREAD-SAFE DETACHED DICTIONARY CREATION ✨
+        creds_dict = None
         if domain and email and token: 
-            creds = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
+            creds_dict = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
         else:
             db = SessionLocal()
             user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first() if cloud_id else db.query(UserAuth).first()
-            if user: creds = {"auth_type": "oauth", "user": user}
+            if user: creds_dict = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
             db.close()
             
-        if creds: 
-            background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds)
+        if creds_dict: 
+            background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds_dict)
         else:
-            print("❌ Webhook failed: No valid Jira credentials found in system.")
+            print("❌ Webhook failed: No valid Jira credentials found in local DB.", flush=True)
             
         return {"status": "processing_in_background"}
     except Exception as e: 
-        print(f"❌ Webhook Catch Error: {e}")
+        print(f"❌ Webhook Catch Error: {e}", flush=True)
         return {"status": "error", "message": str(e)}
