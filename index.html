@@ -14,8 +14,8 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/libs/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.min.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
@@ -71,16 +71,9 @@
 
         /* ✨ PIXEL PERFECT PRINT/PDF ENGINE ✨ */
         @media print { 
-            /* Strip flexbox overflow limits so pagination works */
             html, body, #root, div { height: auto !important; overflow: visible !important; position: static !important; }
-            
-            /* Hide the main application UI */
             body * { visibility: hidden; } 
-            
-            /* Reveal only the Print Engine Container */
             #print-engine-container, #print-engine-container * { visibility: visible; }
-            
-            /* Position it properly at the top of the print page */
             #print-engine-container { 
                 position: absolute !important; 
                 left: 0 !important; 
@@ -90,7 +83,6 @@
                 opacity: 1 !important; 
                 z-index: 99999 !important; 
             }
-            
             .print-slide { 
                 width: 1280px !important; 
                 height: 720px !important; 
@@ -348,22 +340,29 @@
             // ✨ BULLETPROOF PIXEL PERFECT PPTX EXPORT ✨
             const handleExportPPTX = async () => {
                 setIsExporting(true);
-                try {
-                    let pptx = new pptxgen();
-                    pptx.layout = 'LAYOUT_16x9';
+                
+                // Safely grab the global pptxgen object (from the cdnjs import)
+                const PptxGenJS = window.pptxgen;
+                if (!PptxGenJS) {
+                    alert("Export Library not fully loaded yet. Please refresh the page.");
+                    setIsExporting(false);
+                    return;
+                }
 
-                    // Securely prepare the hidden container for html2canvas to capture
-                    const container = document.getElementById('print-engine-container');
+                const container = document.getElementById('print-engine-container');
+                try {
+                    let pptx = new PptxGenJS();
+                    pptx.layout = 'LAYOUT_16x9';
                     
-                    // We pull it into the viewport temporarily but make it virtually invisible
-                    // This guarantees html2canvas can read the calculated styles without failing
+                    // We pull it into the viewport temporarily but make it virtually invisible.
+                    // This is REQUIRED so html2canvas can calculate CSS Layout dimensions accurately without errors.
                     container.style.position = 'fixed';
                     container.style.top = '0px';
                     container.style.left = '0px';
                     container.style.zIndex = '-9999';
                     container.style.opacity = '0.01'; 
 
-                    // Let DOM calculate layouts
+                    // Give DOM a split second to paint the new layout
                     await new Promise(r => setTimeout(r, 800));
 
                     for (let i = 0; i < slides.length; i++) {
@@ -371,7 +370,7 @@
                         if(!slideElement) continue;
 
                         const canvas = await html2canvas(slideElement, { 
-                            scale: 1.5, // Crisp resolution without crashing memory limits
+                            scale: 1.5, // Crisp resolution without crashing browser memory limits
                             useCORS: true,
                             backgroundColor: '#0f172a',
                             logging: false,
@@ -379,27 +378,28 @@
                             windowHeight: 720
                         });
                         
-                        // JPEG is more stable and creates smaller files
+                        // JPEG is more memory-stable and creates much smaller native PPTX files than PNG
                         const imgData = canvas.toDataURL('image/jpeg', 0.85); 
                         
                         let slide = pptx.addSlide();
                         slide.background = { color: '0F172A' };
+                        // Image fills the 16x9 ratio canvas natively (10x5.625 inches)
                         slide.addImage({ data: imgData, x: 0, y: 0, w: 10, h: 5.625 }); 
                     }
-
-                    // Push container back off-screen
-                    container.style.position = 'absolute';
-                    container.style.top = '-9999px';
-                    container.style.left = '-9999px';
-                    container.style.opacity = '1';
                     
                     await pptx.writeFile({ fileName: `${project}_Enterprise_Deck.pptx` });
 
                 } catch(e) { 
                     console.error("Export Error:", e); 
                     alert("Export failed: " + e.message); 
+                } finally {
+                    // Always safely push the container back out of sight
+                    container.style.position = 'absolute';
+                    container.style.top = '-9999px';
+                    container.style.left = '-9999px';
+                    container.style.opacity = '1';
+                    setIsExporting(false);
                 }
-                setIsExporting(false);
             };
 
             if (loading) return <LoadingScreen msg="Super Agent orchestrating 10-slide Enterprise presentation..." />;
