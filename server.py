@@ -30,7 +30,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V20 - GENDARME MULTI-AGENT PROSE ENGINE")
+print("🚀 APP STARTING: V21 - GENDARME ENGINE (BULLETPROOF API PARSING)")
 print("="*50 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -297,7 +297,7 @@ def generate_native_editable_pptx(slides_data):
 @app.get("/")
 def home(): 
     if os.path.exists("index.html"): return FileResponse("index.html")
-    return {"status": "Backend running."}
+    return {"status": "Backend is running, but index.html is missing!"}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -311,7 +311,7 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
     try:
         sprints = {}
         for i in res.json().get('issues', []):
-            for s in i.get('fields', {}).get('customfield_10020') or []: sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
+            for s in (i.get('fields') or {}).get('customfield_10020') or []: sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
@@ -326,17 +326,25 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
     context_for_ai = []
 
     for i in issues:
-        f = i.get('fields', {})
-        name = f.get('assignee', {}).get('displayName') if f.get('assignee') else "Unassigned"
+        f = i.get('fields') or {}
+        assignee = f.get('assignee') or {}
+        priority = f.get('priority') or {}
+        status = f.get('status') or {}
+        issuetype = f.get('issuetype') or {}
+
+        name = assignee.get('displayName') or "Unassigned"
         pts = extract_story_points(f, sp_field) 
-        priority_name = f.get('priority', {}).get('name') if f.get('priority') else "Medium"
-        status_name = f.get('status', {}).get('name') if f.get('status') else "To Do"
+        priority_name = priority.get('name') or "Medium"
+        status_name = status.get('name') or "To Do"
         
         stats["points"] += pts; stats["total"] += 1
         if priority_name in ["High", "Highest", "Critical"]: stats["blockers"] += 1
-        if f.get('issuetype', {}).get('name') == "Bug": stats["bugs"] += 1
+        if issuetype.get('name') == "Bug": stats["bugs"] += 1
         
-        if name not in stats["assignees"]: stats["assignees"][name] = {"count": 0, "points": 0.0, "tasks": [], "avatar": f.get('assignee', {}).get('avatarUrls', {}).get('48x48', '') if f.get('assignee') else ""}
+        if name not in stats["assignees"]: 
+            avatar = (assignee.get('avatarUrls') or {}).get('48x48', '')
+            stats["assignees"][name] = {"count": 0, "points": 0.0, "tasks": [], "avatar": avatar}
+            
         stats["assignees"][name]["count"] += 1; stats["assignees"][name]["points"] += pts
         stats["assignees"][name]["tasks"].append({"key": i.get('key'), "summary": f.get('summary', ''), "points": pts, "status": status_name, "priority": priority_name})
         
@@ -359,19 +367,24 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     
     done_pts = 0.0; total_pts = 0.0; active_users = set(); blockers = []; done_summaries = []
     for i in issues:
-        f = i.get('fields', {})
+        f = i.get('fields') or {}
+        status = f.get('status') or {}
+        status_category = status.get('statusCategory') or {}
+        priority = f.get('priority') or {}
+        assignee = f.get('assignee') or {}
+
         pts = extract_story_points(f, sp_field); total_pts += pts
-        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': 
+        if status_category.get('key') == 'done': 
             done_pts += pts
             done_summaries.append(f.get('summary', ''))
-        if f.get('priority', {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
-        if f.get('assignee'): active_users.add(f.get('assignee', {}).get('displayName', ''))
+        if priority.get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
+        if assignee: active_users.add(assignee.get('displayName', ''))
             
     retro_res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res and retro_res.status_code==200 else {}
     
     backlog_res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
-    backlog = [i['fields']['summary'] for i in backlog_res.json().get('issues', [])] if backlog_res else ["Backlog Refinement", "Planning"]
+    backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res else ["Backlog Refinement", "Planning"]
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
 
@@ -399,7 +412,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
 # --- ✨ MULTI-AGENT WBR/MBR/QBR DECK ENGINE ✨ ---
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
-    """Orchestrates dynamic, data-driven Business Review Decks"""
+    """Orchestrates specific Agendas for Weekly, Monthly, and Quarterly Business Reviews"""
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -409,10 +422,15 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
-        f = i.get('fields', {}); pts = extract_story_points(f, sp_field)
-        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': 
+        f = i.get('fields') or {}
+        status = f.get('status') or {}
+        status_category = status.get('statusCategory') or {}
+        priority = f.get('priority') or {}
+
+        pts = extract_story_points(f, sp_field)
+        if status_category.get('key') == 'done': 
             done_count += 1; done_pts += pts; accomplishments.append(f.get('summary', ''))
-        if f.get('priority', {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
+        if priority.get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
 
     context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
 
@@ -459,9 +477,11 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
 
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Receives JSON from React and NATIVELY draws the PPTX file using mathematics."""
+    project = payload.get("project", "Unknown")
     slides_data = payload.get("slides", [])
     ppt_buffer = generate_native_editable_pptx(slides_data)
-    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get('project', 'Project')}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project", "Project")}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
 # --- ROADMAP & TIMELINE (UNCHANGED) ---
@@ -469,7 +489,21 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
-    context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res]
+    issues = res.json().get('issues', []) if res else []
+    
+    context_data = []
+    for i in issues:
+        f = i.get('fields') or {}
+        priority = f.get('priority') or {}
+        issuetype = f.get('issuetype') or {}
+        status = f.get('status') or {}
+        
+        priority_name = priority.get('name') or "Medium"
+        type_name = issuetype.get('name') or "Task"
+        status_name = status.get('name') or "To Do"
+        
+        context_data.append({"key": i.get('key'), "summary": f.get('summary', 'Unknown'), "type": type_name, "priority": priority_name, "status": status_name})
+
     prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
     try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
     except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
@@ -480,7 +514,10 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={payload.get('project')} AND sprint in openSprints()", "fields": ["*all"]})
     team_capacity = {}; board_context = []
     for i in res.json().get('issues', []) if res else []:
-        f = i.get('fields', {}); assignee = f.get('assignee', {}).get('displayName') if f.get('assignee') else "Unassigned"; pts = extract_story_points(f, sp_field)
+        f = i.get('fields') or {}
+        assignee_dict = f.get('assignee') or {}
+        assignee = assignee_dict.get('displayName') or "Unassigned"
+        pts = extract_story_points(f, sp_field)
         team_capacity[assignee] = team_capacity.get(assignee, 0) + pts
         board_context.append(f"Task: {f.get('summary')} | Desc: {extract_adf_text(f.get('description', {}))[:200]} | Assignee: {assignee}")
     try: return {"status": "success", "story": json.loads(generate_ai_response(f"Product Owner. '{payload.get('prompt')}'. Context: {' '.join(board_context[:20])}. Workload: {json.dumps(team_capacity)}. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}", temperature=0.5).replace('```json','').replace('```','').strip())}
@@ -505,10 +542,22 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
     done_count = 0; done_pts = 0.0; context_data = []
+    
     for i in res.json().get('issues', []) if res else []:
-        f = i.get('fields', {}); pts = extract_story_points(f, sp_field)
-        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': done_count += 1; done_pts += pts
-        context_data.append({"key": i.get('key'), "summary": f.get('summary', ''), "status": f.get('status', {}).get('name') if f.get('status') else "Unknown", "assignee": f.get('assignee', {}).get('displayName') if f.get('assignee') else "Unassigned", "points": pts})
+        f = i.get('fields') or {}
+        status = f.get('status') or {}
+        status_category = status.get('statusCategory') or {}
+        assignee_dict = f.get('assignee') or {}
+        
+        pts = extract_story_points(f, sp_field)
+        if status_category.get('key') == 'done': 
+            done_count += 1
+            done_pts += pts
+            
+        status_name = status.get('name') or "Unknown"
+        assignee = assignee_dict.get('displayName') or "Unassigned"
+        context_data.append({"key": i.get('key'), "summary": f.get('summary', ''), "status": status_name, "assignee": assignee, "points": pts})
+        
     try: ai_dossier = json.loads(generate_ai_response(f"Elite Agile Analyst. DATA: {json.dumps(context_data)}. Return JSON: {{\"ai_verdict\": \"...\", \"sprint_vibe\": \"...\", \"key_accomplishments\": [{{\"title\": \"...\", \"impact\": \"...\"}}], \"hidden_friction\": \"...\", \"top_contributor\": \"Name - Reason\"}}", temperature=0.4).replace('```json','').replace('```','').strip())
     except: ai_dossier = {"ai_verdict": "Error", "sprint_vibe": "Error", "key_accomplishments": [], "hidden_friction": "", "top_contributor": ""}
     return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(context_data), "dossier": ai_dossier}
@@ -538,8 +587,11 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds):
     team_cap = {}
     if res and res.status_code == 200:
         for i in res.json().get('issues', []):
-            assignee = i.get('fields', {}).get('assignee', {}).get('displayName') if i.get('fields', {}).get('assignee') else "Unassigned"
-            team_cap[assignee] = team_cap.get(assignee, 0) + extract_story_points(i.get('fields', {}), sp_field)
+            f = i.get('fields') or {}
+            assignee_dict = f.get('assignee') or {}
+            assignee = assignee_dict.get('displayName') or "Unassigned"
+            team_cap[assignee] = team_cap.get(assignee, 0) + extract_story_points(f, sp_field)
+            
     raw = generate_ai_response(f"New Ticket: {summary}. Desc: {desc_text}. Workload: {json.dumps(team_cap)}. Return JSON: {{\"points\": 3, \"assignee\": \"Name\", \"reasoning\": \"string\"}}")
     if not raw: return
     try:
