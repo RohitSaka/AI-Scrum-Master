@@ -126,7 +126,8 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
     }
     requests.post(f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/webhook", headers={"Authorization": f"Bearer {tokens['access_token']}", "Content-Type": "application/json"}, json=webhook_payload)
 
-    return {"status": "success", "message": "OAuth successful. You may close this window.", "license_key": license_key}
+    # Redirect the user back to the frontend UI, triggering the login success state
+    return RedirectResponse(f"{APP_URL}/?success=true")
 
 def get_valid_oauth_session(license_key: str, db: Session):
     """Silent token refresh logic"""
