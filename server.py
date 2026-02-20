@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import urllib.parse
 import io
+import base64
 
 # --- NATIVE PPTX GENERATION ---
 from pptx import Presentation
@@ -22,16 +23,18 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 load_dotenv()
 app = FastAPI()
 
+# INCREASE MAX REQUEST SIZE FOR IMAGES
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    max_content_length=50 * 1024 * 1024  # 50MB
 )
 
-print("\n" + "="*50)
-print("🚀 APP STARTING: V24 - JIRA ERROR HANDLING & BOUNCING UI")
-print("="*50 + "\n")
+print("\n" + "="*60)
+print("🚀 APP STARTING: V25 - PREMIUM UI, ROBUST JIRA ERRORS & VISION AI")
+print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./local_agile.db") 
@@ -132,30 +135,49 @@ def jira_request(method, endpoint, creds, data=None):
         elif method == "PUT": return requests.put(url, json=data, headers=headers, auth=auth)
     except: return None
 
-# ================= 🧠 MULTI-MODEL AI CORE =================
+# ================= 🧠 MULTI-MODEL AI CORE WITH VISION =================
 STORY_POINT_CACHE = {} 
 
-def call_gemini(prompt, temperature=0.3):
+def call_gemini(prompt, temperature=0.3, image_data=None):
     api_key = os.getenv("GEMINI_API_KEY")
-    for model in ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]:
+    model = "gemini-1.5-flash" # 1.5 Flash supports vision nicely
+    
+    contents = [{"parts": [{"text": prompt}]}]
+    if image_data:
+        # Assuming image_data is base64 data URL e.g., "data:image/png;base64,iVBORw..."
         try:
-            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": temperature}})
-            if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
-        except: continue
+            header, encoded = image_data.split(",", 1)
+            mime_type = header.split(":")[1].split(";")[0]
+            contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
+        except: pass # Failed to parse image data, proceed with text only
+
+    try:
+        r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json={"contents": contents, "generationConfig": {"temperature": temperature}})
+        if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
+    except: return None
     return None
 
-def call_openai(prompt, temperature=0.3):
+def call_openai(prompt, temperature=0.3, image_data=None):
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: return call_gemini(prompt, temperature)
+    if not api_key: return call_gemini(prompt, temperature, image_data)
+    
+    messages = [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON array output."}]
+    user_content = [{"type": "text", "text": prompt}]
+    
+    if image_data:
+        user_content.append({"type": "image_url", "image_url": {"url": image_data}})
+        
+    messages.append({"role": "user", "content": user_content})
+
     try:
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON array output."}, {"role": "user", "content": prompt}], "temperature": temperature, "response_format": {"type": "json_object"}})
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": messages, "temperature": temperature, "response_format": {"type": "json_object"}})
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
     except: pass
-    return call_gemini(prompt, temperature)
+    return call_gemini(prompt, temperature, image_data)
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False):
-    if force_openai: return call_openai(prompt, temperature)
-    return call_gemini(prompt, temperature)
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None):
+    if force_openai or image_data: return call_openai(prompt, temperature, image_data)
+    return call_gemini(prompt, temperature, image_data)
 
 def safe_float(val):
     try: return float(val) if val is not None else 0.0
@@ -197,11 +219,12 @@ def extract_adf_text(adf_node):
     return text.strip()
 
 # ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
-C_BG = RGBColor(15, 23, 42)      # slate-900
-C_CARD = RGBColor(30, 41, 59)    # slate-800
+# Updated Premium Color Palette for PPTX
+C_BG = RGBColor(11, 17, 33)      # Deep Premium Slate
+C_CARD = RGBColor(30, 41, 59)    # Slate-800
 C_WHITE = RGBColor(255, 255, 255)
 C_MUTED = RGBColor(148, 163, 184) # slate-400
-C_ACCENT = RGBColor(99, 102, 241) # indigo-500  
+C_ACCENT = RGBColor(217, 119, 6)  # Amber/Gold for premium feel
 
 def add_text(slide, text, left, top, width, height, font_size, font_color, bold=False, align=PP_ALIGN.LEFT):
     tf = slide.shapes.add_textbox(left, top, width, height).text_frame
@@ -492,6 +515,7 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
     except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
 
+# --- UPDATED: GENERATE STORY WITH VISION SUPPORT ---
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -502,11 +526,17 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         team_capacity[assignee] = team_capacity.get(assignee, 0) + pts
         board_context.append(f"Task: {f.get('summary')} | Desc: {extract_adf_text(f.get('description', {}))[:200]} | Assignee: {assignee}")
     
+    prompt_text = f"Product Owner. User Request: '{payload.get('prompt')}'. Current Sprint Context: {' '.join(board_context[:20])}. Team Workload: {json.dumps(team_capacity)}. Generate a detailed user story. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}"
+    image_data = payload.get("image_data") # Base64 string
+
     try: 
-        return {"status": "success", "story": json.loads(generate_ai_response(f"Product Owner. '{payload.get('prompt')}'. Context: {' '.join(board_context[:20])}. Workload: {json.dumps(team_capacity)}. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}", temperature=0.5).replace('```json','').replace('```','').strip())}
+        raw_response = generate_ai_response(prompt_text, temperature=0.5, image_data=image_data)
+        if not raw_response: return {"status": "error", "message": "AI model failed to generate response."}
+        return {"status": "success", "story": json.loads(raw_response.replace('```json','').replace('```','').strip())}
     except Exception as e: 
         return {"status": "error", "message": str(e)}
 
+# --- UPDATED: ROBUST JIRA ERROR HANDLING ---
 @app.post("/timeline/create_issue")
 async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     story = payload.get("story", {}); sp_field = get_story_point_field(creds); assignee_id = get_jira_account_id(story.get("assignee", ""), creds)
@@ -534,14 +564,25 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         issue_url = f"{base_url}/browse/{new_key}" if base_url else f"https://id.atlassian.com/browse/{new_key}"
         return {"status": "success", "key": new_key, "url": issue_url}
     
-    # ✨ FIX: Deep error extraction so the frontend shows exactly why Jira failed
-    error_details = "Unknown Jira Error"
-    if res and res.text:
+    # ✨ FIX: DEEP JIRA ERROR EXTRACTION ✨
+    error_message = "Unknown Jira API Error"
+    if res:
         try:
-            error_details = res.json().get("errors", res.text)
+            error_data = res.json()
+            messages = []
+            # Jira returns errors in 'errorMessages' (list of strings) or 'errors' (dict of field: message)
+            if "errorMessages" in error_data and error_data["errorMessages"]:
+                messages.extend(error_data["errorMessages"])
+            if "errors" in error_data and error_data["errors"]:
+                for field, msg in error_data["errors"].items():
+                    messages.append(f"Field '{field}': {msg}")
+            
+            if messages: error_message = " | ".join(messages)
+            else: error_message = res.text or f"Jira returned status code {res.status_code}"
         except:
-            error_details = res.text
-    return {"status": "error", "message": f"Jira API Error: {error_details}"}
+            error_message = res.text or f"Jira returned status code {res.status_code}"
+
+    return {"status": "error", "message": error_message}
 
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
