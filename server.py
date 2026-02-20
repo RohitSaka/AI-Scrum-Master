@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.responses import StreamingResponse, RedirectResponse, FileResponse
 import requests, json, os, uuid, time
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
@@ -295,7 +295,12 @@ def generate_corporate_pptx(project, metrics, ai_insights):
 # ================= APP ENDPOINTS =================
 
 @app.get("/")
-def home(): return {"status": "Online - IG Enterprise Core"}
+def home(): 
+    """Serves the frontend UI instead of raw JSON text"""
+    # Make sure index.html is in the same folder as server.py
+    if os.path.exists("index.html"):
+        return FileResponse("index.html")
+    return {"status": "Backend is running, but index.html is missing!"}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
