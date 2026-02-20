@@ -12,6 +12,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/libs/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     
@@ -20,19 +24,17 @@
         .dark-mode {
             --bg-body: #0f172a; --bg-sidebar: #020617; --bg-card: #1e293b; --bg-hover: #334155;
             --text-main: #f8fafc; --text-muted: #94a3b8; --border: #334155;
-            --primary: #6366f1; --primary-fg: #ffffff; --primary-dim: rgba(99, 102, 241, 0.15);
+            --primary: #6366f1; --primary-dim: rgba(99, 102, 241, 0.15);
             --danger: #ef4444; --success: #10b981; --warning: #f59e0b;
-            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); --glass-border: 1px solid rgba(255, 255, 255, 0.1);
         }
         .light-mode {
             --bg-body: #F4F5F7; --bg-sidebar: #FFFFFF; --bg-card: #FFFFFF; --bg-hover: #EBECF0;
             --text-main: #172B4D; --text-muted: #5E6C84; --border: #DFE1E6;
-            --primary: #0052CC; --primary-fg: #ffffff; --primary-dim: rgba(0, 82, 204, 0.1);
+            --primary: #0052CC; --primary-dim: rgba(0, 82, 204, 0.1);
             --danger: #DE350B; --success: #00875A; --warning: #FF991F;
-            --shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); --glass-border: 1px solid var(--border);
         }
         body { font-family: 'Inter', sans-serif; background-color: var(--bg-body); color: var(--text-main); transition: background-color var(--transition-speed), color var(--transition-speed); overflow: hidden; margin: 0; }
-        .glass-card { background: var(--bg-card); border: var(--glass-border); box-shadow: var(--shadow); border-radius: 0.5rem; }
+        .glass-card { background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-radius: 0.5rem; }
         .nav-btn { color: var(--text-muted); padding: 0.75rem; border-radius: 0.375rem; transition: all 0.2s; display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
         .nav-btn:hover { background: var(--bg-hover); color: var(--text-main); }
         .nav-btn.active { background: var(--primary-dim); color: var(--primary); border-left: 3px solid var(--primary); }
@@ -49,8 +51,8 @@
         
         .loader { width: 20px; height: 20px; border: 2px solid #FFF; border-bottom-color: transparent; border-radius: 50%; display: inline-block; animation: rotation 1s linear infinite; }
         @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .gradient-text { background: linear-gradient(to right, var(--primary), #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
         
+        /* Retro Board */
         .retro-col { background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; display: flex; flex-direction: column; height: 100%; overflow: hidden; backdrop-filter: blur(10px); }
         .retro-col-header { padding: 1rem; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; align-items: center; }
         .retro-col-body { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
@@ -60,18 +62,20 @@
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* Roadmap Specific UI */
+        /* Roadmap Grid */
         .roadmap-grid { display: grid; grid-template-columns: 250px repeat(12, 1fr); background: transparent; }
         .roadmap-header { font-weight: 700; font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 12px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; background: var(--bg-card); }
         .roadmap-cell { border-right: 1px solid var(--border); opacity: 0.2; }
         .roadmap-item { position: absolute; border-radius: 6px; padding: 8px 12px; font-size: 11px; font-weight: 600; color: white; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; z-index: 10; transition: transform 0.2s, z-index 0s; }
         .roadmap-item:hover { z-index: 20; transform: translateY(-2px) scale(1.01); }
 
-        /* Slide Deck CSS */
+        /* ✨ PIXEL PERFECT PRINT/PDF ENGINE ✨ */
         @media print { 
             body * { visibility: hidden; } 
-            #slide-print-area, #slide-print-area * { visibility: visible; }
-            #slide-print-area { position: absolute; left: 0; top: 0; width: 100%; height: 100%; box-shadow: none; border: none; border-radius: 0; transform: none; }
+            #print-engine-container, #print-engine-container * { visibility: visible; }
+            #print-engine-container { position: absolute; left: 0; top: 0; width: 100%; display: block !important; opacity: 1 !important; z-index: 99999; }
+            .print-slide { width: 1280px; height: 720px; page-break-after: always; break-after: page; background: #0f172a; margin: 0; padding: 3rem; }
+            @page { size: 1280px 720px; margin: 0; }
         }
     </style>
 </head>
@@ -81,7 +85,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
         const { motion, AnimatePresence } = window.Motion;
-        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; // Replace if different
+        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
 
         const Icon = ({ name, size = 18, className = "" }) => {
             const icons = {
@@ -97,14 +101,12 @@
                 Monitor: <><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></>,
                 ChevronLeft: <><polyline points="15 18 9 12 15 6"></polyline></>,
                 ChevronRight: <><polyline points="9 18 15 12 9 6"></polyline></>,
-                Sun: <><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></>,
+                Sun: <><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line></>,
                 Moon: <><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></>,
-                Star: <><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></>,
-                AlertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></>,
+                Key: <><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></>,
                 Sparkles: <><path d="M12 3l1.912 5.813a2 2 0 001.275 1.275L21 12l-5.813 1.912a2 2 0 00-1.275 1.275L12 21l-1.912-5.813a2 2 0 00-1.275-1.275L3 12l5.813-1.912a2 2 0 001.275-1.275L12 3z"></path></>,
                 Plus: <><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></>,
-                CloudLightning: <><path d="M19 16.9A5 5 0 0 0 18 7h-1.26a8 8 0 1 0-11.62 9"></path><polyline points="13 11 9 17 15 17 11 23"></polyline></>,
-                Key: <><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></>
+                CloudLightning: <><path d="M19 16.9A5 5 0 0 0 18 7h-1.26a8 8 0 1 0-11.62 9"></path><polyline points="13 11 9 17 15 17 11 23"></polyline></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{icons[name] || null}</svg>;
         };
@@ -240,6 +242,7 @@
                                 <NavBtn id="smartdeck" icon="Monitor" label="AI Smart Deck" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="roadmap" icon="Map" label="Strategic Roadmap" active={view} set={setView} disabled={isGlobalLoading} />
+                                
                                 {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Calendar" label="Timeline Flow" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
                                 {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="reports" icon="FileText" label="Reports" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="burndown" icon="TrendingDown" label="Burndown" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
@@ -260,7 +263,7 @@
                             <button onClick={()=>{localStorage.removeItem('ig_config'); window.location.reload()}} className="w-full text-left text-xs p-1 hover:underline font-bold" style={{color: 'var(--danger)'}}>Sign Out</button>
                         </div>
                     </aside>
-                    <main className="flex-1 overflow-hidden p-8 relative transition-colors duration-300">
+                    <main className="flex-1 overflow-hidden p-8 relative transition-colors duration-300" style={{padding: view === 'smartdeck' ? '0' : '2rem'}}>
                         {activeProject ? (
                             <div className="h-full">
                                 {view === 'smartdeck' && <SmartDeckView project={activeProject} />}
@@ -299,7 +302,7 @@
             );
         }
 
-        // --- ✨ NEW: SUPER AGENT HTML DECK VIEWER ✨ ---
+        // ================= ✨ SUPER AGENT SMART DECK ✨ =================
         function SmartDeckView({ project }) {
             const [slides, setSlides] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -316,84 +319,107 @@
                     }).catch(() => setLoading(false));
             }, [project]);
 
+            // ✨ PIXEL PERFECT PPTX GENERATOR ✨
             const handleExportPPTX = async () => {
                 setIsExporting(true);
                 try {
-                    const res = await secureFetch('/generate_ppt', { 
-                        method: 'POST', 
-                        body: JSON.stringify({ project: project, slides: slides }) 
-                    });
-                    if(res && res.ok) {
-                        const blob = await res.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${project}_Super_Deck.pptx`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                    } else { alert("Failed to generate Presentation."); }
-                } catch(e) { console.error(e); }
+                    let pptx = new pptxgen();
+                    pptx.layout = 'LAYOUT_16x9';
+
+                    // Temporarily reveal the hidden container for html2canvas
+                    const container = document.getElementById('print-engine-container');
+                    container.style.display = 'block';
+                    container.style.opacity = '1';
+                    container.style.zIndex = '99999';
+
+                    // Small delay to allow DOM to render the hidden elements
+                    await new Promise(r => setTimeout(r, 500));
+
+                    for (let i = 0; i < slides.length; i++) {
+                        const slideElement = document.getElementById(`export-slide-${i}`);
+                        
+                        const canvas = await html2canvas(slideElement, { 
+                            scale: 2, // High-res capture
+                            useCORS: true,
+                            backgroundColor: '#0f172a',
+                            logging: false
+                        });
+                        
+                        const imgData = canvas.toDataURL('image/png');
+                        
+                        let slide = pptx.addSlide();
+                        slide.background = { color: '0F172A' };
+                        // Add screenshot covering entire 16x9 slide (10 x 5.625 inches)
+                        slide.addImage({ data: imgData, x: 0, y: 0, w: 10, h: 5.625 }); 
+                    }
+
+                    // Hide container again
+                    container.style.display = 'none';
+                    
+                    await pptx.writeFile({ fileName: `${project}_Enterprise_Deck.pptx` });
+
+                } catch(e) { 
+                    console.error("Export Error:", e); 
+                    alert("Export failed. Please try again."); 
+                }
                 setIsExporting(false);
             };
 
-            if (loading) return <LoadingScreen msg="Super Agent orchestrating 10-slide HTML presentation..." />;
-            if (!slides || slides.length === 0) return <div className="p-10 text-white">Failed to generate deck.</div>;
+            if (loading) return <LoadingScreen msg="Super Agent orchestrating 10-slide Enterprise presentation..." />;
+            if (!slides || slides.length === 0) return <div className="p-10 text-white">Failed to generate deck. Try refreshing.</div>;
 
             return (
-                <div className="h-full flex flex-col relative bg-slate-900 rounded-xl overflow-hidden border border-slate-700 shadow-2xl animate-fade-in">
+                <div className="h-full flex flex-col relative bg-slate-900 overflow-hidden animate-fade-in">
+                    
                     {/* Top Toolbar */}
-                    <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md z-50">
+                    <div className="h-16 shrink-0 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900 z-40">
                         <div className="flex items-center gap-4">
                             <div className="px-3 py-1 bg-indigo-500/20 text-indigo-400 rounded text-xs font-bold border border-indigo-500/30 flex items-center gap-2">
-                                <Icon name="Sparkles" size={14}/> AI Generated Web Presentation
+                                <Icon name="Sparkles" size={14}/> AI Super Deck
                             </div>
                             <span className="text-slate-400 text-sm font-medium">Slide {currentIdx + 1} of {slides.length}</span>
                         </div>
                         <div className="flex gap-3">
-                            <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition border border-slate-700">
+                            <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition border border-slate-700 shadow-lg">
                                 <Icon name="Monitor" size={16}/> Save as PDF
                             </button>
-                            <button onClick={handleExportPPTX} disabled={isExporting} className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-bold transition disabled:opacity-50" style={{background: 'linear-gradient(to right, #6366f1, #a855f7)'}}>
+                            <button onClick={handleExportPPTX} disabled={isExporting} className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-bold transition shadow-lg disabled:opacity-50" style={{background: 'linear-gradient(to right, #6366f1, #a855f7)'}}>
                                 {isExporting ? <span className="loader" style={{width:'16px', height:'16px'}}></span> : <Icon name="Download" size={16}/>}
-                                {isExporting ? 'Compiling...' : 'Export Native PPTX'}
+                                {isExporting ? 'Compiling PPTX...' : 'Export Native PPTX'}
                             </button>
                         </div>
                     </div>
 
-                    {/* Presentation Canvas */}
-                    <div className="flex-1 relative flex items-center justify-center p-8 overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black">
-                        
-                        {/* The Actual Slide Content */}
+                    {/* Interactive View Canvas */}
+                    <div className="flex-1 relative flex items-center justify-center p-8 bg-black/50">
                         <div 
-                            id="slide-print-area"
-                            className="w-full max-w-[1000px] aspect-[16/9] bg-slate-900 rounded-2xl overflow-hidden relative border border-slate-700 transition-all duration-500 ease-in-out"
-                            style={{boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'}}
+                            className="w-full max-w-[1280px] aspect-video bg-slate-900 rounded-xl overflow-hidden relative border border-slate-700 transition-all duration-300 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
                             dangerouslySetInnerHTML={{ __html: slides[currentIdx].html }}
                         />
-
-                        {/* Navigation Arrows */}
-                        <button 
-                            onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))}
-                            disabled={currentIdx === 0}
-                            className="absolute left-6 w-12 h-12 rounded-full bg-slate-800/80 hover:bg-indigo-600 text-white flex items-center justify-center transition disabled:opacity-30 disabled:hover:bg-slate-800/80 backdrop-blur-sm border border-white/10 z-50 shadow-xl"
-                        >
-                            <Icon name="ChevronLeft" size={24}/>
-                        </button>
                         
-                        <button 
-                            onClick={() => setCurrentIdx(Math.min(slides.length - 1, currentIdx + 1))}
-                            disabled={currentIdx === slides.length - 1}
-                            className="absolute right-6 w-12 h-12 rounded-full bg-slate-800/80 hover:bg-indigo-600 text-white flex items-center justify-center transition disabled:opacity-30 disabled:hover:bg-slate-800/80 backdrop-blur-sm border border-white/10 z-50 shadow-xl"
-                        >
-                            <Icon name="ChevronRight" size={24}/>
-                        </button>
+                        {/* Navigation Controls */}
+                        <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0} className="absolute left-6 w-12 h-12 rounded-full bg-slate-800/80 hover:bg-indigo-600 text-white flex items-center justify-center transition disabled:opacity-30 border border-white/10 z-30"><Icon name="ChevronLeft" size={24}/></button>
+                        <button onClick={() => setCurrentIdx(Math.min(slides.length - 1, currentIdx + 1))} disabled={currentIdx === slides.length - 1} className="absolute right-6 w-12 h-12 rounded-full bg-slate-800/80 hover:bg-indigo-600 text-white flex items-center justify-center transition disabled:opacity-30 border border-white/10 z-30"><Icon name="ChevronRight" size={24}/></button>
+                    </div>
+
+                    {/* ✨ HIDDEN EXPORT / PRINT ENGINE ✨ */}
+                    {/* Maps over all 10 slides and locks them to 1280x720px off-screen so the screenshot/pdf engine captures them without CSS breaking */}
+                    <div id="print-engine-container" style={{display: 'none', position: 'absolute', top: 0, left: 0, width: '1280px'}}>
+                        {slides.map((s, i) => (
+                            <div 
+                                key={i} 
+                                id={`export-slide-${i}`} 
+                                className="print-slide bg-slate-900 text-white relative"
+                                style={{ width: '1280px', height: '720px' }} 
+                                dangerouslySetInnerHTML={{ __html: s.html }}
+                            />
+                        ))}
                     </div>
                 </div>
             );
         }
 
-        // --- STRATEGIC ROADMAP VIEW ---
+        // ================= STRATEGIC ROADMAP VIEW =================
         function RoadmapView({ project, setIsLoading }) {
             const [roadmap, setRoadmap] = useState(null);
 
@@ -409,10 +435,10 @@
             if (!roadmap) return <LoadingScreen msg="AI is analyzing the backlog and predicting release timelines..." />;
 
             const trackColors = [
-                "linear-gradient(to right, #3b82f6, #60a5fa)", // Blue
-                "linear-gradient(to right, #10b981, #34d399)", // Emerald
-                "linear-gradient(to right, #8b5cf6, #a78bfa)", // Purple
-                "linear-gradient(to right, #f59e0b, #fbbf24)"  // Amber
+                "linear-gradient(to right, #3b82f6, #60a5fa)", 
+                "linear-gradient(to right, #10b981, #34d399)", 
+                "linear-gradient(to right, #8b5cf6, #a78bfa)", 
+                "linear-gradient(to right, #f59e0b, #fbbf24)"  
             ];
 
             return (
@@ -429,6 +455,7 @@
 
                     <div className="flex-1 overflow-auto hide-scroll rounded-xl border shadow-2xl relative" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)'}}>
                         <div className="min-w-[1000px]">
+                            
                             <div className="roadmap-grid sticky top-0 z-30" style={{borderBottom: '1px solid var(--border)'}}>
                                 <div className="roadmap-header" style={{textAlign: 'left', paddingLeft: '24px'}}>Workstream</div>
                                 {roadmap.timeline.map((wk, i) => (
@@ -456,7 +483,6 @@
                                                 {track.items.map((item, i) => {
                                                     const start = Math.max(0, Math.min(item.start, 11));
                                                     const dur = Math.max(1, Math.min(item.duration, 12 - start));
-                                                    
                                                     return (
                                                         <motion.div 
                                                             key={item.key}
@@ -488,7 +514,7 @@
             );
         }
 
-        // --- COMMAND CENTER ---
+        // ================= COMMAND CENTER =================
         function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
             const [data, setData] = useState(null);
             const [sprints, setSprints] = useState([]);
@@ -502,7 +528,7 @@
                 secureFetch(url).then(r => r ? r.json() : null).then(d => { setData(d); setIsLoading(false); }).catch(() => { setIsLoading(false); });
             }, [project, activeSprint]);
             
-            if (!data) return <LoadingScreen msg="AI is reading descriptions, acceptance criteria, and assignee comments..." />;
+            if (!data) return <LoadingScreen msg="AI is analyzing descriptions, acceptance criteria, and assignee comments..." />;
 
             return (
                 <div className="animate-fade-in space-y-6 h-full overflow-y-auto pb-10 pr-2">
@@ -564,7 +590,7 @@
             );
         }
 
-        // --- TIMELINE VIEW ---
+        // ================= TIMELINE AI GENERATOR VIEW =================
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
             const [prompt, setPrompt] = useState("");
@@ -733,7 +759,7 @@
             );
         }
 
-        // --- DOSSIER REPORTS ---
+        // ================= DOSSIER REPORTS =================
         function ReportsView({ project, setIsLoading, isGlobalLoading }) { 
             const [data, setData] = useState(null);
             const [timeframe, setTimeframe] = useState('weekly');
@@ -821,7 +847,7 @@
             ); 
         }
 
-        // --- RETRO BOARD ---
+        // ================= RETRO BOARD =================
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
             const [sprints, setSprints] = useState([]); 
             const [activeSprint, setActiveSprint] = useState(null); 
@@ -906,9 +932,9 @@
             );
         }
 
-        // --- OTHERS ---
-        function StandupView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Component</div>; }
-        function BurndownView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Burndown Component</div> }
+        // ================= PLACEHOLDER VIEWS =================
+        function StandupView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Standup Component Coming Soon</div>; }
+        function BurndownView() { return <div className="h-full flex items-center justify-center text-xl font-bold" style={{color: 'var(--text-muted)'}}>Burndown Component Coming Soon</div>; }
         
         function LoadingScreen({ msg = "Loading..." }) { 
             return (
