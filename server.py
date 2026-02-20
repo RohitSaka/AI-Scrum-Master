@@ -23,17 +23,15 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 load_dotenv()
 app = FastAPI()
 
-# INCREASE MAX REQUEST SIZE FOR IMAGES
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-    max_content_length=50 * 1024 * 1024  # 50MB
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V25 - PREMIUM UI, ROBUST JIRA ERRORS & VISION AI")
+print("🚀 APP STARTING: V26 - PREMIUM UI, ROBUST JIRA ERRORS & VISION AI")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -219,7 +217,6 @@ def extract_adf_text(adf_node):
     return text.strip()
 
 # ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
-# Updated Premium Color Palette for PPTX
 C_BG = RGBColor(11, 17, 33)      # Deep Premium Slate
 C_CARD = RGBColor(30, 41, 59)    # Slate-800
 C_WHITE = RGBColor(255, 255, 255)
@@ -505,7 +502,7 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project", "Project")}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
-# --- ROADMAP & TIMELINE (UNCHANGED) ---
+# --- ROADMAP & TIMELINE ---
 @app.get("/roadmap/{project_key}")
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
@@ -570,7 +567,6 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         try:
             error_data = res.json()
             messages = []
-            # Jira returns errors in 'errorMessages' (list of strings) or 'errors' (dict of field: message)
             if "errorMessages" in error_data and error_data["errorMessages"]:
                 messages.extend(error_data["errorMessages"])
             if "errors" in error_data and error_data["errors"]:
