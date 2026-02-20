@@ -30,7 +30,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V19 - MULTI-AGENT GENDARME ENGINE")
+print("🚀 APP STARTING: V20 - GENDARME MULTI-AGENT PROSE ENGINE")
 print("="*50 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -146,9 +146,9 @@ def call_gemini(prompt, temperature=0.3):
 
 def call_openai(prompt, temperature=0.3):
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: return call_gemini(prompt, temperature) # Fallback to Gemini
+    if not api_key: return call_gemini(prompt, temperature) # Seamless fallback
     try:
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Designer."}, {"role": "user", "content": prompt}], "temperature": temperature, "response_format": {"type": "json_object"}})
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON."}, {"role": "user", "content": prompt}], "temperature": temperature, "response_format": {"type": "json_object"}})
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
     except: pass
     return call_gemini(prompt, temperature)
@@ -215,13 +215,13 @@ def draw_shape(slide, shape_type, left, top, width, height, bg_color):
     return shape
 
 def generate_native_editable_pptx(slides_data):
-    """Dynamically creates highly-styled, fully editable PowerPoint slides using Mathematical Layouts"""
+    """Dynamically creates highly-styled, fully editable PowerPoint slides"""
     prs = Presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6] 
     
     for slide_data in slides_data:
         slide = prs.slides.add_slide(blank_layout)
-        draw_shape(slide, MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height, C_BG) # Solid Background
+        draw_shape(slide, MSO_SHAPE.RECTANGLE, 0, 0, prs.slide_width, prs.slide_height, C_BG) 
         
         layout = slide_data.get("layout", "standard")
         title = slide_data.get("title", "Presentation Slide")
@@ -235,29 +235,23 @@ def generate_native_editable_pptx(slides_data):
             
         elif layout == "kpi_grid":
             add_text(slide, title, Inches(0.8), Inches(0.6), Inches(11), Inches(1), 36, C_WHITE, bold=True)
-            if subtitle: add_text(slide, subtitle, Inches(0.8), Inches(1.3), Inches(11), Inches(0.5), 18, C_MUTED)
-            
             kpis = slide_data.get("items", [])
             num_cards = min(len(kpis), 4)
             if num_cards > 0:
-                gap = 0.4
-                card_w = (13.333 - 1.6 - (gap * (num_cards - 1))) / num_cards
+                gap = 0.4; card_w = (13.333 - 1.6 - (gap * (num_cards - 1))) / num_cards
                 start_x = 0.8; start_y = 2.5; card_h = 3.5
-                
                 for i, kpi in enumerate(kpis):
                     cx = start_x + (i * (card_w + gap))
                     draw_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(cx), Inches(start_y), Inches(card_w), Inches(card_h), C_CARD)
-                    if kpi.get("icon"): add_text(slide, kpi.get("icon"), Inches(cx), Inches(start_y + 0.3), Inches(card_w), Inches(0.8), 32, C_WHITE, align=PP_ALIGN.CENTER)
-                    add_text(slide, kpi.get("value", ""), Inches(cx), Inches(start_y + 1.2), Inches(card_w), Inches(1.0), 48, C_ACCENT, bold=True, align=PP_ALIGN.CENTER)
-                    add_text(slide, kpi.get("label", ""), Inches(cx), Inches(start_y + 2.4), Inches(card_w), Inches(0.8), 16, C_WHITE, align=PP_ALIGN.CENTER)
+                    add_text(slide, kpi.get("value", ""), Inches(cx), Inches(start_y + 1.0), Inches(card_w), Inches(1.0), 44, C_ACCENT, bold=True, align=PP_ALIGN.CENTER)
+                    add_text(slide, kpi.get("label", ""), Inches(cx), Inches(start_y + 2.2), Inches(card_w), Inches(1.0), 16, C_WHITE, align=PP_ALIGN.CENTER)
 
         elif layout == "flowchart":
             add_text(slide, title, Inches(0.8), Inches(0.6), Inches(11), Inches(1), 36, C_WHITE, bold=True)
             steps = slide_data.get("items", [])
             num_steps = min(len(steps), 5)
             if num_steps > 0:
-                gap = 0.2
-                step_w = (13.333 - 1.6 - (gap * (num_steps - 1))) / num_steps
+                gap = 0.2; step_w = (13.333 - 1.6 - (gap * (num_steps - 1))) / num_steps
                 start_x = 0.8; start_y = 3.0; step_h = 1.8
                 for i, step in enumerate(steps):
                     cx = start_x + (i * (step_w + gap))
@@ -269,15 +263,13 @@ def generate_native_editable_pptx(slides_data):
             cols = slide_data.get("items", [])
             num_cols = min(len(cols), 3)
             if num_cols > 0:
-                gap = 0.6
-                col_w = (13.333 - 1.6 - (gap * (num_cols - 1))) / num_cols
+                gap = 0.6; col_w = (13.333 - 1.6 - (gap * (num_cols - 1))) / num_cols
                 start_x = 0.8; start_y = 2.2; col_h = 4.5
                 for i, col in enumerate(cols):
                     cx = start_x + (i * (col_w + gap))
                     draw_shape(slide, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(cx), Inches(start_y), Inches(col_w), Inches(col_h), C_CARD)
-                    if col.get("icon"): add_text(slide, col.get("icon"), Inches(cx + 0.3), Inches(start_y + 0.4), Inches(0.6), Inches(0.6), 28, C_WHITE)
-                    add_text(slide, col.get("title", ""), Inches(cx + 0.3), Inches(start_y + 1.2), Inches(col_w - 0.6), Inches(0.6), 20, C_ACCENT, bold=True)
-                    add_text(slide, col.get("text", ""), Inches(cx + 0.3), Inches(start_y + 1.8), Inches(col_w - 0.6), Inches(2.2), 14, C_MUTED)
+                    add_text(slide, col.get("title", ""), Inches(cx + 0.3), Inches(start_y + 0.6), Inches(col_w - 0.6), Inches(0.6), 22, C_ACCENT, bold=True)
+                    add_text(slide, col.get("text", ""), Inches(cx + 0.3), Inches(start_y + 1.4), Inches(col_w - 0.6), Inches(2.8), 16, C_MUTED)
 
         else: 
             draw_shape(slide, MSO_SHAPE.RECTANGLE, Inches(0.5), Inches(0.8), Inches(0.15), Inches(0.6), C_ACCENT)
@@ -291,9 +283,7 @@ def generate_native_editable_pptx(slides_data):
                 for i, bullet in enumerate(content):
                     p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
                     p.text = f"•  {bullet}"
-                    p.font.size = Pt(20)
-                    p.font.color.rgb = C_WHITE
-                    p.space_after = Pt(16)
+                    p.font.size = Pt(20); p.font.color.rgb = C_WHITE; p.space_after = Pt(16)
             else:
                 add_text(slide, str(content), Inches(1.2), Inches(2.4), Inches(10.9), Inches(4.0), 20, C_WHITE)
 
@@ -307,7 +297,7 @@ def generate_native_editable_pptx(slides_data):
 @app.get("/")
 def home(): 
     if os.path.exists("index.html"): return FileResponse("index.html")
-    return {"status": "Backend is running, but index.html is missing!"}
+    return {"status": "Backend running."}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -359,58 +349,57 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
     except: ai_data = {"executive_summary": "Format Error.", "business_value": "Error", "story_progress": []}
     return {"metrics": stats, "ai_insights": ai_data}
 
-# --- ✨ NEW: SPRINT REPORT SUPER AGENT ✨ ---
+# --- ✨ MULTI-AGENT SPRINT DECK ✨ ---
 @app.get("/super_deck/{project_key}")
 def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    
-    # 1. Fetch Sprint Issues
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["*all"]})
     issues = res.json().get('issues', []) if res else []
     
-    done_pts = 0.0; total_pts = 0.0; blockers = []
+    done_pts = 0.0; total_pts = 0.0; active_users = set(); blockers = []; done_summaries = []
     for i in issues:
         f = i.get('fields', {})
         pts = extract_story_points(f, sp_field); total_pts += pts
-        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': done_pts += pts
+        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': 
+            done_pts += pts
+            done_summaries.append(f.get('summary', ''))
         if f.get('priority', {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
+        if f.get('assignee'): active_users.add(f.get('assignee', {}).get('displayName', ''))
             
-    # 2. Fetch Retro Context
     retro_res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
-    retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res and res.status_code==200 else {}
+    retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res and retro_res.status_code==200 else {}
     
-    # 3. Fetch Backlog (Look Ahead)
-    backlog_res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 5, "fields": ["summary"]})
-    backlog = [i['fields']['summary'] for i in backlog_res.json().get('issues', [])] if backlog_res else []
+    backlog_res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
+    backlog = [i['fields']['summary'] for i in backlog_res.json().get('issues', [])] if backlog_res else ["Backlog Refinement", "Planning"]
         
-    context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "backlog_preview": backlog}
+    context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
 
     prompt = f"""
-    You are an elite UX/UI Designer and Agile Delivery Manager.
-    Create a stunning, 6-slide Sprint Report presentation based on this data: {json.dumps(context)}.
+    Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}.
     
-    You MUST respond with EXACTLY this JSON array format (NO markdown blocks).
-    Use 4 Layout Types: 'hero', 'kpi_grid', 'flowchart', 'icon_columns', 'standard'.
+    CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE "Point 1", "...", or "Insert Text".
+    YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
     
+    Return EXACTLY a JSON array matching this structure:
     [
       {{ "id": 1, "layout": "hero", "title": "Sprint Review", "subtitle": "{context['current_date']}", "icon": "🚀" }},
-      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["..."] }},
-      {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity", "value": "{done_pts}", "icon": "📈"}}] }},
-      {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker", "text": "...", "icon": "🛑"}}] }},
-      {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Retro insights..."] }},
-      {{ "id": 6, "layout": "flowchart", "title": "Look Ahead: Next Sprint", "items": [{{"title": "Feature A"}}] }}
+      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Write a real 2-sentence summary of the sprint progress.", "Write a real sentence about team capacity."] }},
+      {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}}, {{"label": "Total Points", "value": "{total_pts}", "icon": "🎯"}}] }},
+      {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker", "text": "Describe blocker from context", "icon": "🛑"}}] }},
+      {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Write real insights drawn from the retro data provided."] }},
+      {{ "id": 6, "layout": "flowchart", "title": "Look Ahead: Next Sprint", "items": [{{"title": "Read backlog_preview and put item 1 here"}}, {{"title": "Item 2"}}] }}
     ]
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
     try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: return {"status": "error", "message": "Failed to orchestrate Sprint slides."}
+    except Exception as e: return {"status": "error", "message": "Failed to orchestrate slides."}
 
-# --- ✨ NEW: WBR / MBR / QBR REPORT DECK ENGINE ✨ ---
+# --- ✨ MULTI-AGENT WBR/MBR/QBR DECK ENGINE ✨ ---
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
-    """Orchestrates specific Agendas for Weekly, Monthly, and Quarterly Business Reviews"""
+    """Orchestrates dynamic, data-driven Business Review Decks"""
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -418,28 +407,50 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
     issues = res.json().get('issues', []) if res else []
     
-    done_count = 0; done_pts = 0.0; context_data = []
+    done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
         f = i.get('fields', {}); pts = extract_story_points(f, sp_field)
-        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': done_count += 1; done_pts += pts
-        context_data.append(f.get('summary', ''))
+        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': 
+            done_count += 1; done_pts += pts; accomplishments.append(f.get('summary', ''))
+        if f.get('priority', {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
 
-    context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "sample_work": context_data[:10]}
+    context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
 
-    agenda_rules = {
-        "weekly": "5 Slides: 1. Sprint Overview, 2. Story Count (KPI), 3. Accomplishments, 4. Risks & Blockers, 5. Next Steps.",
-        "monthly": "7 Slides: 1. Exec Summary, 2. KPIs (Grid), 3. Major Project Updates, 4. Operational Wins, 5. Risks/Roadblocks, 6. Strategic Initiatives for Next Month, 7. Open Discussion.",
-        "quarterly": "5 Slides: 1. Reflection, 2. Objectives & Business Impact, 3. Key Features Delivered, 4. Sprint Metrics (KPIs), 5. Future Roadmap (Flowchart)."
+    agendas = {
+        "weekly": f"""
+        1. "hero" layout: Title '{timeframe.capitalize()} Business Review'.
+        2. "kpi_grid" layout: 'Story Count' and 'Velocity Delivered'.
+        3. "standard" layout: 'Accomplishments' (Write out the accomplishments list as bullets).
+        4. "icon_columns" layout: 'Risks & Blockers' (Describe blockers).
+        5. "flowchart" layout: 'Next Steps'.
+        """,
+        "monthly": f"""
+        1. "hero": '{timeframe.capitalize()} Business Review'.
+        2. "standard": 'Executive Summary'.
+        3. "kpi_grid": 'KPIs & Metric Review'.
+        4. "standard": 'Major Project Updates'.
+        5. "icon_columns": 'Operational Wins'.
+        6. "icon_columns": 'Risks & Mitigation'.
+        7. "flowchart": 'Strategic Initiatives'.
+        """,
+        "quarterly": f"""
+        1. "hero": '{timeframe.capitalize()} Business Review'.
+        2. "standard": 'Quarterly Reflection'.
+        3. "icon_columns": 'Objectives & Business Impact'.
+        4. "kpi_grid": 'Quarterly Metrics'.
+        5. "flowchart": 'Future Roadmap'.
+        """
     }
 
     prompt = f"""
-    You are an elite Enterprise Designer. Create a {timeframe.capitalize()} Business Review Deck for project: {json.dumps(context)}.
+    Act as an Elite Enterprise Designer. Create a {timeframe.capitalize()} Business Review Deck for project {project_key} based ONLY on this data: {json.dumps(context)}.
     
-    Follow this specific Agenda: {agenda_rules[timeframe]}
+    CRITICAL: WRITE REAL TEXT AND BULLET POINTS. DO NOT OUTPUT PLACEHOLDERS LIKE "Point 1" OR "Text here".
     
-    Return EXACTLY a JSON array of slide objects. NO markdown.
-    Use 4 Layout Types: 'hero', 'kpi_grid', 'flowchart', 'icon_columns', 'standard'.
-    Slide 1 MUST be a 'hero' layout with the title '{timeframe.capitalize()} Business Review'.
+    Follow this exact slide agenda and layout mapping:
+    {agendas[timeframe]}
+    
+    Return EXACTLY a JSON array of slide objects matching the schema.
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
@@ -448,11 +459,9 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
 
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """Receives JSON from React and NATIVELY draws the PPTX file using mathematics."""
-    project = payload.get("project", "Unknown")
     slides_data = payload.get("slides", [])
     ppt_buffer = generate_native_editable_pptx(slides_data)
-    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{project}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get('project', 'Project')}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
 # --- ROADMAP & TIMELINE (UNCHANGED) ---
