@@ -356,6 +356,45 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
 
     return {"metrics": stats, "ai_insights": ai_data}
 
+# --- ✨ NEW: AI STRATEGIC ROADMAP ✨ ---
+@app.get("/roadmap/{project_key}")
+def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
+    """Fetches backlog items and generates a strategic 12-week roadmap"""
+    jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
+    issues = res.json().get('issues', []) if res else []
+    
+    context_data = [{"key": i['key'], "summary": i['fields']['summary'], "type": i['fields']['issuetype']['name'], "priority": i['fields']['priority']['name'], "status": i['fields']['status']['name']} for i in issues]
+
+    prompt = f"""
+    You are an elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}
+    Group these issues into 3 logical "Tracks" (Workstreams) based on their topics.
+    Schedule them across a 12-week timeline. 
+    - High priority items should start earlier (lower start index).
+    - Start index is 0 to 11 (representing Week 1 to Week 12).
+    - Duration is 1 to 4 weeks.
+    
+    Return EXACT JSON:
+    {{
+        "timeline": ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5", "Week 6", "Week 7", "Week 8", "Week 9", "Week 10", "Week 11", "Week 12"],
+        "tracks": [
+            {{
+                "name": "E.g., Core Infrastructure",
+                "items": [
+                    {{"key": "PROJ-1", "summary": "Short title", "start": 0, "duration": 2, "priority": "High", "status": "To Do"}}
+                ]
+            }}
+        ]
+    }}
+    """
+    
+    raw = generate_ai_response(prompt, temperature=0.2)
+    try: 
+        return json.loads(raw.replace('```json','').replace('```','').strip())
+    except:
+        # Safe fallback if AI fails parsing
+        return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized Backlog", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
+
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
     project = payload.get("project")
