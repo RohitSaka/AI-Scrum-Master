@@ -30,7 +30,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V23 - JIRA URL REDIRECTS & BOUNCING UI")
+print("🚀 APP STARTING: V24 - JIRA ERROR HANDLING & BOUNCING UI")
 print("="*50 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -311,7 +311,7 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
     try:
         sprints = {}
         for i in res.json().get('issues', []):
-            for s in (i.get('fields') or {}).get('customfield_10020') or []: sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
+            for s in i.get('fields', {}).get('customfield_10020') or []: sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
@@ -501,14 +501,16 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         f = i.get('fields') or {}; assignee = (f.get('assignee') or {}).get('displayName') or "Unassigned"; pts = extract_story_points(f, sp_field)
         team_capacity[assignee] = team_capacity.get(assignee, 0) + pts
         board_context.append(f"Task: {f.get('summary')} | Desc: {extract_adf_text(f.get('description', {}))[:200]} | Assignee: {assignee}")
-    try: return {"status": "success", "story": json.loads(generate_ai_response(f"Product Owner. '{payload.get('prompt')}'. Context: {' '.join(board_context[:20])}. Workload: {json.dumps(team_capacity)}. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}", temperature=0.5).replace('```json','').replace('```','').strip())}
-    except: return {"status": "error"}
+    
+    try: 
+        return {"status": "success", "story": json.loads(generate_ai_response(f"Product Owner. '{payload.get('prompt')}'. Context: {' '.join(board_context[:20])}. Workload: {json.dumps(team_capacity)}. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}", temperature=0.5).replace('```json','').replace('```','').strip())}
+    except Exception as e: 
+        return {"status": "error", "message": str(e)}
 
 @app.post("/timeline/create_issue")
 async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     story = payload.get("story", {}); sp_field = get_story_point_field(creds); assignee_id = get_jira_account_id(story.get("assignee", ""), creds)
     
-    # Calculate base URL for redirect link
     base_url = ""
     if creds.get("auth_type") == "basic":
         base_url = f"https://{creds['domain']}"
@@ -519,14 +521,27 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
 
     issue_data = {"fields": {"project": {"key": payload.get("project")}, "summary": story.get("title", "AI Story"), "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": story.get("description", "")}]}, {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]}, {"type": "bulletList", "content": [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": ac}]}]} for ac in story.get("acceptance_criteria", [])]}]}, "issuetype": {"name": "Story"}, sp_field: float(story.get("points", 0))}}
     if assignee_id: issue_data["fields"]["assignee"] = {"accountId": assignee_id}
+    
     res = jira_request("POST", "issue", creds, issue_data)
-    if not res or res.status_code != 201: issue_data["fields"]["issuetype"]["name"] = "Task"; res = jira_request("POST", "issue", creds, issue_data)
+    
+    if not res or res.status_code != 201: 
+        issue_data["fields"]["issuetype"]["name"] = "Task"
+        res = jira_request("POST", "issue", creds, issue_data)
+        
     if res and res.status_code == 201:
         new_key = res.json().get("key")
         jira_request("POST", f"issue/{new_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
         issue_url = f"{base_url}/browse/{new_key}" if base_url else f"https://id.atlassian.com/browse/{new_key}"
         return {"status": "success", "key": new_key, "url": issue_url}
-    return {"status": "error"}
+    
+    # ✨ FIX: Deep error extraction so the frontend shows exactly why Jira failed
+    error_details = "Unknown Jira Error"
+    if res and res.text:
+        try:
+            error_details = res.json().get("errors", res.text)
+        except:
+            error_details = res.text
+    return {"status": "error", "message": f"Jira API Error: {error_details}"}
 
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
@@ -610,4 +625,4 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
             db.close()
         if creds: background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds)
         return {"status": "processing_in_background"}
-    except: return {"status": "error"}
+    except Exception as e: return {"status": "error", "message": str(e)}
