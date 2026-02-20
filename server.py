@@ -5,6 +5,7 @@ import requests, json, os, uuid, time
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import urllib.parse
 import io
 
 # --- PPTX GENERATION ---
@@ -65,9 +66,9 @@ def get_db():
     finally: db.close()
 
 # ================= 🔐 OAUTH 2.0 & LICENSING =================
-CLIENT_ID = os.getenv("ATLASSIAN_CLIENT_ID", "")
-CLIENT_SECRET = os.getenv("ATLASSIAN_CLIENT_SECRET", "")
-APP_URL = os.getenv("APP_URL", "http://localhost:8000") # Replace with your Render URL in env vars
+CLIENT_ID = os.getenv("ATLASSIAN_CLIENT_ID", "").strip()
+CLIENT_SECRET = os.getenv("ATLASSIAN_CLIENT_SECRET", "").strip()
+APP_URL = os.getenv("APP_URL", "http://localhost:8000").strip() 
 REDIRECT_URI = f"{APP_URL}/auth/callback"
 
 @app.post("/admin/generate_license")
@@ -85,11 +86,20 @@ def login(license_key: str, db: Session = Depends(get_db)):
     if not lic or not lic.is_active:
         raise HTTPException(status_code=403, detail="Invalid or expired License Key")
     
-    auth_url = (
-        f"https://auth.atlassian.com/authorize?audience=api.atlassian.com&"
-        f"client_id={CLIENT_ID}&scope=read:jira-work manage:jira-project manage:jira-configuration write:jira-work&"
-        f"redirect_uri={REDIRECT_URI}&state={license_key}&response_type=code&prompt=consent"
-    )
+    params = {
+        "audience": "api.atlassian.com",
+        "client_id": CLIENT_ID,
+        "scope": "read:jira-work manage:jira-project manage:jira-configuration write:jira-work",
+        "redirect_uri": REDIRECT_URI,
+        "state": license_key,
+        "response_type": "code",
+        "prompt": "consent"
+    }
+    
+    # CRITICAL FIX: force Python to use '%20' instead of '+' for spaces
+    query_string = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
+    auth_url = f"https://auth.atlassian.com/authorize?{query_string}"
+    
     return RedirectResponse(auth_url)
 
 @app.get("/auth/callback")
