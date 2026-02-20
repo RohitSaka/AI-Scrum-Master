@@ -30,7 +30,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V22 - STRICT SCHEMA AI ORCHESTRATION")
+print("🚀 APP STARTING: V23 - JIRA URL REDIRECTS & BOUNCING UI")
 print("="*50 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -148,7 +148,7 @@ def call_openai(prompt, temperature=0.3):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: return call_gemini(prompt, temperature)
     try:
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON array output."}, {"role": "user", "content": prompt}], "temperature": temperature})
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant and Deck Designer. Return strictly valid JSON array output."}, {"role": "user", "content": prompt}], "temperature": temperature, "response_format": {"type": "json_object"}})
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
     except: pass
     return call_gemini(prompt, temperature)
@@ -388,19 +388,20 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
 
-    # ✨ STRICT SCHEMA ENFORCEMENT ✨
     prompt = f"""
     Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}.
     
-    CRITICAL INSTRUCTION: You MUST WRITE REAL TEXT based on the data. NO PLACEHOLDERS.
-    Return EXACTLY a JSON array matching this strict schema:
+    CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE "Point 1", "...", or "Insert Text".
+    YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
+    
+    Return EXACTLY a JSON array matching this structure:
     [
       {{ "id": 1, "layout": "hero", "title": "Sprint Review", "subtitle": "{context['current_date']}", "icon": "🚀" }},
-      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Real bullet 1", "Real bullet 2"] }},
-      {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}}] }},
-      {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "...", "text": "...", "icon": "🛑"}}] }},
-      {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Real bullet 1", "Real bullet 2"] }},
-      {{ "id": 6, "layout": "flowchart", "title": "Look Ahead: Next Sprint", "items": [{{"title": "..."}}, {{"title": "..."}}] }}
+      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Write a real 2-sentence summary of the sprint progress.", "Write a real sentence about team capacity."] }},
+      {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}}, {{"label": "Total Points", "value": "{total_pts}", "icon": "🎯"}}] }},
+      {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker", "text": "Describe blocker from context", "icon": "🛑"}}] }},
+      {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Write real insights drawn from the retro data provided."] }},
+      {{ "id": 6, "layout": "flowchart", "title": "Look Ahead: Next Sprint", "items": [{{"title": "Read backlog_preview and put item 1 here"}}, {{"title": "Item 2"}}] }}
     ]
     """
     
@@ -431,7 +432,6 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
 
     context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
 
-    # ✨ STRICT SCHEMA ENFORCEMENT FOR REPORTS ✨
     agendas = {
         "weekly": f"""
         [
@@ -507,13 +507,25 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
 @app.post("/timeline/create_issue")
 async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     story = payload.get("story", {}); sp_field = get_story_point_field(creds); assignee_id = get_jira_account_id(story.get("assignee", ""), creds)
+    
+    # Calculate base URL for redirect link
+    base_url = ""
+    if creds.get("auth_type") == "basic":
+        base_url = f"https://{creds['domain']}"
+    else:
+        server_info = jira_request("GET", "serverInfo", creds)
+        if server_info and server_info.status_code == 200:
+            base_url = server_info.json().get("baseUrl", "")
+
     issue_data = {"fields": {"project": {"key": payload.get("project")}, "summary": story.get("title", "AI Story"), "description": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": story.get("description", "")}]}, {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]}, {"type": "bulletList", "content": [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": ac}]}]} for ac in story.get("acceptance_criteria", [])]}]}, "issuetype": {"name": "Story"}, sp_field: float(story.get("points", 0))}}
     if assignee_id: issue_data["fields"]["assignee"] = {"accountId": assignee_id}
     res = jira_request("POST", "issue", creds, issue_data)
     if not res or res.status_code != 201: issue_data["fields"]["issuetype"]["name"] = "Task"; res = jira_request("POST", "issue", creds, issue_data)
     if res and res.status_code == 201:
-        jira_request("POST", f"issue/{res.json().get('key')}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
-        return {"status": "success", "key": res.json().get("key")}
+        new_key = res.json().get("key")
+        jira_request("POST", f"issue/{new_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
+        issue_url = f"{base_url}/browse/{new_key}" if base_url else f"https://id.atlassian.com/browse/{new_key}"
+        return {"status": "success", "key": new_key, "url": issue_url}
     return {"status": "error"}
 
 @app.get("/reports/{project_key}/{timeframe}")
