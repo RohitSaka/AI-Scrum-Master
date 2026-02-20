@@ -86,17 +86,17 @@ def login(license_key: str, db: Session = Depends(get_db)):
     if not lic or not lic.is_active:
         raise HTTPException(status_code=403, detail="Invalid or expired License Key")
     
+    # ✨ FIX: Added 'offline_access' to the scope so Atlassian gives us a Refresh Token
     params = {
         "audience": "api.atlassian.com",
         "client_id": CLIENT_ID,
-        "scope": "read:jira-work manage:jira-project manage:jira-configuration write:jira-work",
+        "scope": "read:jira-work manage:jira-project manage:jira-configuration write:jira-work offline_access",
         "redirect_uri": REDIRECT_URI,
         "state": license_key,
         "response_type": "code",
         "prompt": "consent"
     }
     
-    # CRITICAL FIX: force Python to use '%20' instead of '+' for spaces
     query_string = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
     auth_url = f"https://auth.atlassian.com/authorize?{query_string}"
     
@@ -123,9 +123,10 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
         user = UserAuth(license_key=license_key)
         db.add(user)
     
-    user.access_token = tokens["access_token"]
-    user.refresh_token = tokens["refresh_token"]
-    user.expires_at = int(time.time()) + tokens["expires_in"]
+    # ✨ FIX: Use .get() to prevent hard crashes if a token is ever delayed or missing
+    user.access_token = tokens.get("access_token")
+    user.refresh_token = tokens.get("refresh_token", "") 
+    user.expires_at = int(time.time()) + tokens.get("expires_in", 3600)
     user.cloud_id = cloud_id
     db.commit()
 
@@ -134,9 +135,9 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
         "url": f"{APP_URL}/webhook?cloud_id={cloud_id}",
         "webhooks": [{"events": ["jira:issue_created"], "jqlFilter": "project IS NOT EMPTY"}]
     }
-    requests.post(f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/webhook", headers={"Authorization": f"Bearer {tokens['access_token']}", "Content-Type": "application/json"}, json=webhook_payload)
+    requests.post(f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/webhook", headers={"Authorization": f"Bearer {tokens.get('access_token')}", "Content-Type": "application/json"}, json=webhook_payload)
 
-    # Redirect the user back to the frontend UI, triggering the login success state
+    # Redirect the user back to the frontend UI
     return RedirectResponse(f"{APP_URL}/?success=true")
 
 def get_valid_oauth_session(license_key: str, db: Session):
