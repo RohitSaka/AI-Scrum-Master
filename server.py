@@ -30,11 +30,10 @@ app.add_middleware(
 )
 
 print("\n" + "="*50)
-print("🚀 APP STARTING: V11.1 - ENTERPRISE HYBRID OAUTH & SAFE API PARSING")
+print("🚀 APP STARTING: V12 - SUPER AGENT DUAL-RENDER PRESENTATION ENGINE")
 print("="*50 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
-# Uses Render PostgreSQL if available, otherwise falls back to local SQLite
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./local_agile.db") 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -95,11 +94,8 @@ def login(license_key: str, db: Session = Depends(get_db)):
         "response_type": "code",
         "prompt": "consent"
     }
-    
     query_string = urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
-    auth_url = f"https://auth.atlassian.com/authorize?{query_string}"
-    
-    return RedirectResponse(auth_url)
+    return RedirectResponse(f"https://auth.atlassian.com/authorize?{query_string}")
 
 @app.get("/auth/callback")
 def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
@@ -112,11 +108,9 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
     if res.status_code != 200: raise HTTPException(status_code=400, detail="OAuth Failed")
     tokens = res.json()
     
-    # Get Jira Cloud ID
     res_sites = requests.get("https://api.atlassian.com/oauth/token/accessible-resources", headers={"Authorization": f"Bearer {tokens['access_token']}"})
     cloud_id = res_sites.json()[0]["id"]
     
-    # Save to Database
     user = db.query(UserAuth).filter(UserAuth.license_key == license_key).first()
     if not user:
         user = UserAuth(license_key=license_key)
@@ -128,14 +122,10 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
     user.cloud_id = cloud_id
     db.commit()
 
-    # Dynamic Webhook Registration (The Invisible AI Observer)
-    webhook_payload = {
-        "url": f"{APP_URL}/webhook?cloud_id={cloud_id}",
-        "webhooks": [{"events": ["jira:issue_created"], "jqlFilter": "project IS NOT EMPTY"}]
-    }
+    # Dynamic Webhook Registration
+    webhook_payload = {"url": f"{APP_URL}/webhook?cloud_id={cloud_id}", "webhooks": [{"events": ["jira:issue_created"], "jqlFilter": "project IS NOT EMPTY"}]}
     requests.post(f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/webhook", headers={"Authorization": f"Bearer {tokens.get('access_token')}", "Content-Type": "application/json"}, json=webhook_payload)
 
-    # Redirect the user back to the frontend UI
     return RedirectResponse(f"{APP_URL}/?success=true")
 
 def get_valid_oauth_session(license_key: str, db: Session):
@@ -149,21 +139,17 @@ def get_valid_oauth_session(license_key: str, db: Session):
         if res.status_code == 200:
             tokens = res.json()
             user.access_token = tokens.get("access_token")
-            if tokens.get("refresh_token"):
-                user.refresh_token = tokens.get("refresh_token")
+            if tokens.get("refresh_token"): user.refresh_token = tokens.get("refresh_token")
             user.expires_at = int(time.time()) + tokens.get("expires_in", 3600)
             db.commit()
     return user
 
 # ================= 🛡️ SMART AUTH BRIDGE =================
 async def get_jira_creds(
-    x_jira_domain: str = Header(None),
-    x_jira_email: str = Header(None),
-    x_jira_token: str = Header(None),
-    x_license_key: str = Header(None),
+    x_jira_domain: str = Header(None), x_jira_email: str = Header(None),
+    x_jira_token: str = Header(None), x_license_key: str = Header(None),
     db: Session = Depends(get_db)
 ):
-    """Supports BOTH the old API Token method AND the new License/OAuth method"""
     if x_license_key:
         user = get_valid_oauth_session(x_license_key, db)
         if not user: raise HTTPException(status_code=401, detail="Invalid License or OAuth session expired")
@@ -176,7 +162,6 @@ async def get_jira_creds(
     raise HTTPException(status_code=401, detail="Missing Authentication Headers")
 
 def jira_request(method, endpoint, creds, data=None):
-    """Universal Jira API Requester (Handles Basic Auth and OAuth invisibly)"""
     if creds.get("auth_type") == "oauth":
         user = creds["user"]
         url = f"https://api.atlassian.com/ex/jira/{user.cloud_id}/rest/api/3/{endpoint}"
@@ -200,12 +185,9 @@ STORY_POINT_CACHE = {}
 
 def generate_ai_response(prompt, temperature=0.3):
     api_key = os.getenv("GEMINI_API_KEY")
-    fallback_chain = ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]
-    for model in fallback_chain:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}}
+    for model in ["gemini-2.5-flash", "gemini-3-flash", "gemini-1.5-flash"]:
         try:
-            r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload)
+            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}})
             if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
         except: continue
     return None
@@ -217,8 +199,7 @@ def get_story_point_field(creds):
     if res:
         try:
             for f in res.json():
-                if "story points" in f['name'].lower():
-                    STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
+                if "story points" in f['name'].lower(): STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
         except: pass
     return "customfield_10016"
 
@@ -235,21 +216,15 @@ def extract_adf_text(adf_node):
     for content in adf_node.get('content', []): text += extract_adf_text(content)
     return text.strip()
 
-# ================= 🎨 CORPORATE PPTX ENGINE =================
+# ================= 🎨 DUAL-RENDER PPTX ENGINE =================
 C_BG = RGBColor(248, 250, 252); C_WHITE = RGBColor(255, 255, 255); C_BLUE_DARK = RGBColor(30, 58, 138)
 C_TEXT_DARK = RGBColor(15, 23, 42); C_TEXT_MUTED = RGBColor(100, 116, 139); C_BORDER = RGBColor(226, 232, 240)    
 
-def set_slide_bg(slide, color):
-    slide.background.fill.solid()
-    slide.background.fill.fore_color.rgb = color
-
+def set_slide_bg(slide, color): slide.background.fill.solid(); slide.background.fill.fore_color.rgb = color
 def add_text(slide, text, left, top, width, height, font_size, font_color, bold=False, align=PP_ALIGN.LEFT):
     tf = slide.shapes.add_textbox(left, top, width, height).text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.text = str(text); p.font.size = Pt(font_size); p.font.color.rgb = font_color; p.font.bold = bold; p.font.name = 'Arial'; p.alignment = align
+    tf.word_wrap = True; p = tf.paragraphs[0]; p.text = str(text); p.font.size = Pt(font_size); p.font.color.rgb = font_color; p.font.bold = bold; p.font.name = 'Arial'; p.alignment = align
     return tf
-
 def draw_card(slide, left, top, width, height, bg_color=C_WHITE, border_color=C_BORDER):
     shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
     shape.fill.solid(); shape.fill.fore_color.rgb = bg_color
@@ -257,7 +232,33 @@ def draw_card(slide, left, top, width, height, bg_color=C_WHITE, border_color=C_
     else: shape.line.fill.background()
     return shape
 
-def generate_corporate_pptx(project, metrics, ai_insights):
+def generate_dynamic_pptx(project, slides_data):
+    """Compiles the Super Agent's structured text into a native PPTX file."""
+    prs = Presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
+    blank_layout = prs.slide_layouts[6] 
+    
+    for slide_dict in slides_data:
+        slide = prs.slides.add_slide(blank_layout)
+        set_slide_bg(slide, C_BG)
+        
+        # Corporate Blue Accent Bar
+        rb = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(12.8), Inches(0), Inches(0.533), Inches(7.5))
+        rb.fill.solid(); rb.fill.fore_color.rgb = C_BLUE_DARK; rb.line.fill.background()
+
+        title = slide_dict.get("title", "Presentation Slide")
+        content = slide_dict.get("pptx_text", "")
+
+        add_text(slide, title, Inches(1), Inches(0.8), Inches(10), Inches(1), 32, C_TEXT_DARK, bold=True)
+        
+        # Add content into a nice clean card
+        draw_card(slide, Inches(1), Inches(2.0), Inches(10.5), Inches(4.8))
+        add_text(slide, content, Inches(1.3), Inches(2.3), Inches(9.9), Inches(4.2), 16, C_TEXT_MUTED)
+
+    ppt_buffer = io.BytesIO(); prs.save(ppt_buffer); ppt_buffer.seek(0)
+    return ppt_buffer
+
+def generate_corporate_pptx_fallback(project, metrics, ai_insights):
+    """Fallback legacy PPTX engine if dynamic slides aren't available"""
     prs = Presentation(); prs.slide_width = Inches(13.333); prs.slide_height = Inches(7.5)
     blank_layout = prs.slide_layouts[6] 
     
@@ -266,21 +267,12 @@ def generate_corporate_pptx(project, metrics, ai_insights):
     rb.fill.solid(); rb.fill.fore_color.rgb = C_BLUE_DARK; rb.line.fill.background()
     add_text(slide1, "PROJECT STATUS REPORT", Inches(1), Inches(1.5), Inches(6), Inches(0.5), 12, C_TEXT_MUTED, bold=True)
     add_text(slide1, "Weekly Project\nStatus Review", Inches(1), Inches(2), Inches(6), Inches(2), 54, C_TEXT_DARK, bold=True)
-    add_text(slide1, f"🗓 {datetime.now().strftime('%m/%d/%Y')}", Inches(1), Inches(4.5), Inches(6), Inches(0.5), 18, C_TEXT_MUTED)
-    add_text(slide1, "PREPARED BY", Inches(1), Inches(5.8), Inches(6), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
-    add_text(slide1, "IG Agile Intelligence System", Inches(1), Inches(6.1), Inches(6), Inches(0.5), 14, C_TEXT_DARK, bold=True)
 
     slide2 = prs.slides.add_slide(blank_layout); set_slide_bg(slide2, C_BG)
     add_text(slide2, "Agenda & At-a-Glance", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
     draw_card(slide2, Inches(5.5), Inches(1.8), Inches(7.3), Inches(5.2), C_WHITE, C_BORDER)
     add_text(slide2, "TOTAL STORIES IN SCOPE", Inches(6.0), Inches(3.0), Inches(3), Inches(0.3), 10, C_TEXT_MUTED, bold=True)
     add_text(slide2, f"{metrics.get('total', 0)}", Inches(11.0), Inches(3.0), Inches(1.2), Inches(0.8), 48, C_BLUE_DARK, bold=True, align=PP_ALIGN.RIGHT)
-
-    slide3 = prs.slides.add_slide(blank_layout); set_slide_bg(slide3, C_BG)
-    add_text(slide3, "Sprint Overview", Inches(0.5), Inches(0.7), Inches(6), Inches(0.8), 32, C_TEXT_DARK, bold=True)
-    draw_card(slide3, Inches(0.5), Inches(1.8), Inches(7.5), Inches(5.2))
-    add_text(slide3, "EXECUTIVE SUMMARY", Inches(0.8), Inches(2.1), Inches(4), Inches(0.3), 12, C_BLUE_DARK, bold=True)
-    add_text(slide3, ai_insights.get('executive_summary', 'Processing...'), Inches(0.8), Inches(2.6), Inches(6.9), Inches(2), 16, C_TEXT_DARK)
 
     ppt_buffer = io.BytesIO(); prs.save(ppt_buffer); ppt_buffer.seek(0)
     return ppt_buffer
@@ -290,8 +282,7 @@ def generate_corporate_pptx(project, metrics, ai_insights):
 
 @app.get("/")
 def home(): 
-    if os.path.exists("index.html"):
-        return FileResponse("index.html")
+    if os.path.exists("index.html"): return FileResponse("index.html")
     return {"status": "Backend is running, but index.html is missing!"}
 
 @app.get("/projects")
@@ -326,26 +317,14 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         f = i.get('fields', {})
         name = f['assignee']['displayName'] if f.get('assignee') else "Unassigned"
         pts = f.get(sp_field) or 0
+        priority_name = f.get('priority', {}).get('name') if f.get('priority') else "Medium"
+        status_name = f.get('status', {}).get('name') if f.get('status') else "To Do"
         
-        # Safe Priority parsing
-        priority_data = f.get('priority')
-        priority_name = priority_data.get('name') if priority_data else "Medium"
-        
-        # Safe Issue Type parsing
-        type_data = f.get('issuetype')
-        type_name = type_data.get('name') if type_data else "Task"
-
-        # Safe Status parsing
-        status_data = f.get('status')
-        status_name = status_data.get('name') if status_data else "To Do"
-        
-        stats["points"] += pts
-        stats["total"] += 1
+        stats["points"] += pts; stats["total"] += 1
         if priority_name in ["High", "Highest", "Critical"]: stats["blockers"] += 1
         
         if name not in stats["assignees"]: stats["assignees"][name] = {"count": 0, "points": 0, "tasks": [], "avatar": f['assignee']['avatarUrls']['48x48'] if f.get('assignee') else ""}
-        stats["assignees"][name]["count"] += 1
-        stats["assignees"][name]["points"] += pts
+        stats["assignees"][name]["count"] += 1; stats["assignees"][name]["points"] += pts
         stats["assignees"][name]["tasks"].append({"key": i['key'], "summary": f.get('summary', ''), "points": pts, "status": status_name})
         
         desc = extract_adf_text(f.get('description', {}))[:500] 
@@ -360,6 +339,81 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
 
     return {"metrics": stats, "ai_insights": ai_data}
 
+
+# --- ✨ NEW: SUPER AGENT ORCHESTRATOR ✨ ---
+@app.get("/super_deck/{project_key}")
+def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
+    """Orchestrates AI to write 10 Web-HTML slides + structured text for native PPTX export."""
+    sp_field = get_story_point_field(creds)
+    jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "status", "assignee", "priority", sp_field, "issuetype"]})
+    issues = res.json().get('issues', []) if res else []
+    
+    done_pts = 0; total_pts = 0; active_users = set(); blockers = 0
+    for i in issues:
+        f = i.get('fields', {})
+        pts = float(f.get(sp_field) or 0)
+        total_pts += pts
+        if f.get('status', {}).get('statusCategory', {}).get('key') == 'done': done_pts += pts
+        if f.get('priority', {}).get('name') in ["High", "Highest"]: blockers += 1
+        if f.get('assignee'): active_users.add(f['assignee']['displayName'])
+        
+    context = {"project": project_key, "total_issues": len(issues), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers, "team_size": len(active_users), "sample_issues": [i['fields'].get('summary', '') for i in issues[:5]]}
+
+    prompt = f"""
+    You are an elite UX/UI Designer and Enterprise Delivery Director.
+    Create a stunning, 10-slide presentation for an executive review of this project: {json.dumps(context)}.
+    
+    REQUIREMENTS:
+    Return a JSON array of exactly 10 objects. Format: 
+    [{{
+        "id": 1, 
+        "title": "Slide Title", 
+        "html": "<div class='p-8 h-full flex flex-col justify-center text-white bg-slate-900'>...</div>",
+        "pptx_text": "Plain text summary of this slide's core points (with line breaks) for the PPTX export file."
+    }}]
+    
+    HTML RULES:
+    - Must contain ONLY valid HTML inside the canvas using Tailwind CSS classes. No <html> or <body> tags.
+    - Use premium design: `bg-white/10`, `backdrop-blur-lg`, `border-white/20`, gradients (`bg-gradient-to-r from-blue-600 to-indigo-600`), grids, and large bold typography.
+    
+    SLIDE STRUCTURE:
+    1. Title Slide (Hero gradient, Project Name)
+    2. Executive Summary 
+    3. At a Glance (KPI grids)
+    4. Team & Capacity
+    5. Strategic Roadmap
+    6. Core Delivery Excellence
+    7. Active Workstreams 
+    8. Quality & Stability
+    9. Risks & Blockers
+    10. Next Steps / Actions
+
+    Return pure JSON array. No markdown code blocks.
+    """
+    
+    raw = generate_ai_response(prompt, temperature=0.5)
+    try:
+        slides = json.loads(raw.replace('```json','').replace('```','').strip())
+        return {"status": "success", "slides": slides}
+    except Exception as e:
+        return {"status": "error", "message": "Failed to orchestrate slides."}
+
+@app.post("/generate_ppt")
+async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
+    """The Dual-Engine Export. Takes the Super Agent data and creates a real PPTX."""
+    project = payload.get("project", "Unknown")
+    slides_data = payload.get("slides", [])
+    
+    if slides_data:
+        ppt_buffer = generate_dynamic_pptx(project, slides_data)
+    else:
+        ppt_buffer = generate_corporate_pptx_fallback(project, payload.get("data", {}).get("metrics", {}), payload.get("data", {}).get("ai_insights", {}))
+        
+    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{project}_Super_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
+
+
+# --- ROADMAP & TIMELINE (UNCHANGED) ---
 @app.get("/roadmap/{project_key}")
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
@@ -369,59 +423,19 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     context_data = []
     for i in issues:
         f = i.get('fields', {})
-        
-        # Safely parse all nested dictionaries
-        priority_data = f.get('priority')
-        priority_name = priority_data.get('name') if priority_data else "Medium"
-        
-        type_data = f.get('issuetype')
-        type_name = type_data.get('name') if type_data else "Task"
-        
-        status_data = f.get('status')
-        status_name = status_data.get('name') if status_data else "To Do"
-        
-        context_data.append({
-            "key": i.get('key'), 
-            "summary": f.get('summary', 'Unknown Summary'), 
-            "type": type_name, 
-            "priority": priority_name, 
-            "status": status_name
-        })
+        priority_name = f.get('priority', {}).get('name') if f.get('priority') else "Medium"
+        type_name = f.get('issuetype', {}).get('name') if f.get('issuetype') else "Task"
+        status_name = f.get('status', {}).get('name') if f.get('status') else "To Do"
+        context_data.append({"key": i.get('key'), "summary": f.get('summary', 'Unknown'), "type": type_name, "priority": priority_name, "status": status_name})
 
-    prompt = f"""
-    You are an elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}
-    Group these issues into 3 logical "Tracks" (Workstreams) based on their topics.
-    Schedule them across a 12-week timeline. 
-    - High priority items should start earlier (lower start index).
-    - Start index is 0 to 11 (representing Week 1 to Week 12).
-    - Duration is 1 to 4 weeks.
-    
-    Return EXACT JSON:
-    {{
-        "timeline": ["Week 1", "Week 2", "Week 3", "Week 4", "Week 5", "Week 6", "Week 7", "Week 8", "Week 9", "Week 10", "Week 11", "Week 12"],
-        "tracks": [
-            {{
-                "name": "E.g., Core Infrastructure",
-                "items": [
-                    {{"key": "PROJ-1", "summary": "Short title", "start": 0, "duration": 2, "priority": "High", "status": "To Do"}}
-                ]
-            }}
-        ]
-    }}
-    """
-    
+    prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
     raw = generate_ai_response(prompt, temperature=0.2)
-    try: 
-        return json.loads(raw.replace('```json','').replace('```','').strip())
-    except:
-        return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized Backlog", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
+    try: return json.loads(raw.replace('```json','').replace('```','').strip())
+    except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
 
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
-    project = payload.get("project")
-    user_prompt = payload.get("prompt")
-
-    sp_field = get_story_point_field(creds)
+    project = payload.get("project"); user_prompt = payload.get("prompt"); sp_field = get_story_point_field(creds)
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project} AND sprint in openSprints()", "fields": ["summary", "assignee", sp_field, "description"]})
     issues = res.json().get('issues', []) if res else []
 
@@ -431,27 +445,18 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         assignee = f['assignee']['displayName'] if f.get('assignee') else "Unassigned"
         pts = float(f.get(sp_field) or 0)
         desc = extract_adf_text(f.get('description', {}))[:200]
-        
         team_capacity[assignee] = team_capacity.get(assignee, 0) + pts
         board_context.append(f"Task: {f.get('summary')} | Desc: {desc} | Assignee: {assignee}")
 
-    ai_prompt = f"""
-    Product Owner generating story for: "{user_prompt}"
-    Context: {" ".join(board_context[:20])}
-    Workload: {json.dumps(team_capacity)}
-    Return JSON: {{"title": "...", "description": "...", "acceptance_criteria": ["..."], "points": 5, "assignee": "Name", "tech_stack_inferred": "..."}}
-    """
+    ai_prompt = f"Product Owner generating story for: '{user_prompt}'. Context: {' '.join(board_context[:20])}. Workload: {json.dumps(team_capacity)}. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Name\", \"tech_stack_inferred\": \"...\"}}"
     raw = generate_ai_response(prompt=ai_prompt, temperature=0.5)
     try: return {"status": "success", "story": json.loads(raw.replace('```json','').replace('```','').strip())}
     except: return {"status": "error"}
 
 @app.post("/timeline/create_issue")
 async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
-    project_key = payload.get("project")
-    story = payload.get("story", {})
-    
-    sp_field = get_story_point_field(creds)
-    assignee_id = get_jira_account_id(story.get("assignee", ""), creds)
+    project_key = payload.get("project"); story = payload.get("story", {})
+    sp_field = get_story_point_field(creds); assignee_id = get_jira_account_id(story.get("assignee", ""), creds)
     
     ac_items = [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": ac}]}]} for ac in story.get("acceptance_criteria", [])]
     desc_adf = {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": story.get("description", "")}]}, {"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]}, {"type": "bulletList", "content": ac_items}]}
@@ -471,11 +476,6 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         return {"status": "success", "key": new_key}
     return {"status": "error"}
 
-@app.post("/generate_ppt")
-async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
-    ppt_buffer = generate_corporate_pptx(payload.get("project", "Unknown"), payload.get("data", {}).get("metrics", {}), payload.get("data", {}).get("ai_insights", {}))
-    return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project")}_Executive_Report.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
-
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
@@ -488,23 +488,16 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     done_count = 0; done_pts = 0; context_data = []
     for i in issues:
         f = i.get('fields', {})
-        
-        status_data = f.get('status', {})
-        status_name = status_data.get('name') if status_data else "Unknown"
-        status_category = status_data.get('statusCategory', {}).get('key') if status_data else ""
-        
+        status_name = f.get('status', {}).get('name') if f.get('status') else "Unknown"
+        status_category = f.get('status', {}).get('statusCategory', {}).get('key') if f.get('status') else ""
         pts = float(f.get(sp_field) or 0)
         assignee = f['assignee']['displayName'] if f.get('assignee') else "Unassigned"
         
-        if status_category == 'done': 
-            done_count += 1
-            done_pts += pts
-            
+        if status_category == 'done': done_count += 1; done_pts += pts
         context_data.append({"key": i['key'], "summary": f.get('summary', ''), "status": status_name, "assignee": assignee, "points": pts})
 
     prompt = f"Elite Agile Analyst. DATA: {json.dumps(context_data)}. Return JSON: {{\"ai_verdict\": \"...\", \"sprint_vibe\": \"🔥 Blazing Fast\", \"key_accomplishments\": [{{\"title\": \"...\", \"impact\": \"...\"}}], \"hidden_friction\": \"...\", \"top_contributor\": \"Name - Reason\"}}"
-    ai_raw = generate_ai_response(prompt, temperature=0.4)
-    try: ai_dossier = json.loads(ai_raw.replace('```json','').replace('```','').strip())
+    try: ai_dossier = json.loads(generate_ai_response(prompt, temperature=0.4).replace('```json','').replace('```','').strip())
     except: ai_dossier = {"ai_verdict": "Error", "sprint_vibe": "Error", "key_accomplishments": [], "hidden_friction": "", "top_contributor": ""}
     
     return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(issues), "dossier": ai_dossier}
@@ -518,8 +511,7 @@ def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_c
 
 @app.post("/retro/update")
 def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
-    project_key = payload.get("project").upper()
-    sid = str(payload.get("sprint"))
+    project_key = payload.get("project").upper(); sid = str(payload.get("sprint"))
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
     db_data[sid] = payload.get("board")
@@ -528,13 +520,10 @@ def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
 
 @app.post("/retro/generate_actions")
 def generate_actions(payload: dict):
-    prompt = f"Analyze Retro. GOOD: {payload.get('board').get('well')} BAD: {payload.get('board').get('improve')}. Return JSON array: [\"Action 1\"]"
-    raw = generate_ai_response(prompt)
-    try: return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(json.loads(raw.replace('```json','').replace('```','').strip()))]}
+    try: return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(json.loads(generate_ai_response(f"Analyze Retro. GOOD: {payload.get('board').get('well')} BAD: {payload.get('board').get('improve')}. Return JSON array: [\"Action 1\"]").replace('```json','').replace('```','').strip()))]}
     except: return {"actions": []}
 
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds):
-    """Background task that wakes up when a ticket is created in Jira"""
     sp_field = get_story_point_field(creds)
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["assignee", sp_field]})
     
@@ -545,8 +534,7 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds):
             assignee = f['assignee']['displayName'] if f.get('assignee') else "Unassigned"
             team_cap[assignee] = team_cap.get(assignee, 0) + float(f.get(sp_field) or 0)
 
-    prompt = f"New Ticket: {summary}. Desc: {desc_text}. Workload: {json.dumps(team_cap)}. Return JSON: {{\"points\": 3, \"assignee\": \"Name\", \"reasoning\": \"string\"}}"
-    raw = generate_ai_response(prompt)
+    raw = generate_ai_response(f"New Ticket: {summary}. Desc: {desc_text}. Workload: {json.dumps(team_cap)}. Return JSON: {{\"points\": 3, \"assignee\": \"Name\", \"reasoning\": \"string\"}}")
     if not raw: return
     
     try:
@@ -563,31 +551,20 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds):
 
 @app.post("/webhook")
 async def jira_webhook(request: Request, background_tasks: BackgroundTasks, domain: str = None, email: str = None, token: str = None, cloud_id: str = None):
-    """Listens for the dynamic or manual webhook ping from Jira"""
     try:
         payload = await request.json()
         if payload.get("webhookEvent") != "jira:issue_created": return {"status": "ignored"}
 
-        issue = payload.get("issue", {})
-        key = issue.get("key")
-        
-        fields = issue.get("fields", {})
-        summary = fields.get("summary", "")
-        desc = extract_adf_text(fields.get("description", {}))[:500]
-        project_key = fields.get("project", {}).get("key", "")
+        issue = payload.get("issue", {}); key = issue.get("key"); fields = issue.get("fields", {})
+        summary = fields.get("summary", ""); desc = extract_adf_text(fields.get("description", {}))[:500]; project_key = fields.get("project", {}).get("key", "")
 
-        # Lookup credentials. Use query params (legacy) OR find user in DB via cloud_id (OAuth)
         creds = None
-        if domain and email and token:
-            creds = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
+        if domain and email and token: creds = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
         elif cloud_id:
-            db = SessionLocal()
-            user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first()
+            db = SessionLocal(); user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first()
             if user: creds = {"auth_type": "oauth", "user": user}
             db.close()
             
-        if creds:
-            background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds)
-            
-        return {"status": "processing_in_background"}
+        if creds: background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds)
+        return {"status": "processing"}
     except: return {"status": "error"}

@@ -66,6 +66,13 @@
         .roadmap-cell { border-right: 1px solid var(--border); opacity: 0.2; }
         .roadmap-item { position: absolute; border-radius: 6px; padding: 8px 12px; font-size: 11px; font-weight: 600; color: white; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; z-index: 10; transition: transform 0.2s, z-index 0s; }
         .roadmap-item:hover { z-index: 20; transform: translateY(-2px) scale(1.01); }
+
+        /* Slide Deck CSS */
+        @media print { 
+            body * { visibility: hidden; } 
+            #slide-print-area, #slide-print-area * { visibility: visible; }
+            #slide-print-area { position: absolute; left: 0; top: 0; width: 100%; height: 100%; box-shadow: none; border: none; border-radius: 0; transform: none; }
+        }
     </style>
 </head>
 <body class="dark-mode">
@@ -87,6 +94,9 @@
                 TrendingDown: <><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"></polyline><polyline points="17 18 23 18 23 12"></polyline></>,
                 MessageSquare: <><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></>,
                 Map: <><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></>,
+                Monitor: <><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></>,
+                ChevronLeft: <><polyline points="15 18 9 12 15 6"></polyline></>,
+                ChevronRight: <><polyline points="9 18 15 12 9 6"></polyline></>,
                 Sun: <><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></>,
                 Moon: <><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></>,
                 Star: <><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></>,
@@ -206,7 +216,7 @@
         }
 
         function DashboardLayout({ userRole, theme, setTheme }) {
-            const [view, setView] = useState('roadmap'); // Defaulting to Roadmap so you can see it!
+            const [view, setView] = useState('smartdeck');
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
             const [isGlobalLoading, setIsGlobalLoading] = useState(false); 
@@ -227,10 +237,9 @@
                                 <div><h1 className="text-lg font-bold tracking-tight" style={{color: 'var(--text-main)'}}>Agile</h1><p className="text-[10px] uppercase tracking-wider" style={{color: 'var(--text-muted)'}}>{userRole.replace('_', ' ')}</p></div>
                             </div>
                             <nav className="space-y-1">
+                                <NavBtn id="smartdeck" icon="Monitor" label="AI Smart Deck" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
-                                {/* ✨ NEW ROADMAP NAVIGATION ADDED HERE ✨ */}
                                 <NavBtn id="roadmap" icon="Map" label="Strategic Roadmap" active={view} set={setView} disabled={isGlobalLoading} />
-                                
                                 {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Calendar" label="Timeline Flow" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
                                 {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="reports" icon="FileText" label="Reports" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="burndown" icon="TrendingDown" label="Burndown" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
@@ -254,6 +263,7 @@
                     <main className="flex-1 overflow-hidden p-8 relative transition-colors duration-300">
                         {activeProject ? (
                             <div className="h-full">
+                                {view === 'smartdeck' && <SmartDeckView project={activeProject} />}
                                 {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                                 {view === 'roadmap' && <RoadmapView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'timeline' && <TimelineView project={activeProject} setIsLoading={setIsGlobalLoading} />}
@@ -289,7 +299,101 @@
             );
         }
 
-        // --- ✨ NEW STRATEGIC ROADMAP VIEW ✨ ---
+        // --- ✨ NEW: SUPER AGENT HTML DECK VIEWER ✨ ---
+        function SmartDeckView({ project }) {
+            const [slides, setSlides] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [currentIdx, setCurrentIdx] = useState(0);
+            const [isExporting, setIsExporting] = useState(false);
+
+            useEffect(() => {
+                setLoading(true);
+                secureFetch(`/super_deck/${project}?sprint_id=active`)
+                    .then(r => r?.json())
+                    .then(data => {
+                        if (data && data.slides) setSlides(data.slides);
+                        setLoading(false);
+                    }).catch(() => setLoading(false));
+            }, [project]);
+
+            const handleExportPPTX = async () => {
+                setIsExporting(true);
+                try {
+                    const res = await secureFetch('/generate_ppt', { 
+                        method: 'POST', 
+                        body: JSON.stringify({ project: project, slides: slides }) 
+                    });
+                    if(res && res.ok) {
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${project}_Super_Deck.pptx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                    } else { alert("Failed to generate Presentation."); }
+                } catch(e) { console.error(e); }
+                setIsExporting(false);
+            };
+
+            if (loading) return <LoadingScreen msg="Super Agent orchestrating 10-slide HTML presentation..." />;
+            if (!slides || slides.length === 0) return <div className="p-10 text-white">Failed to generate deck.</div>;
+
+            return (
+                <div className="h-full flex flex-col relative bg-slate-900 rounded-xl overflow-hidden border border-slate-700 shadow-2xl animate-fade-in">
+                    {/* Top Toolbar */}
+                    <div className="h-16 flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md z-50">
+                        <div className="flex items-center gap-4">
+                            <div className="px-3 py-1 bg-indigo-500/20 text-indigo-400 rounded text-xs font-bold border border-indigo-500/30 flex items-center gap-2">
+                                <Icon name="Sparkles" size={14}/> AI Generated Web Presentation
+                            </div>
+                            <span className="text-slate-400 text-sm font-medium">Slide {currentIdx + 1} of {slides.length}</span>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition border border-slate-700">
+                                <Icon name="Monitor" size={16}/> Save as PDF
+                            </button>
+                            <button onClick={handleExportPPTX} disabled={isExporting} className="flex items-center gap-2 px-4 py-2 text-white rounded-lg text-sm font-bold transition disabled:opacity-50" style={{background: 'linear-gradient(to right, #6366f1, #a855f7)'}}>
+                                {isExporting ? <span className="loader" style={{width:'16px', height:'16px'}}></span> : <Icon name="Download" size={16}/>}
+                                {isExporting ? 'Compiling...' : 'Export Native PPTX'}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Presentation Canvas */}
+                    <div className="flex-1 relative flex items-center justify-center p-8 overflow-hidden bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black">
+                        
+                        {/* The Actual Slide Content */}
+                        <div 
+                            id="slide-print-area"
+                            className="w-full max-w-[1000px] aspect-[16/9] bg-slate-900 rounded-2xl overflow-hidden relative border border-slate-700 transition-all duration-500 ease-in-out"
+                            style={{boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'}}
+                            dangerouslySetInnerHTML={{ __html: slides[currentIdx].html }}
+                        />
+
+                        {/* Navigation Arrows */}
+                        <button 
+                            onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))}
+                            disabled={currentIdx === 0}
+                            className="absolute left-6 w-12 h-12 rounded-full bg-slate-800/80 hover:bg-indigo-600 text-white flex items-center justify-center transition disabled:opacity-30 disabled:hover:bg-slate-800/80 backdrop-blur-sm border border-white/10 z-50 shadow-xl"
+                        >
+                            <Icon name="ChevronLeft" size={24}/>
+                        </button>
+                        
+                        <button 
+                            onClick={() => setCurrentIdx(Math.min(slides.length - 1, currentIdx + 1))}
+                            disabled={currentIdx === slides.length - 1}
+                            className="absolute right-6 w-12 h-12 rounded-full bg-slate-800/80 hover:bg-indigo-600 text-white flex items-center justify-center transition disabled:opacity-30 disabled:hover:bg-slate-800/80 backdrop-blur-sm border border-white/10 z-50 shadow-xl"
+                        >
+                            <Icon name="ChevronRight" size={24}/>
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- STRATEGIC ROADMAP VIEW ---
         function RoadmapView({ project, setIsLoading }) {
             const [roadmap, setRoadmap] = useState(null);
 
@@ -325,8 +429,6 @@
 
                     <div className="flex-1 overflow-auto hide-scroll rounded-xl border shadow-2xl relative" style={{borderColor: 'var(--border)', backgroundColor: 'var(--bg-card)'}}>
                         <div className="min-w-[1000px]">
-                            
-                            {/* Grid Header */}
                             <div className="roadmap-grid sticky top-0 z-30" style={{borderBottom: '1px solid var(--border)'}}>
                                 <div className="roadmap-header" style={{textAlign: 'left', paddingLeft: '24px'}}>Workstream</div>
                                 {roadmap.timeline.map((wk, i) => (
@@ -334,11 +436,8 @@
                                 ))}
                             </div>
 
-                            {/* Grid Body */}
                             {roadmap.tracks.map((track, trackIdx) => (
                                 <div key={trackIdx} className="relative border-b last:border-b-0" style={{borderColor: 'var(--border)'}}>
-                                    
-                                    {/* The Background Grid Lines */}
                                     <div className="roadmap-grid border-0 rounded-none absolute inset-0 h-full">
                                         <div className="roadmap-cell" style={{borderRight: '1px solid var(--border)'}}></div>
                                         {roadmap.timeline.map((_, i) => (
@@ -346,19 +445,15 @@
                                         ))}
                                     </div>
                                     
-                                    {/* The Overlay Content */}
                                     <div className="relative z-10 flex">
-                                        {/* Track Title Lane */}
                                         <div className="w-[250px] shrink-0 p-6 flex flex-col justify-center border-r" style={{borderColor: 'var(--border)'}}>
                                             <span className="font-bold text-sm leading-snug" style={{color: 'var(--text-main)'}}>{track.name}</span>
                                             <span className="text-[10px] mt-1 uppercase font-bold" style={{color: 'var(--text-muted)'}}>{track.items.length} Items</span>
                                         </div>
                                         
-                                        {/* The Floating Items */}
                                         <div className="flex-1 relative" style={{minHeight: `${Math.max(track.items.length * 44 + 24, 80)}px`}}>
                                             <AnimatePresence>
                                                 {track.items.map((item, i) => {
-                                                    // Ensure boundaries (0 to 11 for 12 weeks)
                                                     const start = Math.max(0, Math.min(item.start, 11));
                                                     const dur = Math.max(1, Math.min(item.duration, 12 - start));
                                                     
@@ -393,12 +488,11 @@
             );
         }
 
-        // --- COMMAND CENTER (UNCHANGED) ---
+        // --- COMMAND CENTER ---
         function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
             const [data, setData] = useState(null);
             const [sprints, setSprints] = useState([]);
             const [activeSprint, setActiveSprint] = useState('active'); 
-            const [isGeneratingPPT, setIsGeneratingPPT] = useState(false);
 
             useEffect(() => { secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { if(d && d.length) setSprints(d); }); }, [project]);
 
@@ -407,25 +501,6 @@
                 const url = activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`;
                 secureFetch(url).then(r => r ? r.json() : null).then(d => { setData(d); setIsLoading(false); }).catch(() => { setIsLoading(false); });
             }, [project, activeSprint]);
-
-            const handleDownloadPPT = async () => {
-                if(!data) return;
-                setIsGeneratingPPT(true);
-                try {
-                    const res = await secureFetch('/generate_ppt', { method: 'POST', body: JSON.stringify({ project: project, data: data }) });
-                    if(res && res.ok) {
-                        const blob = await res.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${project}_Executive_Report.pptx`;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                    } else { alert("Failed to generate Presentation."); }
-                } catch(e) { console.error(e); }
-                setIsGeneratingPPT(false);
-            };
             
             if (!data) return <LoadingScreen msg="AI is reading descriptions, acceptance criteria, and assignee comments..." />;
 
@@ -444,10 +519,6 @@
                                     {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                             </div>
-                            <button onClick={handleDownloadPPT} disabled={isGeneratingPPT || isGlobalLoading} className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white rounded-lg shadow-lg hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100" style={{background: 'linear-gradient(to right, #6366f1, #a855f7)'}}>
-                                {isGeneratingPPT ? <span className="loader" style={{width:'16px', height:'16px'}}></span> : <Icon name="Download" size={18}/>}
-                                {isGeneratingPPT ? 'Generating Deck...' : '✨ Export Corporate Deck'}
-                            </button>
                         </div>
                     </header>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -493,7 +564,7 @@
             );
         }
 
-        // --- TIMELINE VIEW (UNCHANGED) ---
+        // --- TIMELINE VIEW ---
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
             const [prompt, setPrompt] = useState("");
@@ -662,7 +733,7 @@
             );
         }
 
-        // --- DOSSIER REPORTS (UNCHANGED) ---
+        // --- DOSSIER REPORTS ---
         function ReportsView({ project, setIsLoading, isGlobalLoading }) { 
             const [data, setData] = useState(null);
             const [timeframe, setTimeframe] = useState('weekly');
@@ -750,7 +821,7 @@
             ); 
         }
 
-        // --- RETRO BOARD (UNCHANGED) ---
+        // --- RETRO BOARD ---
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
             const [sprints, setSprints] = useState([]); 
             const [activeSprint, setActiveSprint] = useState(null); 
