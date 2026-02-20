@@ -13,13 +13,16 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <style>
         :root { --transition-speed: 0.3s; }
         
-        /* ✨ PREMIUM ENTERPRISE THEME ✨ */
         .dark-mode {
             --bg-body: #0B1121; 
             --bg-sidebar: #020617; 
@@ -28,7 +31,7 @@
             --text-main: #F8FAFC; 
             --text-muted: #94A3B8; 
             --border: #334155;
-            --primary: #D97706; /* Refined Amber/Gold Accent */
+            --primary: #D97706; 
             --primary-dim: rgba(217, 119, 6, 0.15);
             --danger: #EF4444; 
             --success: #10B981; 
@@ -44,7 +47,7 @@
             --text-main: #0F172A; 
             --text-muted: #475569; 
             --border: #CBD5E1;
-            --primary: #0369A1; /* Professional Deep Blue */
+            --primary: #0369A1; 
             --primary-dim: rgba(3, 105, 161, 0.1);
             --danger: #DC2626; 
             --success: #059669; 
@@ -90,6 +93,17 @@
         .roadmap-cell { border-right: 1px solid var(--border); opacity: 0.2; }
         .roadmap-item { position: absolute; border-radius: 6px; padding: 8px 12px; font-size: 11px; font-weight: 600; color: white; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; z-index: 10; transition: transform 0.2s, z-index 0s; }
         .roadmap-item:hover { z-index: 20; transform: translateY(-2px) scale(1.01); }
+
+        @media print { 
+            html, body, #root, div { height: auto !important; overflow: visible !important; position: static !important; }
+            body * { visibility: hidden; } 
+            #print-engine-container, #print-engine-container * { visibility: visible; }
+            #print-engine-container { 
+                position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; display: block !important; opacity: 1 !important; z-index: 99999 !important; 
+            }
+            .print-slide { width: 1280px !important; height: 720px !important; page-break-after: always !important; break-after: page !important; background: #0B1121 !important; margin: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            @page { size: landscape; margin: 0; }
+        }
     </style>
 
     <script>
@@ -276,37 +290,36 @@
         function ThemeToggle({ theme, setTheme, fullWidth }) { return (<button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-3 rounded-lg border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-3 transition hover:bg-bg-hover border-border text-text-muted bg-bg-card ${fullWidth ? 'w-full' : ''}`}><Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} /> {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</button>); }
         function MetricCard({ label, value, color, isDanger }) { return (<div className="glass-card p-6 border-l-4 transition-all hover:scale-[1.02]" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}><div className="text-xs font-bold uppercase tracking-widest mb-2 text-text-muted">{label}</div><div className="text-4xl font-extrabold text-text-main">{value}</div></div>); }
 
-        // ================= ✨ AI HTML RENDERER (PREMIUM 3D ANIMATIONS & DEFENSIVE CHECKS) ✨ =================
+        // ================= ✨ AI HTML RENDERER (PREMIUM 3D ANIMATIONS & SCALED TYPOGRAPHY) ✨ =================
         function RenderSlide({ slide }) {
             const layout = slide.layout || 'standard';
             const containerVars = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.15, delayChildren: 0.1 } } };
-            const titleVars = { hidden: { opacity: 0, y: -40, scale: 0.95 }, visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", bounce: 0.4 } } };
-            const cardVars = { hidden: { opacity: 0, y: 60, rotateX: -20 }, visible: { opacity: 1, y: 0, rotateX: 0, transition: { type: "spring", bounce: 0.5, duration: 0.8 } } };
-            const flowVars = { hidden: { opacity: 0, x: -60, scale: 0.8 }, visible: { opacity: 1, x: 0, scale: 1, transition: { type: "spring", bounce: 0.5 } } };
-            const bulletVars = { hidden: { opacity: 0, x: -30 }, visible: { opacity: 1, x: 0, transition: { type: "spring", bounce: 0.3 } } };
+            const titleVars = { hidden: { opacity: 0, y: -20, scale: 0.95 }, visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", bounce: 0.4 } } };
+            const cardVars = { hidden: { opacity: 0, y: 40, rotateX: -10 }, visible: { opacity: 1, y: 0, rotateX: 0, transition: { type: "spring", bounce: 0.5, duration: 0.8 } } };
+            const flowVars = { hidden: { opacity: 0, x: -40, scale: 0.9 }, visible: { opacity: 1, x: 0, scale: 1, transition: { type: "spring", bounce: 0.5 } } };
+            const bulletVars = { hidden: { opacity: 0, x: -20 }, visible: { opacity: 1, x: 0, transition: { type: "spring", bounce: 0.3 } } };
 
-            // 🔥 DEFENSIVE RENDERING: Forces AI string hallucinations into an array to prevent crashes
             const safeItems = Array.isArray(slide.items) ? slide.items : (slide.items ? [{title: slide.items, label: "Item", value: slide.items, text: slide.items}] : []);
             const safeContent = Array.isArray(slide.content) ? slide.content : (slide.content ? [slide.content] : []);
 
             if (layout === 'hero') return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center items-center text-center bg-bg-body text-text-main relative overflow-hidden">
                     <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 0.6 }} transition={{ duration: 2, ease: "easeOut" }} className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary-dim rounded-full blur-3xl -mr-32 -mt-32"></motion.div>
-                    {slide.icon && <motion.div variants={titleVars} className="text-8xl mb-8 text-primary">{slide.icon}</motion.div>}
-                    <motion.h1 variants={titleVars} className="text-7xl font-black mb-6 tracking-tight leading-tight">{slide.title}</motion.h1>
-                    <motion.p variants={titleVars} className="text-3xl text-primary font-medium">{slide.subtitle}</motion.p>
+                    {slide.icon && <motion.div variants={titleVars} className="text-7xl mb-8 text-primary">{slide.icon}</motion.div>}
+                    <motion.h1 variants={titleVars} className="text-6xl font-black mb-6 tracking-tight leading-tight">{slide.title}</motion.h1>
+                    <motion.p variants={titleVars} className="text-2xl text-primary font-medium">{slide.subtitle}</motion.p>
                 </motion.div>
             );
 
             if (layout === 'kpi_grid') return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative perspective-1000">
-                    <motion.h2 variants={titleVars} className="text-5xl font-extrabold mb-16">{slide.title}</motion.h2>
+                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-12">{slide.title}</motion.h2>
                     <div className="grid grid-cols-4 gap-8">
                         {safeItems.map((kpi, i) => (
-                            <motion.div variants={cardVars} key={i} className="glass-card p-10 flex flex-col items-center justify-center text-center hover:scale-105 transition-transform origin-bottom border-t-4 border-primary">
-                                {kpi.icon && <div className="text-5xl mb-6 text-primary">{kpi.icon}</div>}
-                                <div className="text-7xl font-black text-text-main mb-3">{kpi.value}</div>
-                                <div className="text-lg text-text-muted font-bold uppercase tracking-wider">{kpi.label}</div>
+                            <motion.div variants={cardVars} key={i} className="glass-card p-8 flex flex-col items-center justify-center text-center hover:scale-105 transition-transform origin-bottom border-t-4 border-primary">
+                                {kpi.icon && <div className="text-5xl mb-4 text-primary">{kpi.icon}</div>}
+                                <div className="text-5xl font-black text-text-main mb-3">{kpi.value}</div>
+                                <div className="text-base text-text-muted font-bold uppercase tracking-wider">{kpi.label}</div>
                             </motion.div>
                         ))}
                     </div>
@@ -315,15 +328,15 @@
 
             if (layout === 'flowchart') return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative">
-                    <motion.h2 variants={titleVars} className="text-5xl font-extrabold mb-20">{slide.title}</motion.h2>
+                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-16">{slide.title}</motion.h2>
                     <div className="flex gap-6 items-center justify-between w-full">
                         {safeItems.map((step, i) => (
                             <React.Fragment key={i}>
-                                <motion.div variants={flowVars} className="flex-1 glass-card p-10 text-center relative hover:-translate-y-3 transition-transform border-b-4 border-primary">
-                                    <div className="text-2xl font-black text-primary mb-3 uppercase tracking-widest">Step {i+1}</div>
-                                    <div className="text-3xl font-bold text-text-main">{step.title}</div>
+                                <motion.div variants={flowVars} className="flex-1 glass-card p-8 text-center relative hover:-translate-y-3 transition-transform border-b-4 border-primary">
+                                    <div className="text-xl font-black text-primary mb-3 uppercase tracking-widest">Step {i+1}</div>
+                                    <div className="text-2xl font-bold text-text-main">{step.title}</div>
                                 </motion.div>
-                                {i < (safeItems.length - 1) && <motion.div variants={flowVars}><Icon name="ChevronRight" size={56} className="text-border shrink-0"/></motion.div>}
+                                {i < (safeItems.length - 1) && <motion.div variants={flowVars}><Icon name="ChevronRight" size={40} className="text-border shrink-0"/></motion.div>}
                             </React.Fragment>
                         ))}
                     </div>
@@ -332,13 +345,13 @@
 
             if (layout === 'icon_columns') return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative perspective-1000">
-                    <motion.h2 variants={titleVars} className="text-5xl font-extrabold mb-16">{slide.title}</motion.h2>
-                    <div className="grid grid-cols-3 gap-10">
+                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-12">{slide.title}</motion.h2>
+                    <div className="grid grid-cols-3 gap-8">
                         {safeItems.map((col, i) => (
-                            <motion.div variants={cardVars} key={i} className="glass-card p-10 hover:-translate-y-3 transition-transform border-t-4 border-primary">
-                                {col.icon && <div className="text-6xl mb-8 text-primary">{col.icon}</div>}
-                                <h3 className="text-3xl font-extrabold text-text-main mb-5">{col.title}</h3>
-                                <p className="text-xl text-text-muted leading-relaxed font-medium">{col.text}</p>
+                            <motion.div variants={cardVars} key={i} className="glass-card p-8 hover:-translate-y-3 transition-transform border-t-4 border-primary">
+                                {col.icon && <div className="text-5xl mb-6 text-primary">{col.icon}</div>}
+                                <h3 className="text-2xl font-extrabold text-text-main mb-4">{col.title}</h3>
+                                <p className="text-lg text-text-muted leading-relaxed font-medium">{col.text}</p>
                             </motion.div>
                         ))}
                     </div>
@@ -347,12 +360,12 @@
 
             return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col bg-bg-body text-text-main relative">
-                    <motion.h2 variants={titleVars} className="text-5xl font-extrabold mb-12 pb-6 border-b-4 border-primary inline-block self-start">{slide.title}</motion.h2>
-                    <motion.div variants={cardVars} className="glass-card flex-1 p-12 flex flex-col justify-center">
-                        <ul className="list-none pl-4 space-y-8">
+                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-8 pb-4 border-b-4 border-primary inline-block self-start">{slide.title}</motion.h2>
+                    <motion.div variants={cardVars} className="glass-card flex-1 p-10 flex flex-col justify-center">
+                        <ul className="list-none pl-2 space-y-6">
                             {safeContent.map((bullet, i) => (
-                                <motion.li variants={bulletVars} key={i} className="text-4xl text-text-main leading-relaxed font-medium flex items-start gap-4">
-                                    <span className="text-primary mt-1.5"><Icon name="ChevronRight" size={28} /></span>
+                                <motion.li variants={bulletVars} key={i} className="text-2xl text-text-main leading-relaxed font-medium flex items-start gap-4">
+                                    <span className="text-primary mt-1"><Icon name="ChevronRight" size={24} /></span>
                                     {bullet}
                                 </motion.li>
                             ))}
@@ -632,7 +645,7 @@
                         setPushStatus({ type: 'success', text: `Success! Issue ${res.key} added to Jira.`, url });
                         setTimeout(() => { setGeneratedStory(null); setPrompt(""); setPushStatus(null); }, 8000); 
                     } else { 
-                        setPushStatus({ type: 'error', text: res.message || "Failed to create issue. Check Jira permissions." });
+                        setPushStatus({ type: 'error', text: res.message || "Failed to create issue in Jira." });
                     }
                 } catch(e) { console.error(e); setPushStatus({ type: 'error', text: "Network connection to backend failed." }); }
                 setIsCreatingIssue(false); 
@@ -655,15 +668,15 @@
                     <div className="mt-auto relative z-10">
                         <div className="glass-card border-t-4 border-primary p-8 relative overflow-hidden shadow-2xl">
                              <div className="absolute top-0 right-0 w-80 h-80 bg-primary-dim rounded-full blur-3xl -mr-24 -mt-24 pointer-events-none opacity-40"></div>
-                            <h3 className="text-2xl font-extrabold flex items-center gap-3 mb-6 text-text-main"><Icon name="Sparkles" size={24} className="text-primary"/> Auto-Generate User Story</h3>
+                            <h3 className="text-2xl font-extrabold flex items-center gap-3 mb-6 text-text-main"><Icon name="Sparkles" size={24} className="text-primary"/> Auto-Generate User Story (with Vision)</h3>
                             
                             <div className="flex flex-col gap-4">
-                                <textarea value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Describe the feature, or upload a screenshot..." className="w-full bg-bg-body border border-border rounded-xl px-5 py-4 text-base font-medium text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary-dim transition-all resize-none h-32 shadow-inner" ></textarea>
+                                <textarea value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Describe the feature, or paste requirements here..." className="w-full bg-bg-body border border-border rounded-xl px-5 py-4 text-base font-medium text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary-dim transition-all resize-none h-32 shadow-inner" ></textarea>
                                 
                                 <div className="flex gap-4 items-start">
                                     <input type="file" accept="image/*" onChange={handleImageChange} ref={fileInputRef} className="hidden" />
                                     <button onClick={() => fileInputRef.current.click()} className="px-5 py-3 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-text-main hover:border-primary transition flex items-center gap-3 shrink-0">
-                                        <Icon name="Image" size={20}/> {selectedImage ? 'Change Image' : 'Upload Screenshot'}
+                                        <Icon name="Image" size={20}/> {selectedImage ? 'Change Image' : 'Upload Screenshot / Diagram'}
                                     </button>
                                     
                                     {imagePreview && (
