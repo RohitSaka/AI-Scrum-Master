@@ -865,7 +865,7 @@
             ); 
         }
 
-        // ================= RETRO BOARD (WITH MAGIC GUEST LINK) =================
+// ================= RETRO BOARD (WITH MAGIC GUEST LINK & DELETE CAPABILITY) =================
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
             const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
             const [toast, setToast] = useState(null);
@@ -876,7 +876,15 @@
             useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
 
             const save = (b) => { setBoard(b); secureFetch(`/retro/update`, {method:'POST', body:JSON.stringify({project, sprint:activeSprint, board:b})}); };
+            
             const add = () => { if(!input.trim()) return; const n = board[col] ? [...board[col]] : []; n.push({id:Date.now(), text:input}); save({...board, [col]: n}); setInput(""); };
+            
+            // ✨ NEW: Clear/Delete Method ✨
+            const remove = (columnName, itemId) => {
+                const updatedCol = board[columnName].filter(item => item.id !== itemId);
+                save({...board, [columnName]: updatedCol});
+            };
+
             const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions: [...(board.actions||[]), ...d.actions]}); setLoadingAI(false); }); };
             
             const generateInviteLink = async () => {
@@ -917,10 +925,52 @@
                         )}
                     </AnimatePresence>
 
-                    <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-lg"><div className="flex bg-bg-body rounded-xl p-1.5 border border-border">{['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={()=>setCol(c)} className={`px-6 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}</div><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" /><button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button></div>
+                    <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-lg">
+                        <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">{['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={()=>setCol(c)} className={`px-6 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}</div>
+                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" />
+                        <button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button>
+                    </div>
+                    
                     <div className="grid grid-cols-4 gap-8 flex-1 pb-6">
-                        {['well', 'improve', 'kudos'].map(c => (<div key={c} className="retro-col shadow-xl"><div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c==='well'?'CheckCircle':c==='improve'?'TrendingDown':'Star'} size={18}/></div><div className="retro-col-body bg-bg-body/50">{board[c]?.map(i => (<div key={i.id} className="retro-card font-medium">{i.text}</div>))}</div></div>))}
-                        <div className="retro-col border-primary/30 shadow-xl" style={{background: 'var(--primary-dim)'}}><div className="retro-col-header bg-primary/10 text-primary"><span>Action Plan</span><button onClick={genActions} disabled={loadingAI} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider hover:shadow-md transition-all flex items-center gap-2">{loadingAI?<span className="loader w-3 h-3 border-2"></span>:<Icon name="Sparkles" size={14}/>} Gen AI</button></div><div className="retro-col-body bg-primary/5">{board.actions?.map(i => (<div key={i.id} className="retro-card border-primary/20 font-bold flex items-start gap-3"><Icon name="CheckCircle" size={18} className="text-primary shrink-0 mt-0.5"/>{i.text}</div>))}</div></div>
+                        {/* Standard Columns */}
+                        {['well', 'improve', 'kudos'].map(c => (
+                            <div key={c} className="retro-col shadow-xl">
+                                <div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c==='well'?'CheckCircle':c==='improve'?'TrendingDown':'Star'} size={18}/></div>
+                                <div className="retro-col-body bg-bg-body/50">
+                                    {board[c]?.map(i => (
+                                        <div key={i.id} className="retro-card font-medium relative group">
+                                            <span className="pr-6 block">{i.text}</span>
+                                            {/* Hover Delete Button */}
+                                            <button onClick={() => remove(c, i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
+                                                <Icon name="Trash" size={14}/>
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+
+                        {/* Action Plan Column */}
+                        <div className="retro-col border-primary/30 shadow-xl" style={{background: 'var(--primary-dim)'}}>
+                            <div className="retro-col-header bg-primary/10 text-primary">
+                                <span>Action Plan</span>
+                                <button onClick={genActions} disabled={loadingAI} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider hover:shadow-md transition-all flex items-center gap-2">
+                                    {loadingAI ? <span className="loader w-3 h-3 border-2"></span> : <Icon name="Sparkles" size={14}/>} Gen AI
+                                </button>
+                            </div>
+                            <div className="retro-col-body bg-primary/5">
+                                {board.actions?.map(i => (
+                                    <div key={i.id} className="retro-card border-primary/20 font-bold flex items-start gap-3 relative group">
+                                        <Icon name="CheckCircle" size={18} className="text-primary shrink-0 mt-0.5"/>
+                                        <span className="pr-6">{i.text}</span>
+                                        {/* Hover Delete Button */}
+                                        <button onClick={() => remove('actions', i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
+                                            <Icon name="Trash" size={14}/>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 </div>
             );
