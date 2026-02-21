@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V40 - MID-SPRINT CHANGELOG DETECTION")
+print("🚀 APP STARTING: V41 - GLOBAL SEARCH API STABILIZATION")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -165,7 +165,7 @@ def get_assignable_users(project_key, creds):
 def build_team_roster(project_key, creds, sp_field):
     assignable_map = get_assignable_users(project_key, creds)
     roster = {name: 0.0 for name in assignable_map.keys()}
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["assignee", sp_field]})
+    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["assignee", sp_field]})
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []):
             f = i.get('fields') or {}
@@ -392,7 +392,7 @@ def list_projects(creds: dict = Depends(get_jira_creds)):
 
 @app.get("/sprints/{project_key}")
 def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
+    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
     try:
         sprints = {}
         for i in res.json().get('issues', []):
@@ -400,13 +400,12 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
-# ✨ FIXED: Mid-Sprint Addition Detection Engine
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
     
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["*all"], "expand": ["changelog"]})
+    res = jira_request("POST", "search", creds, {"jql": jql, "fields": ["*all"], "expand": ["changelog"]})
     issues = res.json().get('issues', []) if res is not None else []
 
     stats = {"total": len(issues), "points": 0.0, "blockers": 0, "bugs": 0, "stories": 0, "assignees": {}}
@@ -424,7 +423,6 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         priority_name = priority.get('name') or "Medium"
         status_name = status.get('name') or "To Do"
         
-        # ✨ FIXED: Crash-proof Mid-Sprint Addition Logic ✨
         added_mid_sprint = False
         try:
             sprint_start = None
@@ -475,7 +473,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
 def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["*all"]})
+    res = jira_request("POST", "search", creds, {"jql": jql, "maxResults": 30, "fields": ["*all"]})
     issues = res.json().get('issues', []) if res is not None else []
     
     done_pts = 0.0; total_pts = 0.0; active_users = set(); blockers = []; done_summaries = []
@@ -493,7 +491,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
             
     retro_res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res is not None and retro_res.status_code==200 else {}
-    backlog_res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
+    backlog_res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
     backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res is not None else ["Backlog Refinement", "Planning"]
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
@@ -510,7 +508,7 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
+    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
     issues = res.json().get('issues', []) if res is not None else []
     
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
@@ -543,7 +541,7 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
 @app.get("/roadmap/{project_key}")
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
+    res = jira_request("POST", "search", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
     context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res is not None]
     prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
     try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
@@ -555,7 +553,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
     project_key = payload.get('project')
     roster, assignable_map = build_team_roster(project_key, creds, sp_field)
     
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
+    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
     board_context = []
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []):
@@ -573,7 +571,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
 @app.post("/timeline/generate_epic")
 async def generate_epic(payload: dict, creds: dict = Depends(get_jira_creds)):
     project_key = payload.get('project')
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key}", "maxResults": 10, "fields": ["summary"]})
+    res = jira_request("POST", "search", creds, {"jql": f"project={project_key}", "maxResults": 10, "fields": ["summary"]})
     board_context = []
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []): board_context.append((i.get('fields') or {}).get('summary', ''))
@@ -652,18 +650,15 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
+    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
     done_count = 0; done_pts = 0.0; context_data = []
-    
     for i in res.json().get('issues', []) if res is not None else []:
         f = i.get('fields') or {}
         pts = extract_story_points(f, sp_field)
-        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': 
-            done_count += 1; done_pts += pts
+        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': done_count += 1; done_pts += pts
         status_name = (f.get('status') or {}).get('name') or "Unknown"
         assignee = (f.get('assignee') or {}).get('displayName') or "Unassigned"
         context_data.append({"key": i.get('key'), "summary": f.get('summary', ''), "status": status_name, "assignee": assignee, "points": pts})
-        
     try: ai_dossier = json.loads(generate_ai_response(f"Elite Agile Analyst. DATA: {json.dumps(context_data)}. Return JSON: {{\"ai_verdict\": \"...\", \"sprint_vibe\": \"...\", \"key_accomplishments\": [{{\"title\": \"...\", \"impact\": \"...\"}}], \"hidden_friction\": \"...\", \"top_contributor\": \"Name - Reason\"}}", temperature=0.4).replace('```json','').replace('```','').strip())
     except: ai_dossier = {"ai_verdict": "Error", "sprint_vibe": "Error", "key_accomplishments": [], "hidden_friction": "", "top_contributor": ""}
     return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(context_data), "dossier": ai_dossier}
@@ -686,11 +681,9 @@ def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
 def retro_chat(payload: dict):
     board = payload.get('board', {})
     question = payload.get('question', '')
-    
     well = [item.get('text') for item in board.get('well', [])]
     improve = [item.get('text') for item in board.get('improve', [])]
     kudos = [item.get('text') for item in board.get('kudos', [])]
-    
     prompt = f"You are an Expert Agile Coach assisting a Scrum Master. Board data: WENT WELL: {well} | NEEDS IMPROVEMENT: {improve} | KUDOS: {kudos}. Question: '{question}'. Provide a concise, highly actionable response using ONLY the provided data. Use markdown formatting. Do not output JSON."
     try: return {"reply": generate_ai_response(prompt, temperature=0.5, force_openai=True, json_mode=False)}
     except Exception as e: print(f"❌ Retro Chat Error: {e}", flush=True); return {"reply": "I encountered an error connecting to the AI network."}
@@ -701,7 +694,6 @@ def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db
     sprint_id = payload.get("sprint")
     license_key = payload.get("license_key")
     if not license_key: raise HTTPException(status_code=400, detail="Missing license key")
-        
     token = str(uuid.uuid4())
     db.add(GuestLink(token=token, project_key=project_key, sprint_id=str(sprint_id), license_key=license_key))
     db.commit()
@@ -711,10 +703,8 @@ def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db
 def get_guest_retro(token: str, db: Session = Depends(get_db)):
     link = db.query(GuestLink).filter(GuestLink.token == token).first()
     if not link: raise HTTPException(status_code=404, detail="Invalid or expired link")
-    
     user = get_valid_oauth_session(db=db, license_key=link.license_key)
     if not user: raise HTTPException(status_code=401, detail="Host session expired. Please ask the Scrum Master to generate a new link.")
-    
     creds = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
     res = jira_request("GET", f"project/{link.project_key}/properties/ig_agile_retro", creds)
     db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
@@ -725,84 +715,56 @@ def get_guest_retro(token: str, db: Session = Depends(get_db)):
 def add_guest_retro(token: str, payload: dict, db: Session = Depends(get_db)):
     link = db.query(GuestLink).filter(GuestLink.token == token).first()
     if not link: raise HTTPException(status_code=404, detail="Invalid link")
-    
     user = get_valid_oauth_session(db=db, license_key=link.license_key)
     if not user: raise HTTPException(status_code=401, detail="Host session expired")
-    
     creds = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
-    
     res = jira_request("GET", f"project/{link.project_key}/properties/ig_agile_retro", creds)
     db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
     if link.sprint_id not in db_data:
         db_data[link.sprint_id] = {"well": [], "improve": [], "kudos": [], "actions": []}
-        
     col = payload.get("column")
     text = payload.get("text")
     if col in ['well', 'improve', 'kudos'] and text:
         db_data[link.sprint_id][col].append({"id": int(time.time()*1000), "text": text})
         jira_request("PUT", f"project/{link.project_key}/properties/ig_agile_retro", creds, db_data)
-        
     return {"status": "success", "board": db_data[link.sprint_id]}
 
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:
         print(f"🤖 [1/6] Silent Agent started for: {issue_key}", flush=True)
         time.sleep(3) 
-        
         sp_field = get_story_point_field(creds_dict)
         print(f"🤖 [2/6] Fetching robust Omni-Roster...", flush=True)
         roster, assignable_map = build_team_roster(project_key, creds_dict, sp_field)
 
-        prompt = f"""
-        You are an Autonomous Scrum Master.
-        A user created this Jira ticket: Summary: {summary} | Description: {desc_text}
-        Valid Team Roster (You MUST pick the EXACT NAME from these keys): {json.dumps(roster)}
-        
-        Tasks:
-        1. Assign Story Points (1, 2, 3, 5, 8).
-        2. Choose the best assignee from the Workload list.
-        3. If the Description is very short or empty, write a proper technical description.
-        
-        Return STRICT JSON OBJECT ONLY: {{"points": 3, "assignee": "Exact Name", "generated_description": "Full description", "reasoning": "Explanation"}}
-        """
-        
-        print(f"🤖 [3/6] Querying AI Model...", flush=True)
+        prompt = f"You are an Autonomous Scrum Master. Ticket: Summary: {summary} | Description: {desc_text}. Roster (MUST pick EXACT NAME from keys): {json.dumps(roster)}. Tasks: 1. Assign Points. 2. Choose Assignee. 3. If Description is short, rewrite it. Return STRICT JSON OBJECT ONLY: {{\"points\": 3, \"assignee\": \"Exact Name\", \"generated_description\": \"Full description\", \"reasoning\": \"Explanation\"}}"
+        print(f"🤖 [3/6] Querying AI...", flush=True)
         raw = generate_ai_response(prompt, temperature=0.4, force_openai=True) 
         if not raw: return
-            
         est = json.loads(raw.replace('```json','').replace('```','').strip())
+        
         target_assignee = est.get('assignee', '')
         assignee_id = assignable_map.get(target_assignee)
         
         update_fields_basic = {}
         if assignee_id: update_fields_basic["assignee"] = {"accountId": assignee_id}
-            
         gen_desc = est.get("generated_description", "")
-        if gen_desc and len(desc_text.strip()) < 20:
-            update_fields_basic["description"] = create_adf_doc("🤖 AI Generated Description:\n\n" + gen_desc)
+        if gen_desc and len(desc_text.strip()) < 20: update_fields_basic["description"] = create_adf_doc("🤖 AI Generated Description:\n\n" + gen_desc)
             
         if update_fields_basic:
             print(f"🤖 [5a/6] Updating Description & Assignee...", flush=True)
-            res1 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
-            if res1 is not None and res1.status_code in [200, 204]: print(f"✅ Description/Assignee Updated", flush=True)
-            else: print(f"⚠️ Webhook Basic Update Failed: {res1.status_code if res1 is not None else 'Network Error'}", flush=True)
+            jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
             
         points = safe_float(est.get('points', 0))
         if points > 0:
             print(f"🤖 [5b/6] Updating Story Points ({points})...", flush=True)
-            res2 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
-            if res2 is not None and res2.status_code in [200, 204]: print(f"✅ Story Points Updated", flush=True)
-            else: print(f"⚠️ Webhook Points Update Blocked by Jira Screen: {res2.status_code if res2 is not None else 'Network Error'}", flush=True)
+            jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
             
         print(f"🤖 [6/6] Posting Insight Comment to Jira...", flush=True)
         comment_text = f"🚀 *IG Agile Auto-Triage Complete*\n• *Estimated Points:* {points}\n• *Suggested Assignee:* {target_assignee}\n• *Reasoning:* {est.get('reasoning', '')}\n"
-
-        if gen_desc and len(desc_text.strip()) < 20:
-            comment_text += f"\n\n📝 *Generated Description:*\n{gen_desc}"
-
+        if gen_desc and len(desc_text.strip()) < 20: comment_text += f"\n\n📝 *Generated Description:*\n{gen_desc}"
         jira_request("POST", f"issue/{issue_key}/comment", creds_dict, {"body": create_adf_doc(comment_text)})
         print(f"✅ Webhook Process Complete for {issue_key}", flush=True)
-        
     except Exception as e: print(f"❌ FATAL Webhook Exception for {issue_key}: {e}", flush=True)
 
 @app.post("/webhook")
@@ -821,19 +783,17 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
         summary = fields.get("summary", "")
         project_key = (fields.get("project") or {}).get("key", "")
         
-        if "IG Agile AI Insights" in desc or "AI Generated Description" in desc:
+        if "IG Agile AI Insights" in desc or "AI Generated Description" in desc or "AI Generated Story" in desc:
+            print(f"⏭️ Skipping Webhook for {key}: Issue was created actively by the UI.", flush=True)
             return {"status": "ignored"}
 
         print(f"\n🔔 WEBHOOK FIRED: New Issue {key} detected in project {project_key}.", flush=True)
-        
         creds_dict = None
-        if domain and email and token: 
-            creds_dict = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
+        if domain and email and token: creds_dict = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
         else:
             db = SessionLocal()
             if cloud_id: user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first()
             else: user = db.query(UserAuth).order_by(UserAuth.expires_at.desc()).first()
-                
             if user: 
                 fresh_user = get_valid_oauth_session(db=db, license_key=user.license_key)
                 if fresh_user: creds_dict = {"auth_type": "oauth", "cloud_id": fresh_user.cloud_id, "access_token": fresh_user.access_token}
