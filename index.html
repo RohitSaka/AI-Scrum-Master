@@ -16,6 +16,7 @@
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
         :root { --transition-speed: 0.3s; }
@@ -49,6 +50,22 @@
         .roadmap-cell { border-right: 1px solid var(--border); opacity: 0.2; }
         .roadmap-item { position: absolute; border-radius: 6px; padding: 8px 12px; font-size: 11px; font-weight: 600; color: white; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; z-index: 10; transition: transform 0.2s, z-index 0s; }
         .roadmap-item:hover { z-index: 20; transform: translateY(-2px) scale(1.01); }
+        /* ===== APPLE DECK STYLES ===== */
+        .apple-deck-wrapper { font-family: 'Sora', 'DM Sans', -apple-system, sans-serif; }
+        .apple-slide-root { font-family: 'Sora', 'DM Sans', -apple-system, sans-serif; }
+        .apple-nav-btn { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); backdrop-filter: blur(8px); transition: all 0.25s cubic-bezier(0.4,0,0.2,1); }
+        .apple-nav-btn:hover:not(:disabled) { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.18); transform: scale(1.08); }
+        .apple-thumb-btn { transition: all 0.2s; }
+        .apple-thumb-btn:hover { background: rgba(0,113,227,0.1) !important; border-color: rgba(0,113,227,0.35) !important; }
+        .apple-dot { transition: all 0.35s cubic-bezier(0.4,0,0.2,1); }
+        .apple-export-btn { transition: all 0.2s; }
+        .apple-export-btn:hover:not(:disabled) { filter: brightness(1.15); transform: scale(1.03); }
+        .apple-ghost-icon-btn { transition: all 0.2s; }
+        .apple-ghost-icon-btn:hover { background: rgba(255,255,255,0.09) !important; border-color: rgba(255,255,255,0.16) !important; }
+        @keyframes orbFloat { 0%,100%{transform:translateY(0px) scale(1);} 50%{transform:translateY(-20px) scale(1.03);} }
+        @keyframes grainDrift { 0%{transform:translate(0,0);} 100%{transform:translate(-5%,-5%);} }
+        .apple-orb { animation: orbFloat 8s ease-in-out infinite; }
+        .apple-orb-delay { animation: orbFloat 11s ease-in-out infinite 2s; }
         @media print { 
             html, body, #root, div { height: auto !important; overflow: visible !important; position: static !important; }
             body * { visibility: hidden; } 
@@ -626,84 +643,254 @@
 
         function RenderSlide({ slide }) {
             const layout = slide.layout || 'standard';
-            const containerVars = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.15, delayChildren: 0.1 } } };
-            const titleVars = { hidden: { opacity: 0, y: -20, scale: 0.95 }, visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", bounce: 0.4 } } };
-            const cardVars = { hidden: { opacity: 0, y: 40, rotateX: -10 }, visible: { opacity: 1, y: 0, rotateX: 0, transition: { type: "spring", bounce: 0.5, duration: 0.8 } } };
-            const flowVars = { hidden: { opacity: 0, x: -40, scale: 0.9 }, visible: { opacity: 1, x: 0, scale: 1, transition: { type: "spring", bounce: 0.5 } } };
-            const bulletVars = { hidden: { opacity: 0, x: -20 }, visible: { opacity: 1, x: 0, transition: { type: "spring", bounce: 0.3 } } };
-
             const safeItems = Array.isArray(slide.items) ? slide.items : (slide.items ? [{ title: slide.items, label: "Item", value: slide.items, text: slide.items }] : []);
             const safeContent = Array.isArray(slide.content) ? slide.content : (slide.content ? [slide.content] : []);
 
+            // Apple color tokens
+            const C = {
+                bg: '#000000', white: '#F5F5F7',
+                muted: 'rgba(245,245,247,0.52)', dim: 'rgba(245,245,247,0.28)',
+                blue: '#0071E3', blueGlow: 'rgba(0,113,227,0.35)',
+                purple: '#6E40C9', teal: '#00C7FF',
+                surface: 'rgba(255,255,255,0.035)',
+                border: 'rgba(255,255,255,0.072)',
+                borderBlue: 'rgba(0,113,227,0.45)',
+                gradText: 'linear-gradient(180deg, #FFFFFF 0%, rgba(255,255,255,0.68) 100%)',
+                gradBlue: 'linear-gradient(135deg, #0071E3 0%, #00C7FF 100%)',
+                gradLine: 'linear-gradient(90deg, transparent, rgba(0,113,227,0.7), transparent)',
+            };
+
+            const base = { width:'100%', height:'100%', background:C.bg, position:'relative', overflow:'hidden', fontFamily:"'Sora','DM Sans',-apple-system,sans-serif" };
+
+            const anim = { container: { hidden:{opacity:0}, visible:{opacity:1,transition:{staggerChildren:0.11,delayChildren:0.06}} },
+                title: { hidden:{opacity:0,y:28,filter:'blur(8px)'}, visible:{opacity:1,y:0,filter:'blur(0px)',transition:{duration:0.72,ease:[0.16,1,0.3,1]}} },
+                card:  { hidden:{opacity:0,y:36,filter:'blur(4px)'}, visible:{opacity:1,y:0,filter:'blur(0px)',transition:{duration:0.65,ease:[0.16,1,0.3,1]}} },
+                bullet:{ hidden:{opacity:0,x:-18}, visible:{opacity:1,x:0,transition:{duration:0.5,ease:[0.16,1,0.3,1]}} } };
+
+            const Orb = ({ color, size, x, y, opacity=0.13, delay=0 }) => (
+                <div className={delay ? 'apple-orb-delay' : 'apple-orb'} style={{ position:'absolute', width:size, height:size, borderRadius:'50%', background:color, left:x, top:y, filter:`blur(${Math.round(parseInt(size)*0.55)}px)`, opacity, pointerEvents:'none' }} />
+            );
+
+            const SectionLabel = ({ text }) => (
+                <motion.div variants={anim.title} style={{ fontSize:'11px', fontWeight:700, letterSpacing:'0.15em', textTransform:'uppercase', color:C.blue, marginBottom:'14px', display:'flex', alignItems:'center', gap:'10px' }}>
+                    <div style={{ width:'22px', height:'1px', background:C.blue, flexShrink:0 }} />{text}
+                </motion.div>
+            );
+
+            // ——— HERO ———
             if (layout === 'hero') return (
-                <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center items-center text-center bg-bg-body text-text-main relative overflow-hidden">
-                    <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 0.6 }} transition={{ duration: 2, ease: "easeOut" }} className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary-dim rounded-full blur-3xl -mr-32 -mt-32"></motion.div>
-                    {slide.icon && <motion.div variants={titleVars} className="text-6xl mb-8 text-primary">{slide.icon}</motion.div>}
-                    <motion.h1 variants={titleVars} className="text-5xl font-black mb-6 tracking-tight leading-tight">{slide.title}</motion.h1>
-                    <motion.p variants={titleVars} className="text-2xl text-primary font-medium">{slide.subtitle}</motion.p>
+                <motion.div style={base} initial="hidden" animate="visible" variants={anim.container}>
+                    <Orb color={C.blue} size="700px" x="-220px" y="-280px" opacity={0.11} />
+                    <Orb color={C.purple} size="550px" x="900px" y="250px" opacity={0.09} delay={1} />
+                    <Orb color={C.teal} size="350px" x="550px" y="-120px" opacity={0.07} />
+                    {/* Subtle grid lines */}
+                    <div style={{ position:'absolute', inset:0, backgroundImage:'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)', backgroundSize:'80px 80px', pointerEvents:'none' }} />
+                    {/* Center glow disc */}
+                    <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:'600px', height:'300px', background:'radial-gradient(ellipse at center, rgba(0,113,227,0.07) 0%, transparent 70%)', pointerEvents:'none' }} />
+
+                    <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'80px 120px' }}>
+                        {slide.icon && (
+                            <motion.div variants={anim.title} style={{ fontSize:'72px', marginBottom:'36px', lineHeight:1, filter:'drop-shadow(0 0 24px rgba(0,113,227,0.4))' }}>{slide.icon}</motion.div>
+                        )}
+                        <motion.h1 variants={anim.title} style={{
+                            fontSize: slide.title && slide.title.length > 35 ? '62px' : '84px',
+                            fontWeight:800, letterSpacing:'-0.035em', lineHeight:1.0, textAlign:'center', maxWidth:'960px',
+                            background: C.gradText, WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text', marginBottom:'32px'
+                        }}>{slide.title}</motion.h1>
+
+                        {/* Gradient rule */}
+                        <motion.div variants={anim.title} style={{ width:'64px', height:'1px', background:C.gradLine, marginBottom:'32px' }} />
+
+                        {slide.subtitle && (
+                            <motion.p variants={anim.title} style={{ fontSize:'22px', fontWeight:400, color:C.muted, letterSpacing:'0.01em', textAlign:'center', maxWidth:'640px', lineHeight:1.5 }}>{slide.subtitle}</motion.p>
+                        )}
+                    </div>
+                    {/* Bottom hairline */}
+                    <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'1px', background:C.gradLine }} />
                 </motion.div>
             );
 
-            if (layout === 'kpi_grid') return (
-                <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative perspective-1000">
-                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-12">{slide.title}</motion.h2>
-                    <div className="grid grid-cols-4 gap-6">
-                        {safeItems.map((kpi, i) => (
-                            <motion.div variants={cardVars} key={i} className="glass-card p-8 flex flex-col items-center justify-center text-center hover:scale-105 transition-transform origin-bottom border-t-4 border-primary">
-                                {kpi.icon && <div className="text-4xl mb-4 text-primary">{kpi.icon}</div>}
-                                <div className="text-5xl font-black text-text-main mb-2">{kpi.value}</div>
-                                <div className="text-sm text-text-muted font-bold uppercase tracking-wider">{kpi.label}</div>
+            // ——— KPI GRID ———
+            if (layout === 'kpi_grid') {
+                const cols = Math.min(safeItems.length, 4);
+                return (
+                    <motion.div style={base} initial="hidden" animate="visible" variants={anim.container}>
+                        <Orb color={C.blue} size="600px" x="-180px" y="-240px" opacity={0.09} />
+                        <Orb color={C.purple} size="450px" x="1050px" y="350px" opacity={0.08} delay={1} />
+
+                        <div style={{ position:'absolute', inset:0, padding:'56px 80px', display:'flex', flexDirection:'column' }}>
+                            <SectionLabel text={slide.title} />
+                            <motion.div variants={anim.title} style={{ fontSize:'52px', fontWeight:800, letterSpacing:'-0.035em', color:C.white, marginBottom:'44px', lineHeight:1.05 }}>
+                                Sprint Metrics
                             </motion.div>
-                        ))}
-                    </div>
-                </motion.div>
-            );
 
-            if (layout === 'flowchart') return (
-                <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative">
-                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-16">{slide.title}</motion.h2>
-                    <div className="flex gap-6 items-center justify-between w-full">
-                        {safeItems.map((step, i) => (
-                            <React.Fragment key={i}>
-                                <motion.div variants={flowVars} className="flex-1 glass-card p-8 text-center relative hover:-translate-y-3 transition-transform border-b-4 border-primary">
-                                    <div className="text-lg font-black text-primary mb-2 uppercase tracking-widest">Step {i + 1}</div>
-                                    <div className="text-xl font-bold text-text-main">{step.title}</div>
-                                </motion.div>
-                                {i < (safeItems.length - 1) && <motion.div variants={flowVars}><Icon name="ChevronRight" size={40} className="text-border shrink-0" /></motion.div>}
-                            </React.Fragment>
-                        ))}
-                    </div>
-                </motion.div>
-            );
+                            <div style={{ display:'grid', gridTemplateColumns:`repeat(${cols},1fr)`, gap:'18px', flex:1 }}>
+                                {safeItems.map((kpi, i) => (
+                                    <motion.div key={i} variants={anim.card} style={{
+                                        background: C.surface, border:`1px solid ${C.border}`, borderRadius:'20px',
+                                        padding:'36px 28px', display:'flex', flexDirection:'column', justifyContent:'space-between',
+                                        position:'relative', overflow:'hidden',
+                                        boxShadow:'inset 0 1px 0 rgba(255,255,255,0.07)'
+                                    }}>
+                                        {/* Top shimmer line */}
+                                        <div style={{ position:'absolute', top:0, left:'15%', right:'15%', height:'1px', background:'linear-gradient(90deg, transparent, rgba(0,113,227,0.7), transparent)' }} />
+                                        {/* Corner glow */}
+                                        <div style={{ position:'absolute', top:'-30px', right:'-30px', width:'100px', height:'100px', background:C.blue, borderRadius:'50%', opacity:0.06, filter:'blur(30px)', pointerEvents:'none' }} />
 
-            if (layout === 'icon_columns') return (
-                <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative perspective-1000">
-                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-10">{slide.title}</motion.h2>
-                    <div className="grid grid-cols-3 gap-8">
-                        {safeItems.map((col, i) => (
-                            <motion.div variants={cardVars} key={i} className="glass-card p-8 hover:-translate-y-3 transition-transform border-t-4 border-primary">
-                                {col.icon && <div className="text-5xl mb-4 text-primary">{col.icon}</div>}
-                                <h3 className="text-2xl font-extrabold text-text-main mb-3">{col.title}</h3>
-                                <p className="text-base text-text-muted leading-relaxed font-medium">{col.text}</p>
-                            </motion.div>
-                        ))}
-                    </div>
-                </motion.div>
-            );
-
-            return (
-                <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col bg-bg-body text-text-main relative">
-                    <motion.h2 variants={titleVars} className="text-3xl font-extrabold mb-8 pb-4 border-b-4 border-primary inline-block self-start">{slide.title}</motion.h2>
-                    <motion.div variants={cardVars} className="glass-card flex-1 p-10 flex flex-col justify-center">
-                        <ul className="list-none pl-2 space-y-5">
-                            {safeContent.map((bullet, i) => (
-                                <motion.li variants={bulletVars} key={i} className="text-xl text-text-main leading-relaxed font-medium flex items-start gap-4">
-                                    <span className="text-primary mt-1"><Icon name="ChevronRight" size={20} /></span>
-                                    {bullet}
-                                </motion.li>
-                            ))}
-                        </ul>
+                                        {kpi.icon && <div style={{ fontSize:'36px', lineHeight:1, marginBottom:'20px' }}>{kpi.icon}</div>}
+                                        <div>
+                                            <div style={{
+                                                fontSize: kpi.value && String(kpi.value).length > 6 ? '42px' : '58px',
+                                                fontWeight:800, letterSpacing:'-0.045em', lineHeight:1,
+                                                background:'linear-gradient(135deg, #FFFFFF 20%, rgba(0,113,227,0.9) 100%)',
+                                                WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text',
+                                                marginBottom:'14px'
+                                            }}>{kpi.value}</div>
+                                            <div style={{ fontSize:'11px', fontWeight:700, color:C.dim, letterSpacing:'0.1em', textTransform:'uppercase' }}>{kpi.label}</div>
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </div>
                     </motion.div>
+                );
+            }
+
+            // ——— FLOWCHART ———
+            if (layout === 'flowchart') return (
+                <motion.div style={base} initial="hidden" animate="visible" variants={anim.container}>
+                    <Orb color={C.blue} size="500px" x="350px" y="-160px" opacity={0.08} />
+                    <Orb color={C.purple} size="350px" x="900px" y="350px" opacity={0.07} delay={1} />
+
+                    <div style={{ position:'absolute', inset:0, padding:'56px 80px', display:'flex', flexDirection:'column' }}>
+                        <SectionLabel text="Roadmap" />
+                        <motion.div variants={anim.title} style={{ fontSize:'52px', fontWeight:800, letterSpacing:'-0.035em', color:C.white, marginBottom:'52px', lineHeight:1.05 }}>
+                            {slide.title}
+                        </motion.div>
+
+                        <div style={{ display:'flex', alignItems:'flex-start', flex:1 }}>
+                            {safeItems.map((step, i) => (
+                                <React.Fragment key={i}>
+                                    <motion.div variants={anim.card} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:'18px' }}>
+                                        {/* Step number bubble */}
+                                        <div style={{
+                                            width:'52px', height:'52px', borderRadius:'50%', flexShrink:0,
+                                            background: i === 0 ? C.gradBlue : C.surface,
+                                            border: i === 0 ? 'none' : `1px solid ${C.border}`,
+                                            display:'flex', alignItems:'center', justifyContent:'center',
+                                            fontSize:'20px', fontWeight:800,
+                                            color: i === 0 ? 'white' : C.muted,
+                                            boxShadow: i === 0 ? `0 0 24px rgba(0,113,227,0.5)` : 'none'
+                                        }}>{i + 1}</div>
+                                        {/* Step card */}
+                                        <div style={{
+                                            background: i === 0 ? 'rgba(0,113,227,0.08)' : C.surface,
+                                            border: `1px solid ${i === 0 ? C.borderBlue : C.border}`,
+                                            borderRadius:'14px', padding:'22px 18px', textAlign:'center', width:'100%',
+                                            boxShadow: i === 0 ? `0 0 20px rgba(0,113,227,0.12)` : 'none'
+                                        }}>
+                                            <div style={{ fontSize:'15px', fontWeight:700, color: i === 0 ? C.white : C.muted, lineHeight:1.35 }}>{step.title}</div>
+                                        </div>
+                                    </motion.div>
+                                    {i < safeItems.length - 1 && (
+                                        <motion.div variants={anim.card} style={{ width:'48px', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', paddingBottom:'20px' }}>
+                                            <div style={{ width:'100%', height:'1px', background:'linear-gradient(90deg, rgba(0,113,227,0.5), rgba(0,199,255,0.5))' }} />
+                                        </motion.div>
+                                    )}
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    </div>
+                    <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'1px', background:C.gradLine }} />
+                </motion.div>
+            );
+
+            // ——— ICON COLUMNS ———
+            if (layout === 'icon_columns') {
+                const cols = Math.min(safeItems.length, 3);
+                return (
+                    <motion.div style={base} initial="hidden" animate="visible" variants={anim.container}>
+                        <Orb color={C.blue} size="500px" x="-120px" y="150px" opacity={0.08} />
+                        <Orb color={C.purple} size="420px" x="1020px" y="-80px" opacity={0.08} delay={1} />
+                        <Orb color={C.teal} size="300px" x="560px" y="400px" opacity={0.06} />
+
+                        <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', padding:'56px 80px' }}>
+                            <SectionLabel text="Highlights" />
+                            <motion.div variants={anim.title} style={{ fontSize:'52px', fontWeight:800, letterSpacing:'-0.035em', color:C.white, marginBottom:'0', lineHeight:1.05 }}>
+                                {slide.title}
+                            </motion.div>
+
+                            {/* Column grid with hairline dividers */}
+                            <div style={{ display:'grid', gridTemplateColumns:`repeat(${cols},1fr)`, flex:1, marginTop:'36px', borderTop:`1px solid ${C.border}` }}>
+                                {safeItems.map((col, i) => (
+                                    <motion.div key={i} variants={anim.card} style={{
+                                        padding:'40px 36px',
+                                        borderRight: i < safeItems.length - 1 ? `1px solid ${C.border}` : 'none',
+                                        display:'flex', flexDirection:'column', gap:'18px', position:'relative', overflow:'hidden'
+                                    }}>
+                                        {/* Top-left ambient glow per column */}
+                                        <div style={{ position:'absolute', top:'-40px', left:'-20px', width:'150px', height:'150px', background:C.blue, borderRadius:'50%', opacity:0.04, filter:'blur(40px)', pointerEvents:'none' }} />
+
+                                        {col.icon && <div style={{ fontSize:'52px', lineHeight:1 }}>{col.icon}</div>}
+                                        <div style={{ fontSize:'24px', fontWeight:700, color:C.white, lineHeight:1.2, letterSpacing:'-0.02em' }}>{col.title}</div>
+                                        <div style={{ fontSize:'15px', color:C.muted, lineHeight:1.65, fontWeight:400 }}>{col.text}</div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </div>
+                        <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'1px', background:C.gradLine }} />
+                    </motion.div>
+                );
+            }
+
+            // ——— STANDARD (Default) ———
+            return (
+                <motion.div style={base} initial="hidden" animate="visible" variants={anim.container}>
+                    <Orb color={C.blue} size="500px" x="-160px" y="-160px" opacity={0.09} />
+                    <Orb color={C.purple} size="350px" x="1000px" y="400px" opacity={0.07} delay={1} />
+
+                    <div style={{ position:'absolute', inset:0, display:'flex' }}>
+                        {/* LEFT: Title panel */}
+                        <div style={{
+                            width:'360px', flexShrink:0,
+                            padding:'60px 48px 60px 80px',
+                            borderRight:`1px solid ${C.border}`,
+                            display:'flex', flexDirection:'column', justifyContent:'center',
+                            position:'relative', overflow:'hidden'
+                        }}>
+                            {/* Vertical accent bar */}
+                            <div style={{ position:'absolute', top:'60px', left:'0', width:'3px', height:'52px', background:'linear-gradient(180deg, #0071E3, transparent)', borderRadius:'0 2px 2px 0' }} />
+                            {/* Subtle left glow */}
+                            <div style={{ position:'absolute', left:'-80px', top:'50%', transform:'translateY(-50%)', width:'200px', height:'200px', background:C.blue, borderRadius:'50%', opacity:0.06, filter:'blur(50px)', pointerEvents:'none' }} />
+
+                            <SectionLabel text="Overview" />
+                            <motion.div variants={anim.title} style={{ fontSize:'40px', fontWeight:800, letterSpacing:'-0.03em', lineHeight:1.1, color:C.white }}>
+                                {slide.title}
+                            </motion.div>
+                        </div>
+
+                        {/* RIGHT: Bullet content */}
+                        <div style={{ flex:1, padding:'60px 72px', display:'flex', flexDirection:'column', justifyContent:'center' }}>
+                            <div style={{ display:'flex', flexDirection:'column', gap:'22px' }}>
+                                {safeContent.map((bullet, i) => (
+                                    <motion.div key={i} variants={anim.bullet} style={{ display:'flex', alignItems:'flex-start', gap:'18px' }}>
+                                        <div style={{
+                                            width:'7px', height:'7px', borderRadius:'50%', flexShrink:0,
+                                            background:C.blue, marginTop:'9px',
+                                            boxShadow:`0 0 10px ${C.blueGlow}`
+                                        }} />
+                                        <div style={{ fontSize:'20px', color:'rgba(245,245,247,0.84)', lineHeight:1.58, fontWeight:400, letterSpacing:'0.005em' }}>{bullet}</div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Slide label watermark bottom-right */}
+                    <div style={{ position:'absolute', bottom:'22px', right:'32px', fontSize:'10px', color:'rgba(255,255,255,0.12)', fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase' }}>
+                        {slide.title ? slide.title.substring(0, 22) : ''}
+                    </div>
+                    <div style={{ position:'absolute', bottom:0, left:0, right:0, height:'1px', background:C.gradLine }} />
                 </motion.div>
             );
         }
@@ -715,6 +902,7 @@
             const [isExporting, setIsExporting] = useState(false);
             const [scale, setScale] = useState(1);
             const [aiError, setAiError] = useState(null);
+            const [showThumbs, setShowThumbs] = useState(true);
 
             const containerRef = useRef(null);
             const wrapperRef = useRef(null);
@@ -731,36 +919,31 @@
                         }
                         setLoading(false);
                     })
-                    .catch(() => {
-                        setAiError("Network connection to AI failed.");
-                        setLoading(false);
-                    });
+                    .catch(() => { setAiError("Network connection to AI failed."); setLoading(false); });
             }, [endpoint]);
 
             useEffect(() => {
-                const calculateScale = () => {
+                const calc = () => {
                     if (containerRef.current) {
                         const { clientWidth, clientHeight } = containerRef.current;
-                        const padding = 64;
-                        const scaleX = (clientWidth - padding) / 1280;
-                        const scaleY = (clientHeight - padding) / 720;
-                        setScale(Math.min(scaleX, scaleY));
+                        const pad = 48;
+                        setScale(Math.min((clientWidth - pad) / 1280, (clientHeight - pad) / 720));
                     }
                 };
-                const ro = new ResizeObserver(calculateScale);
+                const ro = new ResizeObserver(calc);
                 if (containerRef.current) ro.observe(containerRef.current);
-                window.addEventListener('resize', calculateScale);
-                setTimeout(calculateScale, 100);
-                return () => { ro.disconnect(); window.removeEventListener('resize', calculateScale); };
-            }, [slides]);
+                window.addEventListener('resize', calc);
+                setTimeout(calc, 100);
+                return () => { ro.disconnect(); window.removeEventListener('resize', calc); };
+            }, [slides, showThumbs]);
 
             useEffect(() => {
-                const handleKeyDown = (e) => {
-                    if (e.key === 'ArrowRight' || e.key === ' ') setCurrentIdx(prev => Math.min(slides.length - 1, prev + 1));
-                    else if (e.key === 'ArrowLeft') setCurrentIdx(prev => Math.max(0, prev - 1));
+                const onKey = (e) => {
+                    if (e.key === 'ArrowRight' || e.key === ' ') setCurrentIdx(p => Math.min(slides.length - 1, p + 1));
+                    else if (e.key === 'ArrowLeft') setCurrentIdx(p => Math.max(0, p - 1));
                 };
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
             }, [slides]);
 
             const toggleFullScreen = () => {
@@ -768,6 +951,7 @@
                 else document.exitFullscreen();
             };
 
+            // ✅ PPTX EXPORT — UNCHANGED
             const handleExportPPTX = async () => {
                 setIsExporting(true);
                 try {
@@ -786,46 +970,199 @@
                 setIsExporting(false);
             };
 
-            if (loading) return <LoadingScreen msg="Super Agent orchestrating Premium Presentation..." />;
-            if (aiError) return <div className="p-10 text-danger font-bold bg-danger/10 border border-danger/30 rounded-xl m-8"><Icon name="AlertTriangle" size={24} className="mb-2" /> Error: {aiError}</div>;
-            if (!slides || slides.length === 0) return <div className="p-10 text-text-main font-bold">No slide data returned.</div>;
+            if (loading) return (
+                <div style={{ background:'#000', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:'24px', fontFamily:"'Sora',sans-serif" }}>
+                    <div style={{ width:'48px', height:'48px', border:'2px solid rgba(255,255,255,0.08)', borderTop:'2px solid #0071E3', borderRadius:'50%', animation:'rotation 0.9s linear infinite' }} />
+                    <div style={{ fontSize:'13px', fontWeight:600, color:'rgba(255,255,255,0.35)', letterSpacing:'0.12em', textTransform:'uppercase' }}>AI Orchestrating Deck</div>
+                </div>
+            );
+            if (aiError) return (
+                <div style={{ background:'#000', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'Sora',sans-serif" }}>
+                    <div style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)', borderRadius:'16px', padding:'40px 48px', maxWidth:'480px', textAlign:'center' }}>
+                        <div style={{ fontSize:'32px', marginBottom:'16px' }}>⚠</div>
+                        <div style={{ fontSize:'15px', fontWeight:600, color:'rgba(239,68,68,0.9)', lineHeight:1.5 }}>{aiError}</div>
+                    </div>
+                </div>
+            );
+            if (!slides || slides.length === 0) return <div style={{ color:'white', padding:'40px', fontFamily:"'Sora',sans-serif" }}>No slide data returned.</div>;
+
+            // ——— APPLE-LEVEL CHROME ———
+            const wrapStyle = isFullScreenLayout
+                ? { height:'100%', display:'flex', flexDirection:'column', background:'#000', fontFamily:"'Sora','DM Sans',sans-serif" }
+                : { height:'700px', display:'flex', flexDirection:'column', background:'#000', borderRadius:'20px', overflow:'hidden', marginBottom:'2rem', border:'1px solid rgba(255,255,255,0.06)', boxShadow:'0 0 0 1px rgba(255,255,255,0.04), 0 48px 120px rgba(0,0,0,0.8)', fontFamily:"'Sora','DM Sans',sans-serif" };
 
             return (
-                <div ref={wrapperRef} className={`flex flex-col relative overflow-hidden animate-fade-in ${isFullScreenLayout ? 'h-full bg-bg-body' : 'h-[650px] rounded-2xl border border-border shadow-2xl mb-8 bg-bg-body'}`}>
-                    <div className="h-20 shrink-0 flex items-center justify-between px-8 border-b border-border bg-bg-card z-40">
-                        <div className="flex items-center gap-4">
-                            <div className="px-4 py-1.5 bg-primary-dim text-primary rounded-full text-xs font-black border border-primary-dim flex items-center gap-2 uppercase tracking-wider"><Icon name="Sparkles" size={14} /> AI Generated Deck</div>
-                            <span className="text-text-muted text-sm font-bold">Slide {currentIdx + 1} of {slides.length}</span>
+                <div ref={wrapperRef} className="apple-deck-wrapper" style={wrapStyle}>
+                    {/* ── TOP BAR ── */}
+                    <div style={{
+                        height:'56px', flexShrink:0, zIndex:50,
+                        background:'rgba(8,8,8,0.92)', backdropFilter:'blur(24px) saturate(180%)',
+                        borderBottom:'1px solid rgba(255,255,255,0.06)',
+                        display:'flex', alignItems:'center', justifyContent:'space-between',
+                        padding:'0 24px'
+                    }}>
+                        {/* LEFT: toggle + badge + counter */}
+                        <div style={{ display:'flex', alignItems:'center', gap:'16px' }}>
+                            {/* Slides panel toggle */}
+                            <button onClick={() => setShowThumbs(!showThumbs)} className="apple-ghost-icon-btn" title="Toggle Slides Panel" style={{
+                                width:'34px', height:'34px', borderRadius:'8px',
+                                background: showThumbs ? 'rgba(0,113,227,0.15)' : 'rgba(255,255,255,0.04)',
+                                border: showThumbs ? '1px solid rgba(0,113,227,0.35)' : '1px solid rgba(255,255,255,0.07)',
+                                display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', gap:'3px', flexShrink:0
+                            }}>
+                                {[0,1,2].map(i => <div key={i} style={{ width:'3px', height:'14px', borderRadius:'2px', background: showThumbs ? '#0071E3' : 'rgba(255,255,255,0.45)' }} />)}
+                            </button>
+
+                            {/* AI badge */}
+                            <div style={{
+                                display:'flex', alignItems:'center', gap:'7px',
+                                background:'rgba(0,113,227,0.1)', border:'1px solid rgba(0,113,227,0.22)',
+                                borderRadius:'100px', padding:'5px 14px'
+                            }}>
+                                <div style={{ width:'6px', height:'6px', borderRadius:'50%', background:'#0071E3', boxShadow:'0 0 8px rgba(0,113,227,0.8)', flexShrink:0 }} />
+                                <span style={{ fontSize:'11px', fontWeight:700, color:'#0071E3', letterSpacing:'0.1em', textTransform:'uppercase' }}>AI Generated</span>
+                            </div>
+
+                            <span style={{ fontSize:'12px', color:'rgba(255,255,255,0.22)', fontWeight:500, letterSpacing:'0.04em' }}>
+                                {currentIdx + 1} <span style={{ color:'rgba(255,255,255,0.1)' }}>/</span> {slides.length}
+                            </span>
                         </div>
-                        <div className="flex gap-4">
-                            <button onClick={toggleFullScreen} className="flex items-center gap-2 px-4 py-2.5 bg-bg-body hover:bg-bg-hover text-text-main rounded-lg text-sm font-bold transition border border-border" title="Present Mode">
-                                <Icon name="Maximize" size={18} />
+
+                        {/* RIGHT: fullscreen + export + close */}
+                        <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                            <button onClick={toggleFullScreen} className="apple-ghost-icon-btn" title="Present Fullscreen" style={{
+                                width:'34px', height:'34px', borderRadius:'8px',
+                                background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)',
+                                color:'rgba(255,255,255,0.5)', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:'15px'
+                            }}>⛶</button>
+
+                            <button onClick={handleExportPPTX} disabled={isExporting} className="apple-export-btn" style={{
+                                background: isExporting ? 'rgba(0,113,227,0.45)' : '#0071E3',
+                                color:'white', border:'none', borderRadius:'9px',
+                                padding:'8px 18px', fontSize:'13px', fontWeight:600,
+                                cursor: isExporting ? 'not-allowed' : 'pointer',
+                                display:'flex', alignItems:'center', gap:'8px',
+                                boxShadow: isExporting ? 'none' : '0 0 20px rgba(0,113,227,0.3)'
+                            }}>
+                                {isExporting
+                                    ? <><span style={{ width:'14px', height:'14px', border:'2px solid rgba(255,255,255,0.3)', borderTop:'2px solid white', borderRadius:'50%', display:'inline-block', animation:'rotation 0.8s linear infinite' }} /> Compiling…</>
+                                    : <>↓ Export PPTX</>
+                                }
                             </button>
-                            <button onClick={handleExportPPTX} disabled={isExporting} className="flex items-center gap-3 px-6 py-2.5 text-white rounded-lg text-sm font-bold transition shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-70 disabled:hover:scale-100 bg-primary">
-                                {isExporting ? <span className="loader w-4 h-4 border-2"></span> : <Icon name="Download" size={18} />}
-                                {isExporting ? 'Compiling PPTX...' : 'Export Native PPTX'}
-                            </button>
-                            {onClose && <button onClick={onClose} className="p-2.5 ml-2 text-text-muted hover:text-text-main transition bg-bg-body hover:bg-bg-hover rounded-lg border border-border"><Icon name="X" size={22} /></button>}
+
+                            {onClose && (
+                                <button onClick={onClose} className="apple-ghost-icon-btn" style={{
+                                    width:'34px', height:'34px', borderRadius:'8px',
+                                    background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)',
+                                    color:'rgba(255,255,255,0.45)', fontSize:'18px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer'
+                                }}>×</button>
+                            )}
                         </div>
                     </div>
 
-                    <div ref={containerRef} className="flex-1 relative flex items-center justify-center p-8 bg-bg-body/50 backdrop-blur-xl overflow-hidden">
-                        <div className="shrink-0 flex items-center justify-center relative" style={{ width: '1280px', height: '720px', transform: `scale(${scale})`, transformOrigin: 'center center', transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-                            <AnimatePresence mode="wait">
-                                <motion.div
-                                    key={currentIdx}
-                                    initial={{ opacity: 0, scale: 0.92, filter: 'blur(12px)' }}
-                                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                                    exit={{ opacity: 0, scale: 1.08, filter: 'blur(12px)' }}
-                                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                                    className="absolute inset-0 w-full h-full rounded-3xl overflow-hidden shadow-[0_32px_64px_rgba(0,0,0,0.2)] border border-border bg-bg-body"
-                                >
-                                    <RenderSlide slide={slides[currentIdx]} />
-                                </motion.div>
-                            </AnimatePresence>
+                    {/* ── BODY: thumbs strip + slide stage ── */}
+                    <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
+
+                        {/* THUMBNAIL STRIP */}
+                        {showThumbs && (
+                            <div style={{
+                                width:'168px', flexShrink:0,
+                                background:'rgba(6,6,6,0.95)',
+                                borderRight:'1px solid rgba(255,255,255,0.05)',
+                                overflowY:'auto', padding:'12px 10px',
+                                display:'flex', flexDirection:'column', gap:'7px'
+                            }} className="hide-scroll">
+                                {slides.map((s, i) => (
+                                    <button key={i} onClick={() => setCurrentIdx(i)} className="apple-thumb-btn" style={{
+                                        background: currentIdx === i ? 'rgba(0,113,227,0.12)' : 'rgba(255,255,255,0.025)',
+                                        border: `1px solid ${currentIdx === i ? 'rgba(0,113,227,0.45)' : 'rgba(255,255,255,0.06)'}`,
+                                        borderRadius:'10px', padding:'12px', cursor:'pointer', textAlign:'left', width:'100%'
+                                    }}>
+                                        {/* Mini slide preview */}
+                                        <div style={{ width:'100%', aspectRatio:'16/9', background:'rgba(255,255,255,0.03)', borderRadius:'6px', marginBottom:'8px', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative' }}>
+                                            <div style={{ position:'absolute', inset:0, background: currentIdx === i ? 'linear-gradient(135deg, rgba(0,113,227,0.15), transparent)' : 'transparent' }} />
+                                            <div style={{ fontSize:'16px', lineHeight:1 }}>{s.icon || ''}</div>
+                                        </div>
+                                        <div style={{ fontSize:'10px', fontWeight:700, color: currentIdx === i ? '#0071E3' : 'rgba(255,255,255,0.3)', letterSpacing:'0.08em', marginBottom:'3px' }}>
+                                            {String(i + 1).padStart(2,'0')}
+                                        </div>
+                                        <div style={{ fontSize:'9px', color: currentIdx === i ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.35)', lineHeight:1.4, fontWeight:600, overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
+                                            {s.title}
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* SLIDE STAGE */}
+                        <div ref={containerRef} style={{ flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', background:'#000', overflow:'hidden' }}>
+                            {/* Ambient radial glow */}
+                            <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,113,227,0.045) 0%, transparent 75%)', pointerEvents:'none' }} />
+                            {/* Subtle vignette */}
+                            <div style={{ position:'absolute', inset:0, background:'radial-gradient(ellipse 100% 100% at 50% 50%, transparent 50%, rgba(0,0,0,0.5) 100%)', pointerEvents:'none' }} />
+
+                            {/* Slide canvas */}
+                            <div style={{ width:'1280px', height:'720px', transform:`scale(${scale})`, transformOrigin:'center', transition:'transform 0.3s cubic-bezier(0.4,0,0.2,1)', position:'relative', flexShrink:0 }}>
+                                <AnimatePresence mode="wait">
+                                    <motion.div
+                                        key={currentIdx}
+                                        initial={{ opacity:0, scale:0.93, filter:'blur(18px)' }}
+                                        animate={{ opacity:1, scale:1, filter:'blur(0px)' }}
+                                        exit={{ opacity:0, scale:1.07, filter:'blur(18px)' }}
+                                        transition={{ duration:0.65, ease:[0.16,1,0.3,1] }}
+                                        style={{ position:'absolute', inset:0, borderRadius:'14px', overflow:'hidden',
+                                            boxShadow:'0 0 0 1px rgba(255,255,255,0.07), 0 48px 140px rgba(0,0,0,0.95)' }}
+                                    >
+                                        <RenderSlide slide={slides[currentIdx]} />
+                                    </motion.div>
+                                </AnimatePresence>
+                            </div>
+
+                            {/* Ghost nav — LEFT */}
+                            <button
+                                onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))}
+                                disabled={currentIdx === 0}
+                                className="apple-nav-btn"
+                                style={{
+                                    position:'absolute', left:'16px', zIndex:30,
+                                    width:'44px', height:'44px', borderRadius:'50%',
+                                    display:'flex', alignItems:'center', justifyContent:'center',
+                                    color:'rgba(255,255,255,0.55)', fontSize:'22px',
+                                    cursor: currentIdx === 0 ? 'not-allowed' : 'pointer',
+                                    opacity: currentIdx === 0 ? 0.18 : 0.85, border:'1px solid rgba(255,255,255,0.08)'
+                                }}>‹</button>
+
+                            {/* Ghost nav — RIGHT */}
+                            <button
+                                onClick={() => setCurrentIdx(Math.min(slides.length - 1, currentIdx + 1))}
+                                disabled={currentIdx === slides.length - 1}
+                                className="apple-nav-btn"
+                                style={{
+                                    position:'absolute', right:'16px', zIndex:30,
+                                    width:'44px', height:'44px', borderRadius:'50%',
+                                    display:'flex', alignItems:'center', justifyContent:'center',
+                                    color:'rgba(255,255,255,0.55)', fontSize:'22px',
+                                    cursor: currentIdx === slides.length - 1 ? 'not-allowed' : 'pointer',
+                                    opacity: currentIdx === slides.length - 1 ? 0.18 : 0.85, border:'1px solid rgba(255,255,255,0.08)'
+                                }}>›</button>
                         </div>
-                        <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0} className="absolute left-8 w-16 h-16 rounded-full bg-bg-card/80 hover:bg-primary hover:text-white text-text-main flex items-center justify-center transition disabled:opacity-30 border border-border z-30 shadow-2xl backdrop-blur-md"><Icon name="ChevronLeft" size={32} /></button>
-                        <button onClick={() => setCurrentIdx(Math.min(slides.length - 1, currentIdx + 1))} disabled={currentIdx === slides.length - 1} className="absolute right-8 w-16 h-16 rounded-full bg-bg-card/80 hover:bg-primary hover:text-white text-text-main flex items-center justify-center transition disabled:opacity-30 border border-border z-30 shadow-2xl backdrop-blur-md"><Icon name="ChevronRight" size={32} /></button>
+                    </div>
+
+                    {/* ── BOTTOM BAR: dot indicators ── */}
+                    <div style={{
+                        height:'42px', flexShrink:0,
+                        background:'rgba(6,6,6,0.92)', backdropFilter:'blur(20px)',
+                        borderTop:'1px solid rgba(255,255,255,0.05)',
+                        display:'flex', alignItems:'center', justifyContent:'center', gap:'7px'
+                    }}>
+                        {slides.map((_, i) => (
+                            <button key={i} onClick={() => setCurrentIdx(i)} className="apple-dot" style={{
+                                width: currentIdx === i ? '28px' : '6px',
+                                height:'6px', borderRadius:'3px', border:'none', cursor:'pointer',
+                                background: currentIdx === i ? '#0071E3' : 'rgba(255,255,255,0.18)',
+                                boxShadow: currentIdx === i ? '0 0 10px rgba(0,113,227,0.6)' : 'none'
+                            }} />
+                        ))}
                     </div>
                 </div>
             );
