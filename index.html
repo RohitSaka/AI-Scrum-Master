@@ -1259,7 +1259,8 @@
 
             const generateInviteLink = async () => {
                 const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
-                const r = await secureFetch(`/retro/generate_link`, {
+                // ✨ FIXED: Added /guest/ to the endpoint URL to match the backend
+                const r = await secureFetch(`/guest/retro/generate_link`, {
                     method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, license_key: config.license_key })
                 });
                 const d = await r.json();
