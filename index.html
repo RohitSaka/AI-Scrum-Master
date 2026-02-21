@@ -325,7 +325,24 @@
 
     <script>
         tailwind.config = {
-            theme: { extend: { colors: { 'bg-body': 'var(--bg-body)', 'bg-sidebar': 'var(--bg-sidebar)', 'bg-card': 'var(--bg-card)', 'bg-hover': 'var(--bg-hover)', 'text-main': 'var(--text-main)', 'text-muted': 'var(--text-muted)', 'border': 'var(--border)', 'primary': 'var(--primary)', 'primary-dim': 'var(--primary-dim)', 'danger': 'var(--danger)', 'success': 'var(--success)', 'warning': 'var(--warning)' } } }
+            theme: {
+                extend: {
+                    colors: {
+                        'bg-body': 'var(--bg-body)',
+                        'bg-sidebar': 'var(--bg-sidebar)',
+                        'bg-card': 'var(--bg-card)',
+                        'bg-hover': 'var(--bg-hover)',
+                        'text-main': 'var(--text-main)',
+                        'text-muted': 'var(--text-muted)',
+                        'border': 'var(--border)',
+                        'primary': 'var(--primary)',
+                        'primary-dim': 'var(--primary-dim)',
+                        'danger': 'var(--danger)',
+                        'success': 'var(--success)',
+                        'warning': 'var(--warning)',
+                    }
+                }
+            }
         }
     </script>
 </head>
@@ -555,9 +572,11 @@
                             <button onClick={() => { localStorage.removeItem('ig_config'); window.location.reload() }} className="w-full text-left text-xs p-2 hover:bg-danger/10 rounded-lg font-bold text-danger transition-colors flex items-center gap-2"><Icon name="X" size={14} /> Sign Out</button>
                         </div>
                     </aside>
-                    <main className="flex-1 overflow-hidden relative transition-colors duration-300 bg-bg-body p-10">
+
+                    {/* ✨ FIXED: Properly contained Flex Column layout so children can scroll properly ✨ */}
+                    <main className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300 bg-bg-body" style={{ padding: view === 'smartdeck' ? '0' : '2.5rem' }}>
                         {activeProject ? (
-                            <div className="h-full">
+                            <div className="flex-1 min-h-0 relative h-full">
                                 {view === 'smartdeck' && <SmartDeckView project={activeProject} endpoint={`/super_deck/${activeProject}?sprint_id=active`} isFullScreenLayout={true} />}
                                 {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                                 {view === 'roadmap' && <RoadmapView project={activeProject} setIsLoading={setIsGlobalLoading} />}
@@ -784,6 +803,78 @@
             );
         }
 
+        function RoadmapView({ project, setIsLoading }) {
+            const [roadmap, setRoadmap] = useState(null);
+            useEffect(() => { setIsLoading(true); setRoadmap(null); secureFetch(`/roadmap/${project}`).then(r => r?.json()).then(data => { setRoadmap(data); setIsLoading(false); }).catch(() => setIsLoading(false)); }, [project]);
+            if (!roadmap) return <LoadingScreen msg="AI is analyzing the backlog and predicting release timelines..." />;
+            const trackColors = ["linear-gradient(to right, #3b82f6, #60a5fa)", "linear-gradient(to right, #10b981, #34d399)", "linear-gradient(to right, #8b5cf6, #a78bfa)", "linear-gradient(to right, #f59e0b, #fbbf24)"];
+
+            return (
+                <div className="animate-fade-in h-full flex flex-col pr-4 pb-12">
+                    <header className="mb-8 flex justify-between items-end pb-6 border-b border-border">
+                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Strategic Roadmap</h2><p className="text-base font-medium mt-2 text-text-muted">AI-Predicted Release Timeline based on Priority & Dependencies</p></div>
+                        <div className="flex items-center gap-3 px-5 py-2.5 rounded-full border text-xs font-black uppercase tracking-wider bg-primary-dim text-primary border-primary-dim"><Icon name="Sparkles" size={16} /> 12-Week Horizon</div>
+                    </header>
+                    <div className="flex-1 overflow-auto hide-scroll rounded-2xl border border-border shadow-2xl relative bg-bg-card">
+                        <div className="min-w-[1200px]">
+                            <div className="roadmap-grid sticky top-0 z-30 border-b border-border bg-bg-card">
+                                <div className="roadmap-header text-left pl-8">Workstream</div>{roadmap.timeline.map((wk, i) => (<div key={i} className="roadmap-header">{wk}</div>))}
+                            </div>
+                            {roadmap.tracks.map((track, trackIdx) => (
+                                <div key={trackIdx} className="relative border-b last:border-b-0 border-border">
+                                    <div className="roadmap-grid border-0 rounded-none absolute inset-0 h-full"><div className="roadmap-cell border-r border-border"></div>{roadmap.timeline.map((_, i) => (<div key={i} className="roadmap-cell border-r border-border"></div>))}</div>
+                                    <div className="relative z-10 flex">
+                                        <div className="w-[250px] shrink-0 p-8 flex flex-col justify-center border-r border-border"><span className="font-bold text-base leading-snug text-text-main">{track.name}</span><span className="text-xs mt-2 uppercase font-black tracking-wider text-text-muted">{track.items.length} Items</span></div>
+                                        <div className="flex-1 relative" style={{ minHeight: `${Math.max(track.items.length * 56 + 32, 96)}px` }}>
+                                            <AnimatePresence>
+                                                {track.items.map((item, i) => {
+                                                    const start = Math.max(0, Math.min(item.start, 11)); const dur = Math.max(1, Math.min(item.duration, 12 - start));
+                                                    return (
+                                                        <motion.div key={item.key} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1, ease: "easeOut" }} className="roadmap-item shadow-lg" style={{ background: trackColors[trackIdx % trackColors.length], left: `calc(${(start / 12) * 100}% + 12px)`, width: `calc(${(dur / 12) * 100}% - 24px)`, top: `${i * 56 + 16}px`, height: '40px' }} title={`${item.key}: ${item.summary} [Priority: ${item.priority}]`}><span className="font-black opacity-90 mr-3 shrink-0 text-xs">{item.key}</span><span className="truncate font-bold text-sm">{item.summary}</span></motion.div>
+                                                    )
+                                                })}
+                                            </AnimatePresence>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
+            const [data, setData] = useState(null); const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState('active');
+            useEffect(() => { secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { if (d && d.length) setSprints(d); }); }, [project]);
+            useEffect(() => { setData(null); setIsLoading(true); secureFetch(activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`).then(r => r ? r.json() : null).then(d => { setData(d); setIsLoading(false); }); }, [project, activeSprint]);
+            if (!data) return <LoadingScreen msg="AI is analyzing descriptions, acceptance criteria, and assignee comments..." />;
+            return (
+                <div className="animate-fade-in space-y-8 h-full overflow-y-auto pb-12 pr-4">
+                    <header className="flex justify-between items-end mb-10 border-b border-border pb-6">
+                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Executive Insights</h2><p className="text-base font-medium mt-2 text-text-muted">AI-driven delivery analysis & business value</p></div>
+                        <div className="flex items-center gap-3"><span className="text-xs font-black uppercase tracking-wider text-text-muted">Target Sprint</span><select value={activeSprint} onChange={e => setActiveSprint(e.target.value)} disabled={isGlobalLoading} className={`p-3 rounded-lg border text-sm input-field font-bold min-w-[220px] ${isGlobalLoading ? 'opacity-50' : ''}`}><option value="active">🟢 Active Sprint</option>{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                    </header>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6"><MetricCard label="Velocity (Pts)" value={data.metrics.points} color="primary" /><MetricCard label="Total Tickets" value={data.metrics.total} color="success" /><MetricCard label="Blockers" value={data.metrics.blockers} color="danger" isDanger={data.metrics.blockers > 0} /><MetricCard label="Bugs Found" value={data.metrics.bugs} color="warning" /></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="glass-card p-8 border-t-4 border-primary"><h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-6 text-text-muted"><Icon name="Activity" size={18} /> Executive Summary</h3><p className="text-base leading-relaxed font-medium text-text-main">{data.ai_insights?.executive_summary}</p></div>
+                        <div className="glass-card p-8 border-t-4 border-success"><h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-6 text-text-muted"><Icon name="TrendingDown" size={18} /> Business Value Delivered</h3><div className="text-base leading-relaxed font-medium text-text-main prose" dangerouslySetInnerHTML={{ __html: marked.parse(data.ai_insights?.business_value || "") }}></div></div>
+                    </div>
+                    <div>
+                        <h3 className="text-2xl font-extrabold mb-6 mt-10 text-text-main">Deep Story Progress Analysis</h3>
+                        <div className="grid grid-cols-1 gap-4">
+                            {data.ai_insights?.story_progress?.map((story, idx) => (
+                                <div key={idx} className="glass-card p-5 flex gap-6 items-center hover:border-primary transition-colors">
+                                    <div className="w-28 text-center shrink-0"><div className="text-sm font-black text-primary">{story.key}</div><div className="text-[10px] uppercase tracking-wider font-bold mt-2 px-3 py-1 rounded-full border border-border inline-block text-text-muted bg-bg-body">{story.status}</div></div>
+                                    <div className="flex-1 border-l border-border pl-6"><div className="text-base font-bold mb-2 text-text-main">{story.summary} <span className="font-medium opacity-60 ml-2">({story.assignee})</span></div><div className="text-sm font-medium text-text-muted"><strong className="text-warning">AI Note: </strong> {story.analysis}</div></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
         // ================= ✨ THE REBUILT TIMELINE & BACKLOG VIEW (STORY + EPIC GENERATORS) ✨ =================
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
@@ -875,7 +966,8 @@
             if (!data) return <LoadingScreen msg="Loading Workspace..." />;
 
             return (
-                <div className="animate-fade-in h-full overflow-y-auto pb-20 flex flex-col pr-4 relative space-y-16">
+                // ✨ FIXED: Removed 'flex flex-col' and increased pb-32 so children don't shrink and cut off the scroll area ✨
+                <div className="animate-fade-in h-full overflow-y-auto pb-32 pr-4 relative space-y-16">
 
                     {/* --- PART 1: TEAM TIMELINE --- */}
                     <div>
@@ -1008,7 +1100,7 @@
                             </div>
                             <div>
                                 <h5 className="font-extrabold text-text-main text-lg mb-2 flex items-center gap-2"><Icon name="Zap" size={18} className="text-indigo-500" /> Auto-Generated Epics</h5>
-                                <p className="text-sm text-text-muted font-medium leading-relaxed">Get a detailed and structured Epics according to agile best practices with a full description, acceptance criteria & more.</p>
+                                <p className="text-sm text-text-muted font-medium leading-relaxed">Get detailed and structured Epics according to agile best practices with a full description, acceptance criteria & more.</p>
                             </div>
                             <div>
                                 <h5 className="font-extrabold text-text-main text-lg mb-2 flex items-center gap-2"><Icon name="CheckCircle" size={18} className="text-indigo-500" /> Better clarity for everyone</h5>
@@ -1138,6 +1230,116 @@
                         <div className="glass-card p-8 border-l-4 border-danger bg-danger/5">
                             <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-8 text-danger"><Icon name="AlertTriangle" size={18} /> Hidden Friction Detected</h3>
                             <div className="p-6 rounded-xl bg-bg-body border border-danger/20 shadow-inner"><p className="text-base leading-relaxed font-bold text-text-main">{dossier.hidden_friction}</p></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ================= RETRO BOARD (WITH MAGIC GUEST LINK & DELETE CAPABILITY) =================
+        function RetroView({ project, setIsLoading, isGlobalLoading }) {
+            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
+            const [toast, setToast] = useState(null);
+
+            useEffect(() => { secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { setSprints(d); if (d && d.length) setActiveSprint(d[0].id); }); }, [project]);
+
+            const fetchBoard = () => { if (activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r => r?.json()).then(setBoard); } };
+            useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
+
+            const save = (b) => { setBoard(b); secureFetch(`/retro/update`, { method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, board: b }) }); };
+
+            const add = () => { if (!input.trim()) return; const n = board[col] ? [...board[col]] : []; n.push({ id: Date.now(), text: input }); save({ ...board, [col]: n }); setInput(""); };
+
+            const remove = (columnName, itemId) => {
+                const updatedCol = board[columnName].filter(item => item.id !== itemId);
+                save({ ...board, [columnName]: updatedCol });
+            };
+
+            const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, { method: 'POST', body: JSON.stringify({ board }) }).then(r => r.json()).then(d => { save({ ...board, actions: [...(board.actions || []), ...d.actions] }); setLoadingAI(false); }); };
+
+            const generateInviteLink = async () => {
+                const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
+                const r = await secureFetch(`/retro/generate_link`, {
+                    method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, license_key: config.license_key })
+                });
+                const d = await r.json();
+                if (d.token) {
+                    const link = `${window.location.origin}${window.location.pathname}?guest_token=${d.token}`;
+                    navigator.clipboard.writeText(link);
+                    setToast("Guest Link copied to clipboard!");
+                    setTimeout(() => setToast(null), 3000);
+                }
+            };
+
+            if (!board) return <LoadingScreen msg="Fetching Retrospective..." />;
+            return (
+                <div className="h-full flex flex-col animate-fade-in pr-4 relative">
+                    <header className="flex justify-between items-center mb-8">
+                        <div>
+                            <h2 className="text-4xl font-extrabold text-text-main flex items-center gap-4">
+                                Retrospective
+                                <button onClick={generateInviteLink} className="text-sm px-4 py-2 bg-primary-dim text-primary rounded-lg font-bold flex items-center gap-2 hover:bg-primary hover:text-white transition-colors border border-primary-dim shadow-sm">
+                                    <Icon name="Link" size={16} /> Invite Team
+                                </button>
+                            </h2>
+                        </div>
+                        <select value={activeSprint || ""} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm">{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+                    </header>
+
+                    {/* Toast Notification */}
+                    <AnimatePresence>
+                        {toast && (
+                            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="absolute top-0 right-4 z-50 bg-success text-white px-6 py-3 rounded-lg font-bold shadow-lg flex items-center gap-3">
+                                <Icon name="CheckCircle" size={18} /> {toast}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-lg">
+                        <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">{['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={() => setCol(c)} className={`px-6 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}</div>
+                        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" />
+                        <button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-8 flex-1 pb-6">
+                        {/* Standard Columns */}
+                        {['well', 'improve', 'kudos'].map(c => (
+                            <div key={c} className="retro-col shadow-xl">
+                                <div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c === 'well' ? 'CheckCircle' : c === 'improve' ? 'TrendingDown' : 'Star'} size={18} /></div>
+                                <div className="retro-col-body bg-bg-body/50">
+                                    {board[c]?.map(i => (
+                                        <div key={i.id} className="retro-card font-medium relative group">
+                                            <span className="pr-6 block">{i.text}</span>
+                                            {/* Hover Delete Button */}
+                                            <button onClick={() => remove(c, i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
+                                                <Icon name="Trash" size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+
+                        {/* Action Plan Column */}
+                        <div className="retro-col border-primary/30 shadow-xl" style={{ background: 'var(--primary-dim)' }}>
+                            <div className="retro-col-header bg-primary/10 text-primary">
+                                <span>Action Plan</span>
+                                <button onClick={genActions} disabled={loadingAI} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider hover:shadow-md transition-all flex items-center gap-2">
+                                    {loadingAI ? <span className="loader w-3 h-3 border-2"></span> : <Icon name="Sparkles" size={14} />} Gen AI
+                                </button>
+                            </div>
+                            <div className="retro-col-body bg-primary/5">
+                                {board.actions?.map(i => (
+                                    <div key={i.id} className="retro-card border-primary/20 font-bold flex items-start gap-3 relative group">
+                                        <Icon name="CheckCircle" size={18} className="text-primary shrink-0 mt-0.5" />
+                                        <span className="pr-6">{i.text}</span>
+                                        {/* Hover Delete Button */}
+                                        <button onClick={() => remove('actions', i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
+                                            <Icon name="Trash" size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>
