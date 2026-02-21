@@ -4,59 +4,23 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IG Agile Scrum | Enterprise</title>
-
     <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366f1"/><text x="50" y="65" font-family="Arial" font-size="50" font-weight="bold" fill="white" text-anchor="middle">IG</text></svg>'>
-
+    
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
     <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
-
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-
+    
     <style>
         :root { --transition-speed: 0.3s; }
-
-        .dark-mode {
-            --bg-body: #0B1121;
-            --bg-sidebar: #020617;
-            --bg-card: #1E293B;
-            --bg-hover: #334155;
-            --text-main: #F8FAFC;
-            --text-muted: #94A3B8;
-            --border: #334155;
-            --primary: #D97706;
-            --primary-dim: rgba(217, 119, 6, 0.15);
-            --danger: #EF4444;
-            --success: #10B981;
-            --warning: #F59E0B;
-            --glass-border: rgba(255, 255, 255, 0.08);
-            --glass-bg: rgba(30, 41, 59, 0.7);
-        }
-
-        .light-mode {
-            --bg-body: #F0F2F5;
-            --bg-sidebar: #FFFFFF;
-            --bg-card: #FFFFFF;
-            --bg-hover: #E2E8F0;
-            --text-main: #0F172A;
-            --text-muted: #475569;
-            --border: #CBD5E1;
-            --primary: #0369A1;
-            --primary-dim: rgba(3, 105, 161, 0.1);
-            --danger: #DC2626;
-            --success: #059669;
-            --warning: #D97706;
-            --glass-border: rgba(0, 0, 0, 0.05);
-            --glass-bg: rgba(255, 255, 255, 0.85);
-        }
-
+        .dark-mode { --bg-body: #0B1121; --bg-sidebar: #020617; --bg-card: #1E293B; --bg-hover: #334155; --text-main: #F8FAFC; --text-muted: #94A3B8; --border: #334155; --primary: #D97706; --primary-dim: rgba(217, 119, 6, 0.15); --danger: #EF4444; --success: #10B981; --warning: #F59E0B; --glass-border: rgba(255, 255, 255, 0.08); --glass-bg: rgba(30, 41, 59, 0.7); }
+        .light-mode { --bg-body: #F0F2F5; --bg-sidebar: #FFFFFF; --bg-card: #FFFFFF; --bg-hover: #E2E8F0; --text-main: #0F172A; --text-muted: #475569; --border: #CBD5E1; --primary: #0369A1; --primary-dim: rgba(3, 105, 161, 0.1); --danger: #DC2626; --success: #059669; --warning: #D97706; --glass-border: rgba(0, 0, 0, 0.05); --glass-bg: rgba(255, 255, 255, 0.85); }
         body { font-family: 'Inter', sans-serif; background-color: var(--bg-body); color: var(--text-main); transition: background-color var(--transition-speed), color var(--transition-speed); overflow: hidden; margin: 0; }
         .glass-card { background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12); backdrop-filter: blur(12px); border-radius: 1rem; }
         .nav-btn { color: var(--text-muted); padding: 0.75rem 1rem; border-radius: 0.5rem; transition: all 0.2s; display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; border-left: 3px solid transparent; }
@@ -64,34 +28,27 @@
         .nav-btn.active { background: var(--primary-dim); color: var(--primary); border-left-color: var(--primary); }
         .input-field { background-color: var(--bg-body); border: 1px solid var(--border); color: var(--text-main); outline: none; transition: all 0.2s; }
         .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-dim); }
-        
         .prose strong { color: var(--text-main); font-weight: 700; }
         .prose ul { list-style-type: disc; padding-left: 1.2rem; }
         .prose li { margin-bottom: 0.25rem; }
-        
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-        
         .loader { width: 20px; height: 20px; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: 50%; display: inline-block; animation: rotation 0.8s linear infinite; }
         @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
         .retro-col { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; display: flex; flex-direction: column; height: 100%; overflow: hidden; backdrop-filter: blur(10px); }
         .retro-col-header { padding: 1rem; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); }
         .retro-col-body { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
         .retro-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.875rem; line-height: 1.5; color: var(--text-main); box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: all 0.2s; }
         .retro-card:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
-
         .roadmap-grid { display: grid; grid-template-columns: 250px repeat(12, 1fr); background: transparent; }
         .roadmap-header { font-weight: 700; font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 12px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; background: var(--bg-card); }
         .roadmap-cell { border-right: 1px solid var(--border); opacity: 0.2; }
         .roadmap-item { position: absolute; border-radius: 6px; padding: 8px 12px; font-size: 11px; font-weight: 600; color: white; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; z-index: 10; transition: transform 0.2s, z-index 0s; }
         .roadmap-item:hover { z-index: 20; transform: translateY(-2px) scale(1.01); }
-
         @media print { 
             html, body, #root, div { height: auto !important; overflow: visible !important; position: static !important; }
             body * { visibility: hidden; } 
@@ -101,34 +58,14 @@
             @page { size: landscape; margin: 0; }
         }
     </style>
-
     <script>
         tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'bg-body': 'var(--bg-body)',
-                        'bg-sidebar': 'var(--bg-sidebar)',
-                        'bg-card': 'var(--bg-card)',
-                        'bg-hover': 'var(--bg-hover)',
-                        'text-main': 'var(--text-main)',
-                        'text-muted': 'var(--text-muted)',
-                        'border': 'var(--border)',
-                        'primary': 'var(--primary)',
-                        'primary-dim': 'var(--primary-dim)',
-                        'danger': 'var(--danger)',
-                        'success': 'var(--success)',
-                        'warning': 'var(--warning)',
-                    }
-                }
-            }
+            theme: { extend: { colors: { 'bg-body': 'var(--bg-body)', 'bg-sidebar': 'var(--bg-sidebar)', 'bg-card': 'var(--bg-card)', 'bg-hover': 'var(--bg-hover)', 'text-main': 'var(--text-main)', 'text-muted': 'var(--text-muted)', 'border': 'var(--border)', 'primary': 'var(--primary)', 'primary-dim': 'var(--primary-dim)', 'danger': 'var(--danger)', 'success': 'var(--success)', 'warning': 'var(--warning)' } } }
         }
     </script>
 </head>
-
 <body class="dark-mode">
     <div id="root"></div>
-
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const { motion, AnimatePresence } = window.Motion;
@@ -233,13 +170,11 @@
             return (
                 <div className="h-screen flex flex-col relative transition-colors duration-500 bg-bg-body p-8">
                     <div className="absolute top-4 right-4 z-50"><ThemeToggle theme={theme} setTheme={setTheme} /></div>
-
                     <header className="mb-10 text-center">
                         <div className="w-16 h-16 rounded-xl flex items-center justify-center text-white font-black text-2xl mx-auto mb-4 shadow-xl bg-gradient-to-br from-primary to-amber-600">IG</div>
                         <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Retrospective</h2>
                         <p className="text-lg font-medium mt-2 text-text-muted">Sprint {info.sprint} • Anonymous Guest Mode</p>
                     </header>
-
                     <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col">
                         <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-2xl">
                             <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">
@@ -248,7 +183,6 @@
                             <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Drop an anonymous note here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-xl outline-none" />
                             <button onClick={add} className="bg-primary px-12 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all text-lg">Post</button>
                         </div>
-
                         <div className="grid grid-cols-3 gap-10 flex-1 pb-10">
                             {['well', 'improve', 'kudos'].map(c => (
                                 <div key={c} className="retro-col shadow-2xl border-t-4" style={{ borderTopColor: c === 'well' ? 'var(--success)' : c === 'improve' ? 'var(--danger)' : 'var(--primary)' }}>
@@ -579,13 +513,11 @@
             );
         }
 
-        // ================= ✨ SPRINT DYNAMICS CALCULATOR & GENERATORS VIEW ✨ =================
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
             const [sprints, setSprints] = useState([]);
             const [activeSprint, setActiveSprint] = useState('active');
 
-            // Story State
             const [storyPrompt, setStoryPrompt] = useState("");
             const [isGeneratingStory, setIsGeneratingStory] = useState(false);
             const [generatedStory, setGeneratedStory] = useState(null);
@@ -595,7 +527,6 @@
             const [imagePreview, setImagePreview] = useState(null);
             const fileInputRef = useRef(null);
 
-            // Epic State
             const [epicPrompt, setEpicPrompt] = useState("");
             const [isGeneratingEpic, setIsGeneratingEpic] = useState(false);
             const [generatedEpic, setGeneratedEpic] = useState(null);
@@ -677,32 +608,22 @@
 
             if (!data) return <LoadingScreen msg="Loading Workspace..." />;
 
-            // ✨ THE SPRINT DYNAMICS TABLE ENGINE ✨
             const dynamicsData = Object.entries(data.metrics?.assignees || {}).map(([name, stats]) => {
-                
-                // Separate out the tasks added mid-sprint
                 const origList = stats.tasks.filter(t => !t.added_mid_sprint);
                 const midList = stats.tasks.filter(t => t.added_mid_sprint);
                 
-                // Original Commitments
                 const originalPts = origList.reduce((sum, t) => sum + (t.points || 0), 0);
-                const originalTasks = origList.map(t => `${t.key} (${t.summary.substring(0, 20)}...)`).join(', ');
-                
-                // Mid-Sprint Additions
                 const midPts = midList.reduce((sum, t) => sum + (t.points || 0), 0);
-                const midTasks = midList.map(t => `Added: ${t.key}`).join(', ');
                 
-                // Final Completed (Done) Points
                 const finalPts = stats.tasks
                     .filter(t => t.status.toLowerCase().includes('done') || t.status.toLowerCase().includes('closed') || t.status.toLowerCase().includes('resolved'))
                     .reduce((sum, t) => sum + (t.points || 0), 0);
                     
-                // Delta Calculation: ((Final Delivered - Original Commitment) / Original Commitment) * 100
                 let delta = 0;
                 if (originalPts > 0) delta = (((finalPts - originalPts) / originalPts) * 100);
                 else if (originalPts === 0 && finalPts > 0) delta = 100; 
                 
-                return { user: name, originalPts, originalTasks, midPts, midTasks, finalPts, delta, avatar: stats.avatar };
+                return { user: name, originalPts, origList, midPts, midList, finalPts, delta, avatar: stats.avatar };
             });
 
             const totalOrig = dynamicsData.reduce((sum, r) => sum + r.originalPts, 0);
@@ -712,8 +633,6 @@
 
             return (
                 <div className="animate-fade-in h-full overflow-y-auto pb-32 pr-4 relative space-y-16 block">
-
-                    {/* --- PART 1: SPRINT DYNAMICS TABLE (PREMIUM UI) --- */}
                     <div>
                         <header className="mb-8 flex justify-between items-end pb-6 border-b border-border">
                             <div>
@@ -799,8 +718,7 @@
                         )}
                     </div>
 
-                    {/* --- PART 2: STORY GENERATOR (EDITABLE) --- */}
-                    <div className="relative z-10">
+                    <div>
                         <div className="glass-card border-t-4 border-primary p-8 relative overflow-hidden shadow-2xl">
                             <div className="absolute top-0 right-0 w-80 h-80 bg-primary-dim rounded-full blur-3xl -mr-24 -mt-24 pointer-events-none opacity-40"></div>
                             <h3 className="text-2xl font-extrabold flex items-center gap-3 mb-6 text-text-main"><Icon name="Sparkles" size={24} className="text-primary" /> Auto-Generate User Story (with Vision)</h3>
@@ -834,7 +752,6 @@
                                 )}
                             </AnimatePresence>
 
-                            {/* EDITABLE STORY FORM */}
                             <AnimatePresence>
                                 {generatedStory && (
                                     <motion.div initial={{ opacity: 0, height: 0, y: 20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: 20 }} transition={{ type: "spring", bounce: 0.3 }} className="mt-8 pt-8 border-t border-border">
@@ -897,9 +814,7 @@
                         </div>
                     </div>
 
-                    {/* --- PART 3: THE AI BACKLOG GENERATOR (EPICS) --- */}
                     <div className="glass-card overflow-hidden shadow-2xl border-t-4 border-indigo-500 relative">
-                        {/* Marketing Header */}
                         <div className="bg-indigo-900/10 border-b border-border p-10 relative">
                             <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
                             <div className="max-w-3xl relative z-10">
@@ -909,7 +824,6 @@
                             </div>
                         </div>
 
-                        {/* 3 Column Features */}
                         <div className="grid grid-cols-3 gap-8 p-10 bg-bg-body border-b border-border relative z-10">
                             <div>
                                 <h5 className="font-extrabold text-text-main text-lg mb-2 flex items-center gap-2"><Icon name="MessageSquare" size={18} className="text-indigo-500" /> Write the way you talk</h5>
@@ -925,7 +839,6 @@
                             </div>
                         </div>
 
-                        {/* Input Area */}
                         <div className="p-10 bg-bg-card relative z-10">
                             <h4 className="text-lg font-bold text-text-main mb-6 text-center">How the AI Backlog Generator works<br /><span className="text-indigo-500 text-sm font-black uppercase tracking-widest mt-2 block">From messy notes to developer-ready Epics — in seconds.</span></h4>
 
@@ -946,7 +859,6 @@
                                 )}
                             </AnimatePresence>
 
-                            {/* EDITABLE EPIC FORM */}
                             <AnimatePresence>
                                 {generatedEpic && (
                                     <motion.div initial={{ opacity: 0, height: 0, y: 20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: 20 }} transition={{ type: "spring", bounce: 0.3 }} className="mt-10 max-w-4xl mx-auto">
@@ -1000,7 +912,6 @@
             );
         }
 
-        // ================= DOSSIER REPORTS =================
         function ReportsView({ project, setIsLoading, isGlobalLoading }) {
             const [data, setData] = useState(null);
             const [timeframe, setTimeframe] = useState('weekly');
@@ -1053,12 +964,10 @@
             );
         }
 
-        // ================= RETRO BOARD =================
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
             const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well");
             const [toast, setToast] = useState(null);
 
-            // Chat State
             const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: "Hi! I am your AI Agile Coach. What would you like to know about this sprint's retrospective?" }]);
             const [chatInput, setChatInput] = useState("");
             const [isChatting, setIsChatting] = useState(false);
@@ -1130,7 +1039,6 @@
                     </div>
 
                     <div className="grid grid-cols-4 gap-8 flex-1 pb-6 min-h-0">
-                        {/* Standard Columns */}
                         {['well', 'improve', 'kudos'].map(c => (
                             <div key={c} className="retro-col shadow-xl">
                                 <div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c === 'well' ? 'CheckCircle' : c === 'improve' ? 'TrendingDown' : 'Star'} size={18} /></div>
@@ -1138,7 +1046,6 @@
                                     {board[c]?.map(i => (
                                         <div key={i.id} className="retro-card font-medium relative group">
                                             <span className="pr-6 block">{i.text}</span>
-                                            {/* Hover Delete Button */}
                                             <button onClick={() => remove(c, i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
                                                 <Icon name="Trash" size={14} />
                                             </button>
@@ -1148,7 +1055,6 @@
                             </div>
                         ))}
 
-                        {/* ✨ AGILE COACH CHAT COLUMN ✨ */}
                         <div className="retro-col border-primary/30 shadow-xl flex flex-col h-full" style={{ background: 'var(--primary-dim)' }}>
                             <div className="retro-col-header bg-primary/10 text-primary shrink-0">
                                 <span className="flex items-center gap-2"><Icon name="Sparkles" size={16} /> Ask your Agile Coach</span>
@@ -1178,7 +1084,6 @@
         }
 
         function StandupView() { return <div className="h-full flex items-center justify-center text-2xl font-black text-text-muted uppercase tracking-widest">Standup Bot Coming Soon</div>; }
-        function BurndownView() { return <div className="h-full flex items-center justify-center text-2xl font-black text-text-muted uppercase tracking-widest">Burndown Component Coming Soon</div>; }
         function LoadingScreen({ msg = "Loading..." }) { return (<div className="h-full w-full flex flex-col items-center justify-center animate-pulse"><div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mb-6 text-primary" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }}></div><div className="text-base font-bold tracking-wider text-primary uppercase">{msg}</div></div>); }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
