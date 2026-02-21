@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V43 - RESTORED JQL SEARCH WITH SAFE CHANGELOG")
+print("🚀 APP STARTING: V44 - TIMEOUT FIX & RESTORED TABS")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -165,7 +165,7 @@ def get_assignable_users(project_key, creds):
 def build_team_roster(project_key, creds, sp_field):
     assignable_map = get_assignable_users(project_key, creds)
     roster = {name: 0.0 for name in assignable_map.keys()}
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["assignee", sp_field]})
+    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND sprint in openSprints()', "fields": ["assignee", sp_field]})
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []):
             f = i.get('fields') or {}
@@ -392,7 +392,7 @@ def list_projects(creds: dict = Depends(get_jira_creds)):
 
 @app.get("/sprints/{project_key}")
 def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
+    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND sprint is not EMPTY ORDER BY updated DESC', "maxResults": 50, "fields": ["customfield_10020"]})
     try:
         sprints = {}
         for i in res.json().get('issues', []):
@@ -400,13 +400,15 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
-# ✨ FIXED: Restored to search/jql, protected changelog expansion
+# ✨ FIXED: Target explicit fields to avoid 30s Timeout while allowing changelog expansion
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    jql = f"project={project_key} AND sprint={sprint_id}" if sprint_id and sprint_id != "active" else f"project={project_key} AND sprint in openSprints()"
+    jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
     
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 100, "fields": ["*all"], "expand": ["changelog"]})
+    safe_fields = ["summary", "assignee", "priority", "status", "issuetype", "description", "comment", "created", "customfield_10020", "customfield_10016", "customfield_10026", "customfield_10028", "customfield_10004", sp_field]
+    
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 50, "fields": safe_fields, "expand": ["changelog"]})
     
     if res is None or res.status_code != 200:
         print(f"Error fetching analytics data from Jira: {res.status_code if res else 'Timeout'}", flush=True)
@@ -457,7 +459,6 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
                                     if item.get('to'): added_mid_sprint = True
         except Exception as e:
             print(f"Warning: Changelog calculation skipped for {i.get('key')} - {e}", flush=True)
-            pass
 
         stats["points"] += pts; stats["total"] += 1
         if priority_name in ["High", "Highest", "Critical"]: stats["blockers"] += 1
@@ -476,14 +477,18 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         desc = extract_adf_text(f.get('description', {}))[:500] 
         context_for_ai.append({"key": i.get('key'), "status": status_name, "assignee": name, "summary": f.get('summary', ''), "description": desc})
 
-    try: ai_data = json.loads(generate_ai_response(f"Analyze Sprint. DATA: {json.dumps(context_for_ai)}. Return JSON: {{\"executive_summary\": \"...\", \"business_value\": \"...\", \"story_progress\": [{{\"key\":\"...\", \"summary\":\"...\", \"assignee\":\"...\", \"status\":\"...\", \"analysis\":\"...\"}}]}}").replace('```json','').replace('```','').strip())
-    except Exception as e: ai_data = {"executive_summary": "Format Error.", "business_value": "Error", "story_progress": []}
+    try: 
+        raw = generate_ai_response(f"Analyze Sprint. DATA: {json.dumps(context_for_ai)}. Return JSON: {{\"executive_summary\": \"...\", \"business_value\": \"...\", \"story_progress\": [{{\"key\":\"...\", \"summary\":\"...\", \"assignee\":\"...\", \"status\":\"...\", \"analysis\":\"...\"}}]}}").replace('```json','').replace('```','').strip()
+        ai_data = json.loads(raw)
+        if "executive_summary" not in ai_data: raise ValueError("Bad AI Data")
+    except Exception as e: 
+        ai_data = {"executive_summary": "Format Error.", "business_value": "Error", "story_progress": []}
     return {"metrics": stats, "ai_insights": ai_data}
 
 @app.get("/super_deck/{project_key}")
 def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    jql = f"project={project_key} AND sprint={sprint_id}" if sprint_id and sprint_id != "active" else f"project={project_key} AND sprint in openSprints()"
+    jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["*all"]})
     issues = res.json().get('issues', []) if res is not None and res.status_code == 200 else []
     
@@ -502,7 +507,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
             
     retro_res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res is not None and retro_res.status_code==200 else {}
-    backlog_res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
+    backlog_res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND sprint is EMPTY', "maxResults": 4, "fields": ["summary"]})
     backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res is not None and backlog_res.status_code == 200 else ["Backlog Refinement", "Planning"]
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
@@ -519,7 +524,7 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
+    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND updated >= "{dt}" ORDER BY updated DESC', "maxResults": 40, "fields": ["summary", "status", "assignee", "priority", "customfield_10016", "customfield_10026", "customfield_10028", "customfield_10004", sp_field]})
     issues = res.json().get('issues', []) if res is not None and res.status_code == 200 else []
     
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
@@ -549,14 +554,21 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     ppt_buffer = generate_native_editable_pptx(slides_data)
     return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project", "Project")}_Native_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
+# ✨ FIXED: Protected Roadmap JSON parsing from failing UI
 @app.get("/roadmap/{project_key}")
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
-    jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
+    jql = f'project="{project_key}" AND statusCategory != Done ORDER BY priority DESC'
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
     context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res is not None and res.status_code == 200]
     prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
-    try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
-    except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
+    
+    try: 
+        parsed = json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
+        if "timeline" not in parsed or "tracks" not in parsed: raise ValueError("AI omitted tracks or timeline")
+        return parsed
+    except Exception as e: 
+        print(f"⚠️ Safe Roadmap Fallback Activated: {e}")
+        return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Planned Track", "items": [{"key": i.get('key',''), "summary": i.get('summary',''), "start": 0, "duration": 3, "priority": i.get('priority',''), "status": i.get('status','')} for i in context_data[:5]]}]}
 
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
@@ -564,7 +576,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
     project_key = payload.get('project')
     roster, assignable_map = build_team_roster(project_key, creds, sp_field)
     
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
+    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND sprint in openSprints()', "fields": ["summary", "assignee"]})
     board_context = []
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []):
@@ -582,7 +594,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
 @app.post("/timeline/generate_epic")
 async def generate_epic(payload: dict, creds: dict = Depends(get_jira_creds)):
     project_key = payload.get('project')
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key}", "maxResults": 10, "fields": ["summary"]})
+    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}"', "maxResults": 10, "fields": ["summary"]})
     board_context = []
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []): board_context.append((i.get('fields') or {}).get('summary', ''))
@@ -661,15 +673,18 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
+    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND updated >= "{dt}" ORDER BY updated DESC', "maxResults": 40, "fields": ["summary", "status", "assignee", "priority", sp_field]})
     done_count = 0; done_pts = 0.0; context_data = []
+    
     for i in res.json().get('issues', []) if res is not None and res.status_code == 200 else []:
         f = i.get('fields') or {}
         pts = extract_story_points(f, sp_field)
-        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': done_count += 1; done_pts += pts
+        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': 
+            done_count += 1; done_pts += pts
         status_name = (f.get('status') or {}).get('name') or "Unknown"
         assignee = (f.get('assignee') or {}).get('displayName') or "Unassigned"
         context_data.append({"key": i.get('key'), "summary": f.get('summary', ''), "status": status_name, "assignee": assignee, "points": pts})
+        
     try: ai_dossier = json.loads(generate_ai_response(f"Elite Agile Analyst. DATA: {json.dumps(context_data)}. Return JSON: {{\"ai_verdict\": \"...\", \"sprint_vibe\": \"...\", \"key_accomplishments\": [{{\"title\": \"...\", \"impact\": \"...\"}}], \"hidden_friction\": \"...\", \"top_contributor\": \"Name - Reason\"}}", temperature=0.4).replace('```json','').replace('```','').strip())
     except: ai_dossier = {"ai_verdict": "Error", "sprint_vibe": "Error", "key_accomplishments": [], "hidden_friction": "", "top_contributor": ""}
     return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(context_data), "dossier": ai_dossier}
