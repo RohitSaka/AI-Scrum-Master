@@ -409,7 +409,6 @@
             const [theme, setTheme] = useState(localStorage.getItem('ig_theme') || 'dark');
             useEffect(() => { document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode'; localStorage.setItem('ig_theme', theme); }, [theme]);
 
-            // ✨ MAGIC GUEST LINK ROUTING ✨
             const params = new URLSearchParams(window.location.search);
             const guestToken = params.get('guest_token');
             if (guestToken) return <GuestRetroView token={guestToken} theme={theme} setTheme={setTheme} />;
@@ -419,7 +418,6 @@
             return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
         }
 
-        // ================= ✨ ANONYMOUS GUEST RETRO COMPONENT ✨ =================
         function GuestRetroView({ token, theme, setTheme }) {
             const [board, setBoard] = useState(null);
             const [info, setInfo] = useState({ project: '', sprint: '' });
@@ -436,7 +434,7 @@
 
             useEffect(() => {
                 fetchBoard();
-                const interval = setInterval(fetchBoard, 3000); // ✨ LIVE POLLING! ✨
+                const interval = setInterval(fetchBoard, 3000);
                 return () => clearInterval(interval);
             }, [token]);
 
@@ -573,7 +571,6 @@
                         </div>
                     </aside>
 
-                    {/* ✨ FIXED: Properly contained Flex Column layout so children can scroll properly ✨ */}
                     <main className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300 bg-bg-body" style={{ padding: view === 'smartdeck' ? '0' : '2.5rem' }}>
                         {activeProject ? (
                             <div className="flex-1 min-h-0 relative h-full">
@@ -803,81 +800,11 @@
             );
         }
 
-        function RoadmapView({ project, setIsLoading }) {
-            const [roadmap, setRoadmap] = useState(null);
-            useEffect(() => { setIsLoading(true); setRoadmap(null); secureFetch(`/roadmap/${project}`).then(r => r?.json()).then(data => { setRoadmap(data); setIsLoading(false); }).catch(() => setIsLoading(false)); }, [project]);
-            if (!roadmap) return <LoadingScreen msg="AI is analyzing the backlog and predicting release timelines..." />;
-            const trackColors = ["linear-gradient(to right, #3b82f6, #60a5fa)", "linear-gradient(to right, #10b981, #34d399)", "linear-gradient(to right, #8b5cf6, #a78bfa)", "linear-gradient(to right, #f59e0b, #fbbf24)"];
-
-            return (
-                <div className="animate-fade-in h-full flex flex-col pr-4 pb-12">
-                    <header className="mb-8 flex justify-between items-end pb-6 border-b border-border">
-                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Strategic Roadmap</h2><p className="text-base font-medium mt-2 text-text-muted">AI-Predicted Release Timeline based on Priority & Dependencies</p></div>
-                        <div className="flex items-center gap-3 px-5 py-2.5 rounded-full border text-xs font-black uppercase tracking-wider bg-primary-dim text-primary border-primary-dim"><Icon name="Sparkles" size={16} /> 12-Week Horizon</div>
-                    </header>
-                    <div className="flex-1 overflow-auto hide-scroll rounded-2xl border border-border shadow-2xl relative bg-bg-card">
-                        <div className="min-w-[1200px]">
-                            <div className="roadmap-grid sticky top-0 z-30 border-b border-border bg-bg-card">
-                                <div className="roadmap-header text-left pl-8">Workstream</div>{roadmap.timeline.map((wk, i) => (<div key={i} className="roadmap-header">{wk}</div>))}
-                            </div>
-                            {roadmap.tracks.map((track, trackIdx) => (
-                                <div key={trackIdx} className="relative border-b last:border-b-0 border-border">
-                                    <div className="roadmap-grid border-0 rounded-none absolute inset-0 h-full"><div className="roadmap-cell border-r border-border"></div>{roadmap.timeline.map((_, i) => (<div key={i} className="roadmap-cell border-r border-border"></div>))}</div>
-                                    <div className="relative z-10 flex">
-                                        <div className="w-[250px] shrink-0 p-8 flex flex-col justify-center border-r border-border"><span className="font-bold text-base leading-snug text-text-main">{track.name}</span><span className="text-xs mt-2 uppercase font-black tracking-wider text-text-muted">{track.items.length} Items</span></div>
-                                        <div className="flex-1 relative" style={{ minHeight: `${Math.max(track.items.length * 56 + 32, 96)}px` }}>
-                                            <AnimatePresence>
-                                                {track.items.map((item, i) => {
-                                                    const start = Math.max(0, Math.min(item.start, 11)); const dur = Math.max(1, Math.min(item.duration, 12 - start));
-                                                    return (
-                                                        <motion.div key={item.key} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1, ease: "easeOut" }} className="roadmap-item shadow-lg" style={{ background: trackColors[trackIdx % trackColors.length], left: `calc(${(start / 12) * 100}% + 12px)`, width: `calc(${(dur / 12) * 100}% - 24px)`, top: `${i * 56 + 16}px`, height: '40px' }} title={`${item.key}: ${item.summary} [Priority: ${item.priority}]`}><span className="font-black opacity-90 mr-3 shrink-0 text-xs">{item.key}</span><span className="truncate font-bold text-sm">{item.summary}</span></motion.div>
-                                                    )
-                                                })}
-                                            </AnimatePresence>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
-            const [data, setData] = useState(null); const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState('active');
-            useEffect(() => { secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { if (d && d.length) setSprints(d); }); }, [project]);
-            useEffect(() => { setData(null); setIsLoading(true); secureFetch(activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`).then(r => r ? r.json() : null).then(d => { setData(d); setIsLoading(false); }); }, [project, activeSprint]);
-            if (!data) return <LoadingScreen msg="AI is analyzing descriptions, acceptance criteria, and assignee comments..." />;
-            return (
-                <div className="animate-fade-in space-y-8 h-full overflow-y-auto pb-12 pr-4">
-                    <header className="flex justify-between items-end mb-10 border-b border-border pb-6">
-                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Executive Insights</h2><p className="text-base font-medium mt-2 text-text-muted">AI-driven delivery analysis & business value</p></div>
-                        <div className="flex items-center gap-3"><span className="text-xs font-black uppercase tracking-wider text-text-muted">Target Sprint</span><select value={activeSprint} onChange={e => setActiveSprint(e.target.value)} disabled={isGlobalLoading} className={`p-3 rounded-lg border text-sm input-field font-bold min-w-[220px] ${isGlobalLoading ? 'opacity-50' : ''}`}><option value="active">🟢 Active Sprint</option>{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-                    </header>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6"><MetricCard label="Velocity (Pts)" value={data.metrics.points} color="primary" /><MetricCard label="Total Tickets" value={data.metrics.total} color="success" /><MetricCard label="Blockers" value={data.metrics.blockers} color="danger" isDanger={data.metrics.blockers > 0} /><MetricCard label="Bugs Found" value={data.metrics.bugs} color="warning" /></div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="glass-card p-8 border-t-4 border-primary"><h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-6 text-text-muted"><Icon name="Activity" size={18} /> Executive Summary</h3><p className="text-base leading-relaxed font-medium text-text-main">{data.ai_insights?.executive_summary}</p></div>
-                        <div className="glass-card p-8 border-t-4 border-success"><h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-6 text-text-muted"><Icon name="TrendingDown" size={18} /> Business Value Delivered</h3><div className="text-base leading-relaxed font-medium text-text-main prose" dangerouslySetInnerHTML={{ __html: marked.parse(data.ai_insights?.business_value || "") }}></div></div>
-                    </div>
-                    <div>
-                        <h3 className="text-2xl font-extrabold mb-6 mt-10 text-text-main">Deep Story Progress Analysis</h3>
-                        <div className="grid grid-cols-1 gap-4">
-                            {data.ai_insights?.story_progress?.map((story, idx) => (
-                                <div key={idx} className="glass-card p-5 flex gap-6 items-center hover:border-primary transition-colors">
-                                    <div className="w-28 text-center shrink-0"><div className="text-sm font-black text-primary">{story.key}</div><div className="text-[10px] uppercase tracking-wider font-bold mt-2 px-3 py-1 rounded-full border border-border inline-block text-text-muted bg-bg-body">{story.status}</div></div>
-                                    <div className="flex-1 border-l border-border pl-6"><div className="text-base font-bold mb-2 text-text-main">{story.summary} <span className="font-medium opacity-60 ml-2">({story.assignee})</span></div><div className="text-sm font-medium text-text-muted"><strong className="text-warning">AI Note: </strong> {story.analysis}</div></div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // ================= ✨ THE REBUILT TIMELINE & BACKLOG VIEW (STORY + EPIC GENERATORS) ✨ =================
+        // ✨ NEW: SPRINT DYNAMICS CALCULATOR & VIEW ✨
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
+            const [sprints, setSprints] = useState([]);
+            const [activeSprint, setActiveSprint] = useState('active');
 
             // Story State
             const [storyPrompt, setStoryPrompt] = useState("");
@@ -897,9 +824,15 @@
             const [epicStatus, setEpicStatus] = useState(null);
 
             useEffect(() => {
-                setData(null); setIsLoading(true);
-                secureFetch(`/analytics/${project}`).then(r => r?.json()).then(d => { setData(d); setIsLoading(false); });
+                secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { if (d && d.length) setSprints(d); });
             }, [project]);
+
+            useEffect(() => {
+                setData(null); setIsLoading(true);
+                secureFetch(activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`)
+                    .then(r => r?.json())
+                    .then(d => { setData(d); setIsLoading(false); });
+            }, [project, activeSprint]);
 
             const handleImageChange = (e) => {
                 const file = e.target.files[0];
@@ -965,19 +898,79 @@
 
             if (!data) return <LoadingScreen msg="Loading Workspace..." />;
 
+            // ✨ THE SPRINT DYNAMICS TABLE ENGINE ✨
+            const dynamicsData = Object.entries(data.metrics.assignees || {}).map(([name, stats]) => {
+                const originalPts = stats.points || 0;
+                const originalTasks = stats.tasks.map(t => `${t.key}(${t.summary.substring(0, 15)}...)`).join(', ');
+
+                const finalPts = stats.tasks
+                    .filter(t => t.status.toLowerCase().includes('done') || t.status.toLowerCase().includes('closed') || t.status.toLowerCase().includes('resolved'))
+                    .reduce((sum, t) => sum + (t.points || 0), 0);
+
+                const midPts = 0;
+                const midTasks = "";
+                const delta = originalPts > 0 ? (((finalPts - originalPts) / originalPts) * 100) : 0;
+
+                return { user: name, originalPts, originalTasks, midPts, midTasks, finalPts, delta };
+            });
+
+            const totalOrig = dynamicsData.reduce((sum, r) => sum + r.originalPts, 0);
+            const totalMid = dynamicsData.reduce((sum, r) => sum + r.midPts, 0);
+            const totalFinal = dynamicsData.reduce((sum, r) => sum + r.finalPts, 0);
+            const totalDelta = totalOrig > 0 ? (((totalFinal - totalOrig) / totalOrig) * 100).toFixed(2) : "0.00";
+
             return (
                 <div className="animate-fade-in h-full overflow-y-auto pb-32 pr-4 relative space-y-16 block">
 
-                    {/* --- PART 1: TEAM TIMELINE --- */}
+                    {/* --- PART 1: SPRINT DYNAMICS TABLE --- */}
                     <div>
-                        <header className="mb-8"><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Timeline & Capacity</h2></header>
-                        <div className="space-y-6">
-                            {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                                <div key={name} className="glass-card p-5 flex items-center gap-8 overflow-hidden hover:border-primary transition-all">
-                                    <div className="w-56 shrink-0 flex items-center gap-4 pr-6 border-r border-border">{stats.avatar ? <img src={stats.avatar} className="w-12 h-12 rounded-xl border-2 border-primary shadow-sm" /> : <div className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black text-white bg-primary shadow-lg">{name.charAt(0)}</div>}<div className="min-w-0"><div className="text-base font-extrabold truncate text-text-main">{name.split(" ")[0]}</div><div className="text-xs font-black mt-1 px-2.5 py-1 rounded-md bg-primary-dim text-primary inline-block uppercase tracking-wider">{stats.points} Points</div></div></div>
-                                    <div className="flex-1 flex gap-4 overflow-x-auto hide-scroll pb-2 pt-2">{stats.tasks?.map(t => (<div key={t.key} className="shrink-0 w-72 p-4 rounded-xl border shadow-sm flex flex-col justify-between bg-bg-body transition-all hover:-translate-y-1 hover:shadow-md" style={{ borderColor: t.priority === 'High' ? 'var(--danger)' : 'var(--border)' }}><div><div className="flex justify-between items-center mb-3"><span className="text-sm font-black text-primary">{t.key}</span><span className="text-[10px] uppercase font-bold tracking-wider text-text-muted">{t.status}</span></div><p className="text-sm text-text-main leading-relaxed line-clamp-2 font-medium">{t.summary}</p></div><div className="mt-4 flex justify-end"><span className="text-[10px] font-black uppercase tracking-wider bg-bg-card text-text-muted px-3 py-1.5 rounded-md border border-border">{t.points} pts</span></div></div>))}</div>
-                                </div>
-                            ))}
+                        <header className="mb-8 flex justify-between items-end pb-6 border-b border-border">
+                            <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Sprint Dynamics</h2><p className="text-base font-medium mt-2 text-text-muted">Real-time view of capacity and delivery delta</p></div>
+                            <div className="flex items-center gap-3"><span className="text-xs font-black uppercase tracking-wider text-text-muted">Target Sprint</span><select value={activeSprint} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm outline-none"><option value="active">🟢 Active Sprint</option>{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                        </header>
+
+                        <div className="rounded-xl border border-border shadow-2xl overflow-hidden bg-bg-card">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse whitespace-nowrap">
+                                    <thead>
+                                        <tr className="text-white text-xs uppercase tracking-wider" style={{ backgroundColor: '#1E5631' }}>
+                                            <th className="p-4 border-r border-white/20 font-extrabold">User</th>
+                                            <th className="p-4 border-r border-white/20 font-extrabold text-center">Original Commitment (Pts)</th>
+                                            <th className="p-4 border-r border-white/20 font-extrabold">Original Stories / Tasks (Jira IDs)</th>
+                                            <th className="p-4 border-r border-white/20 font-extrabold text-center">Mid-Sprint Changes (+/- Pts)</th>
+                                            <th className="p-4 border-r border-white/20 font-extrabold">Added/Removed Stories</th>
+                                            <th className="p-4 border-r border-white/20 font-extrabold text-center">Final Delivered (Pts)</th>
+                                            <th className="p-4 font-extrabold text-center">Delta (%)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="text-sm font-medium">
+                                        {dynamicsData.length === 0 ? (
+                                            <tr><td colSpan="7" className="p-10 text-center text-text-muted font-bold">No active users found in this sprint.</td></tr>
+                                        ) : dynamicsData.map((row, i) => (
+                                            <tr key={row.user} className="border-b border-border hover:bg-bg-hover transition-colors">
+                                                <td className="p-4 border-r border-border text-text-main font-bold">{row.user}</td>
+                                                <td className="p-4 border-r border-border text-center text-text-main">{row.originalPts}</td>
+                                                <td className="p-4 border-r border-border text-xs text-text-muted whitespace-normal min-w-[200px] leading-relaxed">{row.originalTasks}</td>
+                                                <td className="p-4 border-r border-border text-center text-text-main">{row.midPts}</td>
+                                                <td className="p-4 border-r border-border text-xs text-text-muted whitespace-normal min-w-[150px] leading-relaxed">{row.midTasks}</td>
+                                                <td className="p-4 border-r border-border text-center text-text-main">{row.finalPts}</td>
+                                                <td className={`p-4 text-center font-bold ${row.delta < 0 ? 'text-danger' : row.delta > 0 ? 'text-warning' : 'text-success'}`}>{row.delta.toFixed(2)}%</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot className="bg-bg-hover text-text-main font-black text-sm border-t-2 border-border">
+                                        <tr>
+                                            <td className="p-4 border-r border-border">TOTALS</td>
+                                            <td className="p-4 border-r border-border text-center">{totalOrig}</td>
+                                            <td className="p-4 border-r border-border"></td>
+                                            <td className="p-4 border-r border-border text-center">{totalMid}</td>
+                                            <td className="p-4 border-r border-border"></td>
+                                            <td className="p-4 border-r border-border text-center">{totalFinal}</td>
+                                            <td className={`p-4 text-center ${totalDelta < 0 ? 'text-danger' : totalDelta > 0 ? 'text-warning' : 'text-success'}`}>{totalDelta}%</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
@@ -1235,7 +1228,7 @@
             );
         }
 
-        // ================= RETRO BOARD (WITH AGILE COACH CHAT) =================
+        // ================= RETRO BOARD =================
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
             const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well");
             const [toast, setToast] = useState(null);
@@ -1251,7 +1244,6 @@
             const fetchBoard = () => { if (activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r => r?.json()).then(setBoard); } };
             useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
 
-            // Auto-scroll chat
             useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory, isChatting]);
 
             const save = (b) => { setBoard(b); secureFetch(`/retro/update`, { method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, board: b }) }); };
@@ -1313,7 +1305,6 @@
                     </div>
 
                     <div className="grid grid-cols-4 gap-8 flex-1 pb-6 min-h-0">
-                        {/* Standard Columns */}
                         {['well', 'improve', 'kudos'].map(c => (
                             <div key={c} className="retro-col shadow-xl">
                                 <div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c === 'well' ? 'CheckCircle' : c === 'improve' ? 'TrendingDown' : 'Star'} size={18} /></div>
@@ -1330,7 +1321,6 @@
                             </div>
                         ))}
 
-                        {/* ✨ NEW: AGILE COACH CHAT COLUMN ✨ */}
                         <div className="retro-col border-primary/30 shadow-xl flex flex-col h-full" style={{ background: 'var(--primary-dim)' }}>
                             <div className="retro-col-header bg-primary/10 text-primary shrink-0">
                                 <span className="flex items-center gap-2"><Icon name="Sparkles" size={16} /> Ask your Agile Coach</span>
