@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V42 - BULLETPROOF JIRA SEARCH & CHANGELOGS")
+print("🚀 APP STARTING: V42 - BULLETPROOF JIRA SEARCH & SYNTAX FIX")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -400,13 +400,11 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
-# ✨ FIXED: Mid-Sprint Addition Detection Engine
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
     
-    # Passing maxResults to ensure all tickets are caught, not just the default 50
     res = jira_request("POST", "search", creds, {"jql": jql, "maxResults": 100, "fields": ["*all"], "expand": ["changelog"]})
     
     if res is None or res.status_code != 200:
@@ -437,7 +435,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
             for k, v in f.items():
                 if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict) and 'startDate' in v[0] and 'state' in v[0]:
                     for s in v:
-                        if s.get('state') == 'active' or str(s.get('id')) == str(sprint_id):
+                        if str(s.get('state', '')).lower() == 'active' or str(s.get('id', '')) == str(sprint_id):
                             sprint_start = s.get('startDate')
                     if sprint_start: break
                     
@@ -479,7 +477,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         context_for_ai.append({"key": i.get('key'), "status": status_name, "assignee": name, "summary": f.get('summary', ''), "description": desc})
 
     try: ai_data = json.loads(generate_ai_response(f"Analyze Sprint. DATA: {json.dumps(context_for_ai)}. Return JSON: {{\"executive_summary\": \"...\", \"business_value\": \"...\", \"story_progress\": [{{\"key\":\"...\", \"summary\":\"...\", \"assignee\":\"...\", \"status\":\"...\", \"analysis\":\"...\"}}]}}").replace('```json','').replace('```','').strip())
-    except: ai_data = {"executive_summary": "Format Error.", "business_value": "Error", "story_progress": []}
+    except Exception as e: ai_data = {"executive_summary": "Format Error.", "business_value": "Error", "story_progress": []}
     return {"metrics": stats, "ai_insights": ai_data}
 
 @app.get("/super_deck/{project_key}")
@@ -513,7 +511,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
     try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception e: print(f"❌ Deck Parse Error: {e}", flush=True); return {"status": "error", "message": "Failed to orchestrate slides."}
+    except Exception as e: print(f"❌ Deck Parse Error: {e}", flush=True); return {"status": "error", "message": "Failed to orchestrate slides."}
 
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
