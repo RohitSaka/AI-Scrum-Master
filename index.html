@@ -559,8 +559,8 @@
                             <nav className="space-y-2">
                                 <NavBtn id="smartdeck" icon="Monitor" label="AI Sprint Deck" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
+                                <NavBtn id="timeline" icon="Zap" label="Sprint Dynamics & Build" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="roadmap" icon="Map" label="Strategic Roadmap" active={view} set={setView} disabled={isGlobalLoading} />
-                                {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Zap" label="Timeline & Backlog" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
                                 {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="reports" icon="FileText" label="Reports & Reviews" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
                         </div>
@@ -899,7 +899,7 @@
             if (!data) return <LoadingScreen msg="Loading Workspace..." />;
 
             // ✨ THE SPRINT DYNAMICS TABLE ENGINE ✨
-            const dynamicsData = Object.entries(data.metrics.assignees || {}).map(([name, stats]) => {
+            const dynamicsData = Object.entries(data.metrics?.assignees || {}).map(([name, stats]) => {
 
                 // Separate out the tasks added mid-sprint
                 const origList = stats.tasks.filter(t => !t.added_mid_sprint);
@@ -907,7 +907,7 @@
 
                 // Original Commitments
                 const originalPts = origList.reduce((sum, t) => sum + (t.points || 0), 0);
-                const originalTasks = origList.map(t => `${t.key}(${t.summary.substring(0, 15)}...)`).join(', ');
+                const originalTasks = origList.map(t => `${t.key} (${t.summary.substring(0, 20)}...)`).join(', ');
 
                 // Mid-Sprint Additions
                 const midPts = midList.reduce((sum, t) => sum + (t.points || 0), 0);
@@ -950,18 +950,18 @@
                             </div>
                         </header>
 
-                        <div className="rounded-xl border border-border shadow-lg overflow-hidden bg-bg-card">
+                        <div className="rounded-xl border border-border shadow-xl overflow-hidden bg-bg-card flex flex-col">
                             <div className="overflow-x-auto hide-scroll">
                                 <table className="w-full text-left border-collapse whitespace-nowrap">
                                     <thead>
-                                        <tr className="text-white text-xs uppercase tracking-wider" style={{ backgroundColor: '#1E5631' }}>
-                                            <th className="p-5 font-black border-r border-white/20">User</th>
-                                            <th className="p-5 font-black text-center border-r border-white/20">Original Commitment (Pts)</th>
-                                            <th className="p-5 font-black border-r border-white/20">Original Stories / Tasks (Jira IDs)</th>
-                                            <th className="p-5 font-black text-center border-r border-white/20">Mid-Sprint Changes (+/- Pts)</th>
-                                            <th className="p-5 font-black border-r border-white/20">Added/Removed Stories</th>
-                                            <th className="p-5 font-black text-center border-r border-white/20">Final Delivered (Pts)</th>
-                                            <th className="p-5 font-black text-center">Delta (%)</th>
+                                        <tr className="bg-slate-900 text-slate-50 text-[11px] uppercase tracking-widest border-b border-border">
+                                            <th className="p-5 font-black border-r border-white/10">Assignee</th>
+                                            <th className="p-5 font-black text-center border-r border-white/10">Original Commitment</th>
+                                            <th className="p-5 font-black border-r border-white/10 w-1/4">Original Scope</th>
+                                            <th className="p-5 font-black text-center border-r border-white/10">Mid-Sprint Variance</th>
+                                            <th className="p-5 font-black border-r border-white/10 w-1/4">Scope Creep / Added</th>
+                                            <th className="p-5 font-black text-center border-r border-white/10">Final Delivered</th>
+                                            <th className="p-5 font-black text-center">Sprint Delta</th>
                                         </tr>
                                     </thead>
                                     <tbody className="text-sm font-semibold divide-y divide-border">
@@ -1334,6 +1334,7 @@
                                     {board[c]?.map(i => (
                                         <div key={i.id} className="retro-card font-medium relative group">
                                             <span className="pr-6 block">{i.text}</span>
+                                            {/* Hover Delete Button */}
                                             <button onClick={() => remove(c, i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
                                                 <Icon name="Trash" size={14} />
                                             </button>
@@ -1343,7 +1344,7 @@
                             </div>
                         ))}
 
-                        {/* ✨ NEW: AGILE COACH CHAT COLUMN ✨ */}
+                        {/* ✨ AGILE COACH CHAT COLUMN ✨ */}
                         <div className="retro-col border-primary/30 shadow-xl flex flex-col h-full" style={{ background: 'var(--primary-dim)' }}>
                             <div className="retro-col-header bg-primary/10 text-primary shrink-0">
                                 <span className="flex items-center gap-2"><Icon name="Sparkles" size={16} /> Ask your Agile Coach</span>

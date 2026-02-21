@@ -406,7 +406,6 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
     sp_field = get_story_point_field(creds)
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
     
-    # Requesting changelog to perfectly map when issues were actually added to the sprint
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["*all"], "expand": ["changelog"]})
     issues = res.json().get('issues', []) if res is not None else []
 
@@ -425,29 +424,31 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         priority_name = priority.get('name') or "Medium"
         status_name = status.get('name') or "To Do"
         
-        # Mid-Sprint Calculation Logic
+        # ✨ FIXED: Crash-proof Mid-Sprint Addition Logic ✨
         added_mid_sprint = False
-        sprint_start = None
-        
-        # 1. Safely find the sprint start date
-        for k, v in f.items():
-            if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict) and 'startDate' in v[0] and 'state' in v[0]:
-                for s in v:
-                    if s.get('state') == 'active' or str(s.get('id')) == str(sprint_id):
-                        sprint_start = s.get('startDate')
-                if sprint_start: break
-                
-        # 2. Check if created mid-sprint OR moved into sprint via changelog
-        if sprint_start:
-            created_date = f.get('created')
-            if created_date and created_date > sprint_start:
-                added_mid_sprint = True
-            else:
-                for history in i.get('changelog', {}).get('histories', []):
-                    if history.get('created', '') > sprint_start:
-                        for item in history.get('items', []):
-                            if item.get('fieldId') == 'customfield_10020' or item.get('field') == 'Sprint':
-                                if item.get('to'): added_mid_sprint = True
+        try:
+            sprint_start = None
+            for k, v in f.items():
+                if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict) and 'startDate' in v[0] and 'state' in v[0]:
+                    for s in v:
+                        if s.get('state') == 'active' or str(s.get('id')) == str(sprint_id):
+                            sprint_start = s.get('startDate')
+                    if sprint_start: break
+                    
+            if sprint_start:
+                created_date = f.get('created', '')
+                if created_date and str(created_date) > str(sprint_start):
+                    added_mid_sprint = True
+                else:
+                    for history in i.get('changelog', {}).get('histories', []):
+                        h_created = history.get('created', '')
+                        if h_created and str(h_created) > str(sprint_start):
+                            for item in history.get('items', []):
+                                if str(item.get('fieldId')) == 'customfield_10020' or str(item.get('field')).lower() == 'sprint':
+                                    if item.get('to'): added_mid_sprint = True
+        except Exception as e:
+            print(f"Warning: Changelog calculation skipped for {i.get('key')} - {e}")
+            pass
 
         stats["points"] += pts; stats["total"] += 1
         if priority_name in ["High", "Highest", "Critical"]: stats["blockers"] += 1
@@ -464,11 +465,9 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         })
         
         desc = extract_adf_text(f.get('description', {}))[:500] 
-        comments = " | ".join([extract_adf_text(c.get('body', {})) for c in f.get('comment', {}).get('comments', [])[-2:]])
-        context_for_ai.append({"key": i.get('key'), "status": status_name, "assignee": name, "summary": f.get('summary', ''), "description": desc, "latest_comments": comments})
+        context_for_ai.append({"key": i.get('key'), "status": status_name, "assignee": name, "summary": f.get('summary', ''), "description": desc})
 
-    prompt = f"Analyze Sprint. DATA: {json.dumps(context_for_ai)}. Return JSON: {{\"executive_summary\": \"...\", \"business_value\": \"...\", \"story_progress\": [{{\"key\":\"...\", \"summary\":\"...\", \"assignee\":\"...\", \"status\":\"...\", \"analysis\":\"...\"}}]}}"
-    try: ai_data = json.loads(generate_ai_response(prompt).replace('```json','').replace('```','').strip())
+    try: ai_data = json.loads(generate_ai_response(f"Analyze Sprint. DATA: {json.dumps(context_for_ai)}. Return JSON: {{\"executive_summary\": \"...\", \"business_value\": \"...\", \"story_progress\": [{{\"key\":\"...\", \"summary\":\"...\", \"assignee\":\"...\", \"status\":\"...\", \"analysis\":\"...\"}}]}}").replace('```json','').replace('```','').strip())
     except: ai_data = {"executive_summary": "Format Error.", "business_value": "Error", "story_progress": []}
     return {"metrics": stats, "ai_insights": ai_data}
 
