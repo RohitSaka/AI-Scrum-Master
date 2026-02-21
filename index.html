@@ -800,7 +800,7 @@
             );
         }
 
-        // ✨ NEW: SPRINT DYNAMICS CALCULATOR & VIEW ✨
+        // ================= ✨ SPRINT DYNAMICS CALCULATOR & GENERATORS VIEW ✨ =================
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null);
             const [sprints, setSprints] = useState([]);
@@ -900,16 +900,28 @@
 
             // ✨ THE SPRINT DYNAMICS TABLE ENGINE ✨
             const dynamicsData = Object.entries(data.metrics.assignees || {}).map(([name, stats]) => {
-                const originalPts = stats.points || 0;
-                const originalTasks = stats.tasks.map(t => `${t.key}(${t.summary.substring(0, 15)}...)`).join(', ');
 
+                // Separate out the tasks added mid-sprint
+                const origList = stats.tasks.filter(t => !t.added_mid_sprint);
+                const midList = stats.tasks.filter(t => t.added_mid_sprint);
+
+                // Original Commitments
+                const originalPts = origList.reduce((sum, t) => sum + (t.points || 0), 0);
+                const originalTasks = origList.map(t => `${t.key}(${t.summary.substring(0, 15)}...)`).join(', ');
+
+                // Mid-Sprint Additions
+                const midPts = midList.reduce((sum, t) => sum + (t.points || 0), 0);
+                const midTasks = midList.map(t => `Added: ${t.key}`).join(', ');
+
+                // Final Completed (Done) Points
                 const finalPts = stats.tasks
                     .filter(t => t.status.toLowerCase().includes('done') || t.status.toLowerCase().includes('closed') || t.status.toLowerCase().includes('resolved'))
                     .reduce((sum, t) => sum + (t.points || 0), 0);
 
-                const midPts = 0;
-                const midTasks = "";
-                const delta = originalPts > 0 ? (((finalPts - originalPts) / originalPts) * 100) : 0;
+                // Delta Calculation: ((Final Delivered - Original Commitment) / Original Commitment) * 100
+                let delta = 0;
+                if (originalPts > 0) delta = (((finalPts - originalPts) / originalPts) * 100);
+                else if (originalPts === 0 && finalPts > 0) delta = 100;
 
                 return { user: name, originalPts, originalTasks, midPts, midTasks, finalPts, delta };
             });
@@ -925,48 +937,57 @@
                     {/* --- PART 1: SPRINT DYNAMICS TABLE --- */}
                     <div>
                         <header className="mb-8 flex justify-between items-end pb-6 border-b border-border">
-                            <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Sprint Dynamics</h2><p className="text-base font-medium mt-2 text-text-muted">Real-time view of capacity and delivery delta</p></div>
-                            <div className="flex items-center gap-3"><span className="text-xs font-black uppercase tracking-wider text-text-muted">Target Sprint</span><select value={activeSprint} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm outline-none"><option value="active">🟢 Active Sprint</option>{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+                            <div>
+                                <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Sprint Dynamics</h2>
+                                <p className="text-base font-medium mt-2 text-text-muted">Real-time view of capacity and delivery delta</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-black uppercase tracking-wider text-text-muted">Target Sprint</span>
+                                <select value={activeSprint} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm outline-none cursor-pointer hover:border-primary transition-colors">
+                                    <option value="active">🟢 Active Sprint</option>
+                                    {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
                         </header>
 
-                        <div className="rounded-xl border border-border shadow-2xl overflow-hidden bg-bg-card">
-                            <div className="overflow-x-auto">
+                        <div className="rounded-xl border border-border shadow-lg overflow-hidden bg-bg-card">
+                            <div className="overflow-x-auto hide-scroll">
                                 <table className="w-full text-left border-collapse whitespace-nowrap">
                                     <thead>
                                         <tr className="text-white text-xs uppercase tracking-wider" style={{ backgroundColor: '#1E5631' }}>
-                                            <th className="p-4 border-r border-white/20 font-extrabold">User</th>
-                                            <th className="p-4 border-r border-white/20 font-extrabold text-center">Original Commitment (Pts)</th>
-                                            <th className="p-4 border-r border-white/20 font-extrabold">Original Stories / Tasks (Jira IDs)</th>
-                                            <th className="p-4 border-r border-white/20 font-extrabold text-center">Mid-Sprint Changes (+/- Pts)</th>
-                                            <th className="p-4 border-r border-white/20 font-extrabold">Added/Removed Stories</th>
-                                            <th className="p-4 border-r border-white/20 font-extrabold text-center">Final Delivered (Pts)</th>
-                                            <th className="p-4 font-extrabold text-center">Delta (%)</th>
+                                            <th className="p-5 font-black border-r border-white/20">User</th>
+                                            <th className="p-5 font-black text-center border-r border-white/20">Original Commitment (Pts)</th>
+                                            <th className="p-5 font-black border-r border-white/20">Original Stories / Tasks (Jira IDs)</th>
+                                            <th className="p-5 font-black text-center border-r border-white/20">Mid-Sprint Changes (+/- Pts)</th>
+                                            <th className="p-5 font-black border-r border-white/20">Added/Removed Stories</th>
+                                            <th className="p-5 font-black text-center border-r border-white/20">Final Delivered (Pts)</th>
+                                            <th className="p-5 font-black text-center">Delta (%)</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="text-sm font-medium">
+                                    <tbody className="text-sm font-semibold divide-y divide-border">
                                         {dynamicsData.length === 0 ? (
                                             <tr><td colSpan="7" className="p-10 text-center text-text-muted font-bold">No active users found in this sprint.</td></tr>
                                         ) : dynamicsData.map((row, i) => (
-                                            <tr key={row.user} className="border-b border-border hover:bg-bg-hover transition-colors">
-                                                <td className="p-4 border-r border-border text-text-main font-bold">{row.user}</td>
-                                                <td className="p-4 border-r border-border text-center text-text-main">{row.originalPts}</td>
-                                                <td className="p-4 border-r border-border text-xs text-text-muted whitespace-normal min-w-[200px] leading-relaxed">{row.originalTasks}</td>
-                                                <td className="p-4 border-r border-border text-center text-text-main">{row.midPts}</td>
-                                                <td className="p-4 border-r border-border text-xs text-text-muted whitespace-normal min-w-[150px] leading-relaxed">{row.midTasks}</td>
-                                                <td className="p-4 border-r border-border text-center text-text-main">{row.finalPts}</td>
-                                                <td className={`p-4 text-center font-bold ${row.delta < 0 ? 'text-danger' : row.delta > 0 ? 'text-warning' : 'text-success'}`}>{row.delta.toFixed(2)}%</td>
+                                            <tr key={row.user} className="hover:bg-bg-hover transition-colors">
+                                                <td className="p-5 border-r border-border text-text-main font-extrabold">{row.user}</td>
+                                                <td className="p-5 border-r border-border text-center text-text-main">{row.originalPts}</td>
+                                                <td className="p-5 border-r border-border text-xs text-text-muted whitespace-normal min-w-[250px] leading-relaxed font-medium">{row.originalTasks || "-"}</td>
+                                                <td className="p-5 border-r border-border text-center text-text-main">{row.midPts !== 0 ? (row.midPts > 0 ? `+${row.midPts}` : row.midPts) : "0"}</td>
+                                                <td className="p-5 border-r border-border text-xs text-text-muted whitespace-normal min-w-[200px] leading-relaxed font-medium">{row.midTasks || "-"}</td>
+                                                <td className="p-5 border-r border-border text-center text-text-main">{row.finalPts}</td>
+                                                <td className={`p-5 text-center font-bold tracking-wide ${row.delta < 0 ? 'text-danger' : row.delta > 0 ? 'text-warning' : 'text-success'}`}>{row.delta.toFixed(2)}%</td>
                                             </tr>
                                         ))}
                                     </tbody>
-                                    <tfoot className="bg-bg-hover text-text-main font-black text-sm border-t-2 border-border">
+                                    <tfoot className="bg-primary-dim/20 text-text-main font-black text-sm border-t-2 border-border">
                                         <tr>
-                                            <td className="p-4 border-r border-border">TOTALS</td>
-                                            <td className="p-4 border-r border-border text-center">{totalOrig}</td>
-                                            <td className="p-4 border-r border-border"></td>
-                                            <td className="p-4 border-r border-border text-center">{totalMid}</td>
-                                            <td className="p-4 border-r border-border"></td>
-                                            <td className="p-4 border-r border-border text-center">{totalFinal}</td>
-                                            <td className={`p-4 text-center ${totalDelta < 0 ? 'text-danger' : totalDelta > 0 ? 'text-warning' : 'text-success'}`}>{totalDelta}%</td>
+                                            <td className="p-5 border-r border-border uppercase tracking-widest">Totals</td>
+                                            <td className="p-5 border-r border-border text-center">{totalOrig}</td>
+                                            <td className="p-5 border-r border-border"></td>
+                                            <td className="p-5 border-r border-border text-center">{totalMid !== 0 ? (totalMid > 0 ? `+${totalMid}` : totalMid) : "0"}</td>
+                                            <td className="p-5 border-r border-border"></td>
+                                            <td className="p-5 border-r border-border text-center">{totalFinal}</td>
+                                            <td className={`p-5 text-center tracking-wide ${totalDelta < 0 ? 'text-danger' : totalDelta > 0 ? 'text-warning' : 'text-success'}`}>{totalDelta}%</td>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -1305,6 +1326,7 @@
                     </div>
 
                     <div className="grid grid-cols-4 gap-8 flex-1 pb-6 min-h-0">
+                        {/* Standard Columns */}
                         {['well', 'improve', 'kudos'].map(c => (
                             <div key={c} className="retro-col shadow-xl">
                                 <div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c === 'well' ? 'CheckCircle' : c === 'improve' ? 'TrendingDown' : 'Star'} size={18} /></div>
@@ -1321,6 +1343,7 @@
                             </div>
                         ))}
 
+                        {/* ✨ NEW: AGILE COACH CHAT COLUMN ✨ */}
                         <div className="retro-col border-primary/30 shadow-xl flex flex-col h-full" style={{ background: 'var(--primary-dim)' }}>
                             <div className="retro-col-header bg-primary/10 text-primary shrink-0">
                                 <span className="flex items-center gap-2"><Icon name="Sparkles" size={16} /> Ask your Agile Coach</span>
