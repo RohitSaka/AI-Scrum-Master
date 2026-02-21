@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V39 - AGILE COACH CHAT & RESPONSIVE UI FIX")
+print("🚀 APP STARTING: V40 - MID-SPRINT CHANGELOG DETECTION")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -159,8 +159,7 @@ def get_assignable_users(project_key, creds):
     users = {}
     if res is not None and res.status_code == 200:
         for u in res.json():
-            if 'displayName' in u and 'accountId' in u:
-                users[u['displayName']] = u['accountId']
+            if 'displayName' in u and 'accountId' in u: users[u['displayName']] = u['accountId']
     return users
 
 def build_team_roster(project_key, creds, sp_field):
@@ -232,17 +231,14 @@ def create_adf_doc(text_content, ac_list=None):
     blocks = []
     for line in str(text_content).split('\n'):
         clean_line = line.strip()
-        if clean_line:
-            blocks.append({"type": "paragraph", "content": [{"type": "text", "text": clean_line}]})
+        if clean_line: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": clean_line}]})
     if ac_list and isinstance(ac_list, list):
         blocks.append({"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]})
         list_items = [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": str(ac)}]}]} for ac in ac_list if str(ac).strip()]
         if list_items: blocks.append({"type": "bulletList", "content": list_items})
-    if not blocks:
-        blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
+    if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-# ✨ FIXED: Added json_mode toggle so the AI can return conversational text for the Agile Coach chat!
 def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
@@ -257,7 +253,6 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True):
         try:
             gen_config = {"temperature": temperature}
             if json_mode: gen_config["responseMimeType"] = "application/json"
-                
             payload = {"contents": contents, "generationConfig": gen_config}
             r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json=payload, timeout=20)
             if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
@@ -269,16 +264,12 @@ def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True):
     if not api_key: return call_gemini(prompt, temperature, image_data, json_mode)
     
     sys_msg = "You are an elite Enterprise Strategy Consultant. Return strictly valid JSON." if json_mode else "You are an Expert Agile Coach assisting a Scrum Master."
-    messages = [{"role": "system", "content": sys_msg}]
-    user_content = [{"type": "text", "text": prompt}]
-    
-    if image_data: user_content.append({"type": "image_url", "image_url": {"url": image_data}})
-    messages.append({"role": "user", "content": user_content})
+    messages = [{"role": "system", "content": sys_msg}, {"role": "user", "content": [{"type": "text", "text": prompt}]}]
+    if image_data: messages[1]["content"].append({"type": "image_url", "image_url": {"url": image_data}})
 
     try:
         kwargs = {"model": "gpt-4o", "messages": messages, "temperature": temperature}
         if json_mode: kwargs["response_format"] = {"type": "json_object"}
-            
         r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=kwargs, timeout=20)
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
     except Exception: pass
@@ -289,6 +280,7 @@ def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True):
 def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True):
     if force_openai or image_data: return call_openai(prompt, temperature, image_data, json_mode)
     return call_gemini(prompt, temperature, image_data, json_mode)
+
 
 # ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
 C_BG = RGBColor(11, 17, 33)      
@@ -408,11 +400,14 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
+# ✨ FIXED: Mid-Sprint Addition Detection Engine
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["*all"]})
+    
+    # Requesting changelog to perfectly map when issues were actually added to the sprint
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["*all"], "expand": ["changelog"]})
     issues = res.json().get('issues', []) if res is not None else []
 
     stats = {"total": len(issues), "points": 0.0, "blockers": 0, "bugs": 0, "stories": 0, "assignees": {}}
@@ -430,16 +425,43 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         priority_name = priority.get('name') or "Medium"
         status_name = status.get('name') or "To Do"
         
+        # Mid-Sprint Calculation Logic
+        added_mid_sprint = False
+        sprint_start = None
+        
+        # 1. Safely find the sprint start date
+        for k, v in f.items():
+            if isinstance(v, list) and len(v) > 0 and isinstance(v[0], dict) and 'startDate' in v[0] and 'state' in v[0]:
+                for s in v:
+                    if s.get('state') == 'active' or str(s.get('id')) == str(sprint_id):
+                        sprint_start = s.get('startDate')
+                if sprint_start: break
+                
+        # 2. Check if created mid-sprint OR moved into sprint via changelog
+        if sprint_start:
+            created_date = f.get('created')
+            if created_date and created_date > sprint_start:
+                added_mid_sprint = True
+            else:
+                for history in i.get('changelog', {}).get('histories', []):
+                    if history.get('created', '') > sprint_start:
+                        for item in history.get('items', []):
+                            if item.get('fieldId') == 'customfield_10020' or item.get('field') == 'Sprint':
+                                if item.get('to'): added_mid_sprint = True
+
         stats["points"] += pts; stats["total"] += 1
         if priority_name in ["High", "Highest", "Critical"]: stats["blockers"] += 1
         if issuetype.get('name') == "Bug": stats["bugs"] += 1
         
         if name not in stats["assignees"]: 
-            avatar = (assignee.get('avatarUrls') or {}).get('48x48', '')
-            stats["assignees"][name] = {"count": 0, "points": 0.0, "tasks": [], "avatar": avatar}
+            stats["assignees"][name] = {"count": 0, "points": 0.0, "tasks": [], "avatar": assignee.get('avatarUrls', {}).get('48x48', '')}
             
-        stats["assignees"][name]["count"] += 1; stats["assignees"][name]["points"] += pts
-        stats["assignees"][name]["tasks"].append({"key": i.get('key'), "summary": f.get('summary', ''), "points": pts, "status": status_name, "priority": priority_name})
+        stats["assignees"][name]["count"] += 1
+        stats["assignees"][name]["points"] += pts
+        stats["assignees"][name]["tasks"].append({
+            "key": i.get('key'), "summary": f.get('summary', ''), "points": pts, 
+            "status": status_name, "priority": priority_name, "added_mid_sprint": added_mid_sprint
+        })
         
         desc = extract_adf_text(f.get('description', {}))[:500] 
         comments = " | ".join([extract_adf_text(c.get('body', {})) for c in f.get('comment', {}).get('comments', [])[-2:]])
@@ -466,33 +488,18 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
 
         pts = extract_story_points(f, sp_field); total_pts += pts
         if status_category.get('key') == 'done': 
-            done_pts += pts
-            done_summaries.append(f.get('summary', ''))
+            done_pts += pts; done_summaries.append(f.get('summary', ''))
         if priority.get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
         if assignee: active_users.add(assignee.get('displayName', ''))
             
     retro_res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res is not None and retro_res.status_code==200 else {}
-    
     backlog_res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
     backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res is not None else ["Backlog Refinement", "Planning"]
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
 
-    prompt = f"""
-    Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}.
-    CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE "Point 1", "...", or "Insert Text".
-    YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
-    Return EXACTLY a JSON array matching this structure:
-    [
-      {{ "id": 1, "layout": "hero", "title": "Sprint Review", "subtitle": "{context['current_date']}", "icon": "🚀" }},
-      {{ "id": 2, "layout": "standard", "title": "Executive Summary", "content": ["Real full sentence summary 1", "Real full sentence summary 2"] }},
-      {{ "id": 3, "layout": "kpi_grid", "title": "Sprint Metrics", "items": [{{"label": "Velocity Delivered", "value": "{done_pts}", "icon": "📈"}}, {{"label": "Total Points", "value": "{total_pts}", "icon": "🎯"}}] }},
-      {{ "id": 4, "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker", "text": "Describe blocker from context", "icon": "🛑"}}] }},
-      {{ "id": 5, "layout": "standard", "title": "Continuous Improvement", "content": ["Write real insights drawn from the retro data provided."] }},
-      {{ "id": 6, "layout": "flowchart", "title": "Look Ahead: Next Sprint", "items": [{{"title": "Read backlog_preview and put item 1 here"}}, {{"title": "Item 2"}}] }}
-    ]
-    """
+    prompt = f"Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}. CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE 'Point 1', '...', or 'Insert Text'. YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. Return EXACTLY a JSON array matching this structure: [ {{ 'id': 1, 'layout': 'hero', 'title': 'Sprint Review', 'subtitle': '{context['current_date']}', 'icon': '🚀' }}, {{ 'id': 2, 'layout': 'standard', 'title': 'Executive Summary', 'content': ['Real full sentence summary 1', 'Real full sentence summary 2'] }}, {{ 'id': 3, 'layout': 'kpi_grid', 'title': 'Sprint Metrics', 'items': [{{'label': 'Velocity Delivered', 'value': '{done_pts}', 'icon': '📈'}}, {{'label': 'Total Points', 'value': '{total_pts}', 'icon': '🎯'}}] }}, {{ 'id': 4, 'layout': 'icon_columns', 'title': 'Risks & Blockers', 'items': [{{'title': 'Blocker', 'text': 'Describe blocker from context', 'icon': '🛑'}}] }}, {{ 'id': 5, 'layout': 'standard', 'title': 'Continuous Improvement', 'content': ['Write real insights drawn from the retro data provided.'] }}, {{ 'id': 6, 'layout': 'flowchart', 'title': 'Look Ahead: Next Sprint', 'items': [{{'title': 'Read backlog_preview and put item 1 here'}}, {{'title': 'Item 2'}}] }} ]"
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
     try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
@@ -516,7 +523,6 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
         if (f.get('priority') or {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
 
     context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
-
     agendas = {
         "weekly": f"""[ {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }}, {{ "layout": "kpi_grid", "title": "Key Metrics", "items": [{{"label": "Issues", "value": "{done_count}", "icon": "✅"}}, {{"label": "Points", "value": "{done_pts}", "icon": "📈"}}] }}, {{ "layout": "standard", "title": "Accomplishments", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker description", "text": "Impact", "icon": "🛑"}}] }}, {{ "layout": "flowchart", "title": "Next Steps", "items": [{{"title": "Review Backlog"}}, {{"title": "Sprint Planning"}}] }} ]""",
         "monthly": f"""[ {{ "layout": "hero", "title": "{timeframe.capitalize()} Business Review", "subtitle": "{context['current_date']}", "icon": "📅" }}, {{ "layout": "standard", "title": "Executive Summary", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "kpi_grid", "title": "KPIs", "items": [{{"label": "Velocity", "value": "{done_pts}", "icon": "📈"}}] }}, {{ "layout": "icon_columns", "title": "Operational Wins", "items": [{{"title": "Win 1", "text": "Details", "icon": "⭐"}}] }}, {{ "layout": "standard", "title": "Risks & Mitigation", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "flowchart", "title": "Strategic Initiatives", "items": [{{"title": "Goal 1"}}] }} ]""",
@@ -677,7 +683,6 @@ def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
     jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "saved"}
 
-# ✨ NEW: AGILE COACH CHAT ENDPOINT ✨
 @app.post("/retro/chat")
 def retro_chat(payload: dict):
     board = payload.get('board', {})
@@ -687,25 +692,9 @@ def retro_chat(payload: dict):
     improve = [item.get('text') for item in board.get('improve', [])]
     kudos = [item.get('text') for item in board.get('kudos', [])]
     
-    prompt = f"""
-    You are an Expert Agile Coach. You are assisting a Scrum Master during a Retrospective.
-    Here is the current board data:
-    WENT WELL: {well}
-    NEEDS IMPROVEMENT: {improve}
-    KUDOS: {kudos}
-    
-    The Scrum Master asks: "{question}"
-    
-    Provide a concise, highly actionable, and professional response using ONLY the provided board data. 
-    Use markdown formatting (bolding, bullet points) to make it easy to read. Do not output JSON.
-    """
-    try: 
-        # Crucial: json_mode=False so the AI answers normally!
-        raw = generate_ai_response(prompt, temperature=0.5, force_openai=True, json_mode=False)
-        return {"reply": raw}
-    except Exception as e: 
-        print(f"❌ Retro Chat Error: {e}", flush=True)
-        return {"reply": "I encountered an error connecting to the AI network."}
+    prompt = f"You are an Expert Agile Coach assisting a Scrum Master. Board data: WENT WELL: {well} | NEEDS IMPROVEMENT: {improve} | KUDOS: {kudos}. Question: '{question}'. Provide a concise, highly actionable response using ONLY the provided data. Use markdown formatting. Do not output JSON."
+    try: return {"reply": generate_ai_response(prompt, temperature=0.5, force_openai=True, json_mode=False)}
+    except Exception as e: print(f"❌ Retro Chat Error: {e}", flush=True); return {"reply": "I encountered an error connecting to the AI network."}
 
 @app.post("/guest/retro/generate_link")
 def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
