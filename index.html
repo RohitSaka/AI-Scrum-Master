@@ -409,7 +409,7 @@
             const [theme, setTheme] = useState(localStorage.getItem('ig_theme') || 'dark');
             useEffect(() => { document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode'; localStorage.setItem('ig_theme', theme); }, [theme]);
 
-            // ✨ NEW: MAGIC GUEST LINK ROUTING ✨
+            // ✨ MAGIC GUEST LINK ROUTING ✨
             const params = new URLSearchParams(window.location.search);
             const guestToken = params.get('guest_token');
             if (guestToken) return <GuestRetroView token={guestToken} theme={theme} setTheme={setTheme} />;
@@ -419,7 +419,7 @@
             return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
         }
 
-        // ================= ✨ NEW: ANONYMOUS GUEST RETRO COMPONENT ✨ =================
+        // ================= ✨ ANONYMOUS GUEST RETRO COMPONENT ✨ =================
         function GuestRetroView({ token, theme, setTheme }) {
             const [board, setBoard] = useState(null);
             const [info, setInfo] = useState({ project: '', sprint: '' });
@@ -966,8 +966,7 @@
             if (!data) return <LoadingScreen msg="Loading Workspace..." />;
 
             return (
-                // ✨ FIXED: Removed 'flex flex-col' and increased pb-32 so children don't shrink and cut off the scroll area ✨
-                <div className="animate-fade-in h-full overflow-y-auto pb-32 pr-4 relative space-y-16">
+                <div className="animate-fade-in h-full overflow-y-auto pb-32 pr-4 relative space-y-16 block">
 
                     {/* --- PART 1: TEAM TIMELINE --- */}
                     <div>
@@ -1236,39 +1235,51 @@
             );
         }
 
-        // ================= RETRO BOARD (WITH MAGIC GUEST LINK & DELETE CAPABILITY) =================
+        // ================= RETRO BOARD (WITH AGILE COACH CHAT) =================
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
-            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
+            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well");
             const [toast, setToast] = useState(null);
+
+            // Chat State
+            const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: "Hi! I am your AI Agile Coach. What would you like to know about this sprint's retrospective?" }]);
+            const [chatInput, setChatInput] = useState("");
+            const [isChatting, setIsChatting] = useState(false);
+            const chatEndRef = useRef(null);
 
             useEffect(() => { secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { setSprints(d); if (d && d.length) setActiveSprint(d[0].id); }); }, [project]);
 
             const fetchBoard = () => { if (activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r => r?.json()).then(setBoard); } };
             useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
 
+            // Auto-scroll chat
+            useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory, isChatting]);
+
             const save = (b) => { setBoard(b); secureFetch(`/retro/update`, { method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, board: b }) }); };
-
             const add = () => { if (!input.trim()) return; const n = board[col] ? [...board[col]] : []; n.push({ id: Date.now(), text: input }); save({ ...board, [col]: n }); setInput(""); };
+            const remove = (columnName, itemId) => { const updatedCol = board[columnName].filter(item => item.id !== itemId); save({ ...board, [columnName]: updatedCol }); };
 
-            const remove = (columnName, itemId) => {
-                const updatedCol = board[columnName].filter(item => item.id !== itemId);
-                save({ ...board, [columnName]: updatedCol });
+            const sendChat = async () => {
+                if (!chatInput.trim()) return;
+                const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
+                setChatHistory(newHistory); setChatInput(""); setIsChatting(true);
+
+                try {
+                    const r = await secureFetch(`/retro/chat`, { method: 'POST', body: JSON.stringify({ board, question: chatInput }) });
+                    const d = await r.json();
+                    setChatHistory([...newHistory, { role: 'ai', text: d.reply || "Sorry, I couldn't generate a response." }]);
+                } catch (e) {
+                    setChatHistory([...newHistory, { role: 'ai', text: "⚠️ Network error connecting to the Agile Coach." }]);
+                }
+                setIsChatting(false);
             };
-
-            const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, { method: 'POST', body: JSON.stringify({ board }) }).then(r => r.json()).then(d => { save({ ...board, actions: [...(board.actions || []), ...d.actions] }); setLoadingAI(false); }); };
 
             const generateInviteLink = async () => {
                 const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
-                // ✨ FIXED: Added /guest/ to the endpoint URL to match the backend
-                const r = await secureFetch(`/guest/retro/generate_link`, {
-                    method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, license_key: config.license_key })
-                });
+                const r = await secureFetch(`/guest/retro/generate_link`, { method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, license_key: config.license_key }) });
                 const d = await r.json();
                 if (d.token) {
                     const link = `${window.location.origin}${window.location.pathname}?guest_token=${d.token}`;
-                    navigator.clipboard.writeText(link);
-                    setToast("Guest Link copied to clipboard!");
-                    setTimeout(() => setToast(null), 3000);
+                    navigator.clipboard.writeText(link); setToast("Guest Link copied to clipboard!"); setTimeout(() => setToast(null), 3000);
                 }
             };
 
@@ -1287,7 +1298,6 @@
                         <select value={activeSprint || ""} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm">{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
                     </header>
 
-                    {/* Toast Notification */}
                     <AnimatePresence>
                         {toast && (
                             <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="absolute top-0 right-4 z-50 bg-success text-white px-6 py-3 rounded-lg font-bold shadow-lg flex items-center gap-3">
@@ -1302,7 +1312,7 @@
                         <button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-8 flex-1 pb-6">
+                    <div className="grid grid-cols-4 gap-8 flex-1 pb-6 min-h-0">
                         {/* Standard Columns */}
                         {['well', 'improve', 'kudos'].map(c => (
                             <div key={c} className="retro-col shadow-xl">
@@ -1311,7 +1321,6 @@
                                     {board[c]?.map(i => (
                                         <div key={i.id} className="retro-card font-medium relative group">
                                             <span className="pr-6 block">{i.text}</span>
-                                            {/* Hover Delete Button */}
                                             <button onClick={() => remove(c, i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
                                                 <Icon name="Trash" size={14} />
                                             </button>
@@ -1321,25 +1330,28 @@
                             </div>
                         ))}
 
-                        {/* Action Plan Column */}
-                        <div className="retro-col border-primary/30 shadow-xl" style={{ background: 'var(--primary-dim)' }}>
-                            <div className="retro-col-header bg-primary/10 text-primary">
-                                <span>Action Plan</span>
-                                <button onClick={genActions} disabled={loadingAI} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider hover:shadow-md transition-all flex items-center gap-2">
-                                    {loadingAI ? <span className="loader w-3 h-3 border-2"></span> : <Icon name="Sparkles" size={14} />} Gen AI
-                                </button>
+                        {/* ✨ NEW: AGILE COACH CHAT COLUMN ✨ */}
+                        <div className="retro-col border-primary/30 shadow-xl flex flex-col h-full" style={{ background: 'var(--primary-dim)' }}>
+                            <div className="retro-col-header bg-primary/10 text-primary shrink-0">
+                                <span className="flex items-center gap-2"><Icon name="Sparkles" size={16} /> Ask your Agile Coach</span>
                             </div>
-                            <div className="retro-col-body bg-primary/5">
-                                {board.actions?.map(i => (
-                                    <div key={i.id} className="retro-card border-primary/20 font-bold flex items-start gap-3 relative group">
-                                        <Icon name="CheckCircle" size={18} className="text-primary shrink-0 mt-0.5" />
-                                        <span className="pr-6">{i.text}</span>
-                                        {/* Hover Delete Button */}
-                                        <button onClick={() => remove('actions', i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
-                                            <Icon name="Trash" size={14} />
-                                        </button>
+
+                            <div className="retro-col-body bg-primary/5 flex flex-col p-4 gap-4 overflow-y-auto hide-scroll flex-1">
+                                {chatHistory.map((msg, idx) => (
+                                    <div key={idx} className={`p-4 rounded-2xl max-w-[90%] text-sm shadow-sm ${msg.role === 'user' ? 'bg-primary text-white self-end rounded-br-none' : 'bg-bg-card text-text-main border border-border self-start rounded-bl-none prose prose-sm dark:prose-invert'}`}
+                                        dangerouslySetInnerHTML={msg.role === 'ai' ? { __html: marked.parse(msg.text) } : undefined}>
+                                        {msg.role === 'user' ? msg.text : null}
                                     </div>
                                 ))}
+                                {isChatting && <div className="self-start text-primary p-3"><span className="loader w-5 h-5 border-2"></span></div>}
+                                <div ref={chatEndRef} />
+                            </div>
+
+                            <div className="p-3 bg-bg-card border-t border-border flex gap-3 shrink-0">
+                                <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="Ask for insights or action items..." className="flex-1 bg-bg-body text-text-main text-sm font-medium px-4 py-3 rounded-xl outline-none border border-border focus:border-primary transition-colors" />
+                                <button onClick={sendChat} disabled={isChatting || !chatInput.trim()} className="bg-primary text-white px-4 rounded-xl hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100 shadow-md">
+                                    <Icon name="Zap" size={18} />
+                                </button>
                             </div>
                         </div>
                     </div>

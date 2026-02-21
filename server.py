@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V38 - EPIC GENERATOR & BULLETPROOF WEBHOOK")
+print("🚀 APP STARTING: V39 - AGILE COACH CHAT & RESPONSIVE UI FIX")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -110,12 +110,9 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
     return RedirectResponse(f"{APP_URL}/?success=true")
 
 def get_valid_oauth_session(db: Session, license_key: str = None, cloud_id: str = None):
-    if license_key:
-        user = db.query(UserAuth).filter(UserAuth.license_key == license_key).first()
-    elif cloud_id:
-        user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first()
-    else:
-        user = db.query(UserAuth).order_by(UserAuth.expires_at.desc()).first()
+    if license_key: user = db.query(UserAuth).filter(UserAuth.license_key == license_key).first()
+    elif cloud_id: user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first()
+    else: user = db.query(UserAuth).order_by(UserAuth.expires_at.desc()).first()
         
     if not user: return None
     
@@ -169,14 +166,12 @@ def get_assignable_users(project_key, creds):
 def build_team_roster(project_key, creds, sp_field):
     assignable_map = get_assignable_users(project_key, creds)
     roster = {name: 0.0 for name in assignable_map.keys()}
-    
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["assignee", sp_field]})
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []):
             f = i.get('fields') or {}
             name = (f.get('assignee') or {}).get('displayName')
-            if name and name in roster:
-                roster[name] += extract_story_points(f, sp_field)
+            if name and name in roster: roster[name] += extract_story_points(f, sp_field)
     return roster, assignable_map
 
 def get_story_point_field(creds):
@@ -211,8 +206,7 @@ def get_jira_account_id(display_name, creds):
     res = jira_request("GET", f"user/search?query={safe_query}", creds)
     if res is not None and res.status_code == 200 and res.json():
         users = res.json()
-        if isinstance(users, list) and len(users) > 0:
-            return users[0].get("accountId")
+        if isinstance(users, list) and len(users) > 0: return users[0].get("accountId")
     return None
 
 def extract_adf_text(adf_node):
@@ -240,18 +234,16 @@ def create_adf_doc(text_content, ac_list=None):
         clean_line = line.strip()
         if clean_line:
             blocks.append({"type": "paragraph", "content": [{"type": "text", "text": clean_line}]})
-    
     if ac_list and isinstance(ac_list, list):
         blocks.append({"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]})
         list_items = [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": str(ac)}]}]} for ac in ac_list if str(ac).strip()]
         if list_items: blocks.append({"type": "bulletList", "content": list_items})
-        
     if not blocks:
         blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
-        
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None):
+# ✨ FIXED: Added json_mode toggle so the AI can return conversational text for the Agile Coach chat!
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -263,33 +255,40 @@ def call_gemini(prompt, temperature=0.3, image_data=None):
 
     for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
         try:
-            payload = {"contents": contents, "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"}}
+            gen_config = {"temperature": temperature}
+            if json_mode: gen_config["responseMimeType"] = "application/json"
+                
+            payload = {"contents": contents, "generationConfig": gen_config}
             r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json=payload, timeout=20)
             if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception: continue
     return None
 
-def call_openai(prompt, temperature=0.3, image_data=None):
+def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True):
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: return call_gemini(prompt, temperature, image_data)
+    if not api_key: return call_gemini(prompt, temperature, image_data, json_mode)
     
-    messages = [{"role": "system", "content": "You are an elite Enterprise Strategy Consultant. Return strictly valid JSON."}]
+    sys_msg = "You are an elite Enterprise Strategy Consultant. Return strictly valid JSON." if json_mode else "You are an Expert Agile Coach assisting a Scrum Master."
+    messages = [{"role": "system", "content": sys_msg}]
     user_content = [{"type": "text", "text": prompt}]
     
     if image_data: user_content.append({"type": "image_url", "image_url": {"url": image_data}})
     messages.append({"role": "user", "content": user_content})
 
     try:
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json={"model": "gpt-4o", "messages": messages, "temperature": temperature, "response_format": {"type": "json_object"}}, timeout=20)
+        kwargs = {"model": "gpt-4o", "messages": messages, "temperature": temperature}
+        if json_mode: kwargs["response_format"] = {"type": "json_object"}
+            
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=kwargs, timeout=20)
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
     except Exception: pass
     
     print("🔄 Seamless Fallback to Google Gemini...", flush=True)
-    return call_gemini(prompt, temperature, image_data)
+    return call_gemini(prompt, temperature, image_data, json_mode)
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None):
-    if force_openai or image_data: return call_openai(prompt, temperature, image_data)
-    return call_gemini(prompt, temperature, image_data)
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True):
+    if force_openai or image_data: return call_openai(prompt, temperature, image_data, json_mode)
+    return call_gemini(prompt, temperature, image_data, json_mode)
 
 # ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
 C_BG = RGBColor(11, 17, 33)      
@@ -678,31 +677,35 @@ def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
     jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "saved"}
 
-@app.post("/retro/generate_actions")
-def generate_actions(payload: dict):
+# ✨ NEW: AGILE COACH CHAT ENDPOINT ✨
+@app.post("/retro/chat")
+def retro_chat(payload: dict):
     board = payload.get('board', {})
-    well_data = [item.get('text') for item in board.get('well', [])]
-    improve_data = [item.get('text') for item in board.get('improve', [])]
+    question = payload.get('question', '')
+    
+    well = [item.get('text') for item in board.get('well', [])]
+    improve = [item.get('text') for item in board.get('improve', [])]
+    kudos = [item.get('text') for item in board.get('kudos', [])]
     
     prompt = f"""
-    Act as an Expert Agile Coach. Analyze this sprint retrospective data:
-    WENT WELL: {well_data}
-    NEEDS IMPROVEMENT: {improve_data}
+    You are an Expert Agile Coach. You are assisting a Scrum Master during a Retrospective.
+    Here is the current board data:
+    WENT WELL: {well}
+    NEEDS IMPROVEMENT: {improve}
+    KUDOS: {kudos}
     
-    Generate 3 specific, actionable steps the team should take next sprint to improve. 
-    CRITICAL: Write real, professional sentences. DO NOT use placeholders like 'Action 1'.
+    The Scrum Master asks: "{question}"
     
-    Return EXACTLY a JSON array of strings matching this format:
-    ["Implement a new CI/CD pipeline check", "Schedule a backlog refinement session", "Create a shared availability calendar"]
+    Provide a concise, highly actionable, and professional response using ONLY the provided board data. 
+    Use markdown formatting (bolding, bullet points) to make it easy to read. Do not output JSON.
     """
-    
     try: 
-        raw = generate_ai_response(prompt, temperature=0.6, force_openai=True)
-        actions = json.loads(raw.replace('```json','').replace('```','').strip())
-        return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(actions)]}
+        # Crucial: json_mode=False so the AI answers normally!
+        raw = generate_ai_response(prompt, temperature=0.5, force_openai=True, json_mode=False)
+        return {"reply": raw}
     except Exception as e: 
-        print(f"❌ Retro Gen AI Error: {e}", flush=True)
-        return {"actions": []}
+        print(f"❌ Retro Chat Error: {e}", flush=True)
+        return {"reply": "I encountered an error connecting to the AI network."}
 
 @app.post("/guest/retro/generate_link")
 def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
@@ -780,7 +783,6 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
         if not raw: return
             
         est = json.loads(raw.replace('```json','').replace('```','').strip())
-        print(f"🧠 [4/6] AI Decision: {est}", flush=True)
         target_assignee = est.get('assignee', '')
         assignee_id = assignable_map.get(target_assignee)
         
@@ -806,14 +808,14 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
             
         print(f"🤖 [6/6] Posting Insight Comment to Jira...", flush=True)
         comment_text = f"🚀 *IG Agile Auto-Triage Complete*\n• *Estimated Points:* {points}\n• *Suggested Assignee:* {target_assignee}\n• *Reasoning:* {est.get('reasoning', '')}\n"
-        if gen_desc and len(desc_text.strip()) < 20: comment_text += f"\n\n📝 *Generated Description:*\n{gen_desc}"
+
+        if gen_desc and len(desc_text.strip()) < 20:
+            comment_text += f"\n\n📝 *Generated Description:*\n{gen_desc}"
 
         jira_request("POST", f"issue/{issue_key}/comment", creds_dict, {"body": create_adf_doc(comment_text)})
         print(f"✅ Webhook Process Complete for {issue_key}", flush=True)
         
-    except Exception as e: 
-        print(f"❌ FATAL Webhook Exception for {issue_key}: {e}", flush=True)
-        traceback.print_exc()
+    except Exception as e: print(f"❌ FATAL Webhook Exception for {issue_key}: {e}", flush=True)
 
 @app.post("/webhook")
 async def jira_webhook(request: Request, background_tasks: BackgroundTasks, domain: str = None, email: str = None, token: str = None, cloud_id: str = None):
@@ -832,7 +834,6 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
         project_key = (fields.get("project") or {}).get("key", "")
         
         if "IG Agile AI Insights" in desc or "AI Generated Description" in desc:
-            print(f"⏭️ Skipping Webhook for {key}: Issue was created actively by the UI.", flush=True)
             return {"status": "ignored"}
 
         print(f"\n🔔 WEBHOOK FIRED: New Issue {key} detected in project {project_key}.", flush=True)
@@ -851,9 +852,5 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
             db.close()
             
         if creds_dict: background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds_dict)
-        else: print("❌ Webhook failed: No valid Jira credentials found in local DB.", flush=True)
-            
         return {"status": "processing_in_background"}
-    except Exception as e: 
-        print(f"❌ Webhook Catch Error: {e}", flush=True)
-        return {"status": "error", "message": str(e)}
+    except Exception as e: return {"status": "error", "message": str(e)}
