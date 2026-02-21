@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V36 - RETROSPECTIVE AI FIX")
+print("🚀 APP STARTING: V38 - EPIC GENERATOR & BULLETPROOF WEBHOOK")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -240,12 +240,15 @@ def create_adf_doc(text_content, ac_list=None):
         clean_line = line.strip()
         if clean_line:
             blocks.append({"type": "paragraph", "content": [{"type": "text", "text": clean_line}]})
+    
     if ac_list and isinstance(ac_list, list):
         blocks.append({"type": "heading", "attrs": {"level": 3}, "content": [{"type": "text", "text": "Acceptance Criteria"}]})
-        list_items = [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": str(ac)}]}]} for ac in ac_list]
-        blocks.append({"type": "bulletList", "content": list_items})
+        list_items = [{"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": str(ac)}]}]} for ac in ac_list if str(ac).strip()]
+        if list_items: blocks.append({"type": "bulletList", "content": list_items})
+        
     if not blocks:
-        blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Story"}]})
+        blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
+        
     return {"type": "doc", "version": 1, "content": blocks}
 
 def call_gemini(prompt, temperature=0.3, image_data=None):
@@ -479,10 +482,8 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
 
     prompt = f"""
     Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}.
-    
     CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE "Point 1", "...", or "Insert Text".
     YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
-    
     Return EXACTLY a JSON array matching this structure:
     [
       {{ "id": 1, "layout": "hero", "title": "Sprint Review", "subtitle": "{context['current_date']}", "icon": "🚀" }},
@@ -495,11 +496,8 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
-    try: 
-        return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: 
-        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}", flush=True)
-        return {"status": "error", "message": "Failed to orchestrate slides."}
+    try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
+    except Exception as e: print(f"❌ Deck Parse Error: {e}", flush=True); return {"status": "error", "message": "Failed to orchestrate slides."}
 
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
@@ -513,13 +511,10 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
         f = i.get('fields') or {}
-        status_category = (f.get('status') or {}).get('statusCategory') or {}
-        priority = f.get('priority') or {}
-
         pts = extract_story_points(f, sp_field)
-        if status_category.get('key') == 'done': 
+        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': 
             done_count += 1; done_pts += pts; accomplishments.append(f.get('summary', ''))
-        if priority.get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
+        if (f.get('priority') or {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
 
     context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
 
@@ -571,10 +566,26 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
         return {"status": "success", "story": json.loads(raw_response.replace('```json','').replace('```','').strip())}
     except Exception as e: return {"status": "error", "message": str(e)}
 
+@app.post("/timeline/generate_epic")
+async def generate_epic(payload: dict, creds: dict = Depends(get_jira_creds)):
+    project_key = payload.get('project')
+    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key}", "maxResults": 10, "fields": ["summary"]})
+    board_context = []
+    if res is not None and res.status_code == 200:
+        for i in res.json().get('issues', []): board_context.append((i.get('fields') or {}).get('summary', ''))
+            
+    prompt_text = f"Chief Product Officer. User Input: '{payload.get('prompt')}'. Project Context: {json.dumps(board_context)}. Transform this into an implementation-ready Agile Epic. Return STRICT JSON: {{\"title\": \"Epic Name\", \"motivation\": \"Why are we building this value?\", \"description\": \"Detailed scope and requirements.\", \"acceptance_criteria\": [\"AC1\", \"AC2\"]}}"
+    try: 
+        raw_response = generate_ai_response(prompt_text, temperature=0.6, force_openai=True)
+        if not raw_response: return {"status": "error", "message": "AI model failed to generate epic."}
+        return {"status": "success", "epic": json.loads(raw_response.replace('```json','').replace('```','').strip())}
+    except Exception as e: return {"status": "error", "message": str(e)}
+
 @app.post("/timeline/create_issue")
 async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     story = payload.get("story", {})
     project_key = payload.get("project")
+    issue_type = payload.get("issue_type", "Story") 
     sp_field = get_story_point_field(creds)
     
     roster, assignable_map = build_team_roster(project_key, creds, sp_field)
@@ -589,30 +600,43 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         server_info = jira_request("GET", "serverInfo", creds)
         if server_info is not None and server_info.status_code == 200: base_url = server_info.json().get("baseUrl", "")
 
+    desc_text = story.get("description", "AI Generated Item")
+    if issue_type == "Epic" and story.get("motivation"):
+        desc_text = f"Motivation:\n{story.get('motivation')}\n\nDescription:\n{desc_text}"
+
     issue_data = {
         "fields": {
             "project": {"key": project_key}, 
-            "summary": story.get("title", "AI Story"), 
-            "description": create_adf_doc(story.get("description", "AI Generated Story"), story.get("acceptance_criteria")), 
-            "issuetype": {"name": "Story"}
+            "summary": story.get("title", f"AI Generated {issue_type}"), 
+            "description": create_adf_doc(desc_text, story.get("acceptance_criteria")), 
+            "issuetype": {"name": issue_type}
         }
     }
     
     res = jira_request("POST", "issue", creds, issue_data)
+    
     if res is None or res.status_code != 201: 
-        issue_data["fields"]["issuetype"]["name"] = "Task"
-        res_fallback = jira_request("POST", "issue", creds, issue_data)
-        if res_fallback is not None: res = res_fallback
+        if issue_type == "Epic":
+            issue_data["fields"]["issuetype"]["name"] = "Story"
+            res = jira_request("POST", "issue", creds, issue_data)
+        if res is None or res.status_code != 201:
+            issue_data["fields"]["issuetype"]["name"] = "Task"
+            res_fallback = jira_request("POST", "issue", creds, issue_data)
+            if res_fallback is not None: res = res_fallback
             
     if res is not None and res.status_code == 201:
         new_key = res.json().get("key")
+        
         if assignee_id: jira_request("PUT", f"issue/{new_key}", creds, {"fields": {"assignee": {"accountId": assignee_id}}})
+        
         points = safe_float(story.get("points", 0))
-        if points > 0:
+        if points > 0 and issue_type != "Epic":
             pts_res = jira_request("PUT", f"issue/{new_key}", creds, {"fields": {sp_field: points}})
-            if pts_res is not None and pts_res.status_code not in [200, 204]: print(f"⚠️ Warning: Could not set Story Points on {new_key}. Field {sp_field} likely not on screen.", flush=True)
+            if pts_res is not None and pts_res.status_code not in [200, 204]: print(f"⚠️ Warning: Could not set Story Points on {new_key}.", flush=True)
                 
-        jira_request("POST", f"issue/{new_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
+        if issue_type != "Epic":
+            jira_request("POST", f"issue/{new_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
+            
         issue_url = f"{base_url}/browse/{new_key}" if base_url else f"https://id.atlassian.com/browse/{new_key}"
         return {"status": "success", "key": new_key, "url": issue_url}
     
@@ -654,7 +678,6 @@ def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
     jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "saved"}
 
-# ✨ FIXED: GENERATE ACTIONS PROMPT ✨
 @app.post("/retro/generate_actions")
 def generate_actions(payload: dict):
     board = payload.get('board', {})
@@ -686,7 +709,6 @@ def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db
     project_key = payload.get("project")
     sprint_id = payload.get("sprint")
     license_key = payload.get("license_key")
-    
     if not license_key: raise HTTPException(status_code=400, detail="Missing license key")
         
     token = str(uuid.uuid4())
@@ -706,7 +728,6 @@ def get_guest_retro(token: str, db: Session = Depends(get_db)):
     res = jira_request("GET", f"project/{link.project_key}/properties/ig_agile_retro", creds)
     db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
     board = db_data.get(link.sprint_id, {"well": [], "improve": [], "kudos": [], "actions": []})
-    
     return {"project": link.project_key, "sprint": link.sprint_id, "board": board}
 
 @app.post("/guest/retro/{token}/add")
@@ -738,7 +759,6 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
         time.sleep(3) 
         
         sp_field = get_story_point_field(creds_dict)
-        
         print(f"🤖 [2/6] Fetching robust Omni-Roster...", flush=True)
         roster, assignable_map = build_team_roster(project_key, creds_dict, sp_field)
 
@@ -760,6 +780,7 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
         if not raw: return
             
         est = json.loads(raw.replace('```json','').replace('```','').strip())
+        print(f"🧠 [4/6] AI Decision: {est}", flush=True)
         target_assignee = est.get('assignee', '')
         assignee_id = assignable_map.get(target_assignee)
         
@@ -772,26 +793,27 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
             
         if update_fields_basic:
             print(f"🤖 [5a/6] Updating Description & Assignee...", flush=True)
-            jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
+            res1 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
+            if res1 is not None and res1.status_code in [200, 204]: print(f"✅ Description/Assignee Updated", flush=True)
+            else: print(f"⚠️ Webhook Basic Update Failed: {res1.status_code if res1 is not None else 'Network Error'}", flush=True)
             
         points = safe_float(est.get('points', 0))
         if points > 0:
             print(f"🤖 [5b/6] Updating Story Points ({points})...", flush=True)
-            jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
+            res2 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
+            if res2 is not None and res2.status_code in [200, 204]: print(f"✅ Story Points Updated", flush=True)
+            else: print(f"⚠️ Webhook Points Update Blocked by Jira Screen: {res2.status_code if res2 is not None else 'Network Error'}", flush=True)
             
         print(f"🤖 [6/6] Posting Insight Comment to Jira...", flush=True)
-        comment_text = f"🚀 *IG Agile Auto-Triage Complete*\n"
-        comment_text += f"• *Estimated Points:* {points}\n"
-        comment_text += f"• *Suggested Assignee:* {target_assignee}\n"
-        comment_text += f"• *Reasoning:* {est.get('reasoning', '')}\n"
-
-        if gen_desc and len(desc_text.strip()) < 20:
-            comment_text += f"\n\n📝 *Generated Description:*\n{gen_desc}"
+        comment_text = f"🚀 *IG Agile Auto-Triage Complete*\n• *Estimated Points:* {points}\n• *Suggested Assignee:* {target_assignee}\n• *Reasoning:* {est.get('reasoning', '')}\n"
+        if gen_desc and len(desc_text.strip()) < 20: comment_text += f"\n\n📝 *Generated Description:*\n{gen_desc}"
 
         jira_request("POST", f"issue/{issue_key}/comment", creds_dict, {"body": create_adf_doc(comment_text)})
         print(f"✅ Webhook Process Complete for {issue_key}", flush=True)
         
-    except Exception as e: print(f"❌ FATAL Webhook Exception for {issue_key}: {e}", flush=True)
+    except Exception as e: 
+        print(f"❌ FATAL Webhook Exception for {issue_key}: {e}", flush=True)
+        traceback.print_exc()
 
 @app.post("/webhook")
 async def jira_webhook(request: Request, background_tasks: BackgroundTasks, domain: str = None, email: str = None, token: str = None, cloud_id: str = None):
@@ -810,6 +832,7 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
         project_key = (fields.get("project") or {}).get("key", "")
         
         if "IG Agile AI Insights" in desc or "AI Generated Description" in desc:
+            print(f"⏭️ Skipping Webhook for {key}: Issue was created actively by the UI.", flush=True)
             return {"status": "ignored"}
 
         print(f"\n🔔 WEBHOOK FIRED: New Issue {key} detected in project {project_key}.", flush=True)
@@ -828,5 +851,9 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
             db.close()
             
         if creds_dict: background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds_dict)
+        else: print("❌ Webhook failed: No valid Jira credentials found in local DB.", flush=True)
+            
         return {"status": "processing_in_background"}
-    except Exception as e: return {"status": "error", "message": str(e)}
+    except Exception as e: 
+        print(f"❌ Webhook Catch Error: {e}", flush=True)
+        return {"status": "error", "message": str(e)}

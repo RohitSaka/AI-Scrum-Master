@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IG Agile Scrum | Enterprise</title>
-    
-    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366f1"/><text x="50" y="65" font-family="Arial" font-size="50" font-weight="bold" fill="white" text-anchor="middle">IG</text></svg>'>
-    
+
+    <link rel="icon"
+        href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%236366f1"/><text x="50" y="65" font-family="Arial" font-size="50" font-weight="bold" fill="white" text-anchor="middle">IG</text></svg>'>
+
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -17,119 +19,324 @@
     <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
-    
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
     <style>
-        :root { --transition-speed: 0.3s; }
-        
+        :root {
+            --transition-speed: 0.3s;
+        }
+
         .dark-mode {
-            --bg-body: #0B1121; 
-            --bg-sidebar: #020617; 
-            --bg-card: #1E293B; 
+            --bg-body: #0B1121;
+            --bg-sidebar: #020617;
+            --bg-card: #1E293B;
             --bg-hover: #334155;
-            --text-main: #F8FAFC; 
-            --text-muted: #94A3B8; 
+            --text-main: #F8FAFC;
+            --text-muted: #94A3B8;
             --border: #334155;
-            --primary: #D97706; 
+            --primary: #D97706;
             --primary-dim: rgba(217, 119, 6, 0.15);
-            --danger: #EF4444; 
-            --success: #10B981; 
+            --danger: #EF4444;
+            --success: #10B981;
             --warning: #F59E0B;
             --glass-border: rgba(255, 255, 255, 0.08);
             --glass-bg: rgba(30, 41, 59, 0.7);
         }
+
         .light-mode {
-            --bg-body: #F0F2F5; 
-            --bg-sidebar: #FFFFFF; 
-            --bg-card: #FFFFFF; 
+            --bg-body: #F0F2F5;
+            --bg-sidebar: #FFFFFF;
+            --bg-card: #FFFFFF;
             --bg-hover: #E2E8F0;
-            --text-main: #0F172A; 
-            --text-muted: #475569; 
+            --text-main: #0F172A;
+            --text-muted: #475569;
             --border: #CBD5E1;
-            --primary: #0369A1; 
+            --primary: #0369A1;
             --primary-dim: rgba(3, 105, 161, 0.1);
-            --danger: #DC2626; 
-            --success: #059669; 
+            --danger: #DC2626;
+            --success: #059669;
             --warning: #D97706;
             --glass-border: rgba(0, 0, 0, 0.05);
             --glass-bg: rgba(255, 255, 255, 0.85);
         }
 
-        body { font-family: 'Inter', sans-serif; background-color: var(--bg-body); color: var(--text-main); transition: background-color var(--transition-speed), color var(--transition-speed); overflow: hidden; margin: 0; }
-        .glass-card { background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12); backdrop-filter: blur(12px); border-radius: 1rem; }
-        .nav-btn { color: var(--text-muted); padding: 0.75rem 1rem; border-radius: 0.5rem; transition: all 0.2s; display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; border-left: 3px solid transparent; }
-        .nav-btn:hover { background: var(--bg-hover); color: var(--text-main); }
-        .nav-btn.active { background: var(--primary-dim); color: var(--primary); border-left-color: var(--primary); }
-        .input-field { background-color: var(--bg-body); border: 1px solid var(--border); color: var(--text-main); outline: none; transition: all 0.2s; }
-        .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-dim); }
-        .prose strong { color: var(--text-main); font-weight: 700; }
-        .prose ul { list-style-type: disc; padding-left: 1.2rem; }
-        .prose li { margin-bottom: 0.25rem; }
-        
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-        
-        .loader { width: 20px; height: 20px; border: 2px solid currentColor; border-bottom-color: transparent; border-radius: 50%; display: inline-block; animation: rotation 0.8s linear infinite; }
-        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        .retro-col { background: var(--glass-bg); border: 1px solid var(--glass-border); border-radius: 12px; display: flex; flex-direction: column; height: 100%; overflow: hidden; backdrop-filter: blur(10px); }
-        .retro-col-header { padding: 1rem; font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); }
-        .retro-col-body { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
-        .retro-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.875rem; line-height: 1.5; color: var(--text-main); box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: all 0.2s; }
-        .retro-card:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-        
-        .hide-scroll::-webkit-scrollbar { display: none; }
-        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            transition: background-color var(--transition-speed), color var(--transition-speed);
+            overflow: hidden;
+            margin: 0;
+        }
 
-        .roadmap-grid { display: grid; grid-template-columns: 250px repeat(12, 1fr); background: transparent; }
-        .roadmap-header { font-weight: 700; font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 12px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; background: var(--bg-card); }
-        .roadmap-cell { border-right: 1px solid var(--border); opacity: 0.2; }
-        .roadmap-item { position: absolute; border-radius: 6px; padding: 8px 12px; font-size: 11px; font-weight: 600; color: white; display: flex; align-items: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer; z-index: 10; transition: transform 0.2s, z-index 0s; }
-        .roadmap-item:hover { z-index: 20; transform: translateY(-2px) scale(1.01); }
+        .glass-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+            backdrop-filter: blur(12px);
+            border-radius: 1rem;
+        }
 
-        @media print { 
-            html, body, #root, div { height: auto !important; overflow: visible !important; position: static !important; }
-            body * { visibility: hidden; } 
-            #print-engine-container, #print-engine-container * { visibility: visible; }
-            #print-engine-container { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; display: block !important; opacity: 1 !important; z-index: 99999 !important; }
-            .print-slide { width: 1280px !important; height: 720px !important; page-break-after: always !important; break-after: page !important; background: #0B1121 !important; margin: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            @page { size: landscape; margin: 0; }
+        .nav-btn {
+            color: var(--text-muted);
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+        }
+
+        .nav-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-main);
+        }
+
+        .nav-btn.active {
+            background: var(--primary-dim);
+            color: var(--primary);
+            border-left-color: var(--primary);
+        }
+
+        .input-field {
+            background-color: var(--bg-body);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .input-field:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px var(--primary-dim);
+        }
+
+        .prose strong {
+            color: var(--text-main);
+            font-weight: 700;
+        }
+
+        .prose ul {
+            list-style-type: disc;
+            padding-left: 1.2rem;
+        }
+
+        .prose li {
+            margin-bottom: 0.25rem;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        .loader {
+            width: 20px;
+            height: 20px;
+            border: 2px solid currentColor;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            animation: rotation 0.8s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .retro-col {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+
+        .retro-col-header {
+            padding: 1rem;
+            font-size: 0.75rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-muted);
+        }
+
+        .retro-col-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .retro-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: var(--text-main);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s;
+        }
+
+        .retro-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--primary);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .hide-scroll::-webkit-scrollbar {
+            display: none;
+        }
+
+        .hide-scroll {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .roadmap-grid {
+            display: grid;
+            grid-template-columns: 250px repeat(12, 1fr);
+            background: transparent;
+        }
+
+        .roadmap-header {
+            font-weight: 700;
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            text-align: center;
+            background: var(--bg-card);
+        }
+
+        .roadmap-cell {
+            border-right: 1px solid var(--border);
+            opacity: 0.2;
+        }
+
+        .roadmap-item {
+            position: absolute;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            color: white;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            z-index: 10;
+            transition: transform 0.2s, z-index 0s;
+        }
+
+        .roadmap-item:hover {
+            z-index: 20;
+            transform: translateY(-2px) scale(1.01);
+        }
+
+        @media print {
+
+            html,
+            body,
+            #root,
+            div {
+                height: auto !important;
+                overflow: visible !important;
+                position: static !important;
+            }
+
+            body * {
+                visibility: hidden;
+            }
+
+            #print-engine-container,
+            #print-engine-container * {
+                visibility: visible;
+            }
+
+            #print-engine-container {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                display: block !important;
+                opacity: 1 !important;
+                z-index: 99999 !important;
+            }
+
+            .print-slide {
+                width: 1280px !important;
+                height: 720px !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                background: #0B1121 !important;
+                margin: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            @page {
+                size: landscape;
+                margin: 0;
+            }
         }
     </style>
 
     <script>
         tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'bg-body': 'var(--bg-body)',
-                        'bg-sidebar': 'var(--bg-sidebar)',
-                        'bg-card': 'var(--bg-card)',
-                        'bg-hover': 'var(--bg-hover)',
-                        'text-main': 'var(--text-main)',
-                        'text-muted': 'var(--text-muted)',
-                        'border': 'var(--border)',
-                        'primary': 'var(--primary)',
-                        'primary-dim': 'var(--primary-dim)',
-                        'danger': 'var(--danger)',
-                        'success': 'var(--success)',
-                        'warning': 'var(--warning)',
-                    }
-                }
-            }
+            theme: { extend: { colors: { 'bg-body': 'var(--bg-body)', 'bg-sidebar': 'var(--bg-sidebar)', 'bg-card': 'var(--bg-card)', 'bg-hover': 'var(--bg-hover)', 'text-main': 'var(--text-main)', 'text-muted': 'var(--text-muted)', 'border': 'var(--border)', 'primary': 'var(--primary)', 'primary-dim': 'var(--primary-dim)', 'danger': 'var(--danger)', 'success': 'var(--success)', 'warning': 'var(--warning)' } } }
         }
     </script>
 </head>
+
 <body class="dark-mode">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const { motion, AnimatePresence } = window.Motion;
-        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com"; 
+        const API_BASE = "https://ai-scrum-master-cm2c.onrender.com";
 
         const Icon = ({ name, size = 18, className = "" }) => {
             const icons = {
@@ -160,15 +367,19 @@
                 CheckCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></>,
                 ExternalLink: <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></>,
                 Link: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></>,
-                Copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></>
+                Copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></>,
+                Zap: <><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></>,
+                Target: <><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></>,
+                AlignLeft: <><line x1="17" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="17" y1="18" x2="3" y2="18"></line></>,
+                Trash: <><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{icons[name] || null}</svg>;
         };
 
         const secureFetch = async (endpoint, options = {}) => {
             const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
-            const isGuest = endpoint.startsWith('/guest'); // Bypass auth for guest routes
-            if (!isGuest && !config.license_key && !config.token) return null; 
+            const isGuest = endpoint.startsWith('/guest');
+            if (!isGuest && !config.license_key && !config.token) return null;
             const headers = { 'Content-Type': 'application/json', 'x-license-key': config.license_key || '', 'x-jira-domain': config.domain || '', 'x-jira-email': config.email || '', 'x-jira-token': config.token || '', ...options.headers };
             try {
                 const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
@@ -180,7 +391,7 @@
         function App() {
             const [theme, setTheme] = useState(localStorage.getItem('ig_theme') || 'dark');
             useEffect(() => { document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode'; localStorage.setItem('ig_theme', theme); }, [theme]);
-            
+
             // ✨ NEW: MAGIC GUEST LINK ROUTING ✨
             const params = new URLSearchParams(window.location.search);
             const guestToken = params.get('guest_token');
@@ -194,15 +405,15 @@
         // ================= ✨ NEW: ANONYMOUS GUEST RETRO COMPONENT ✨ =================
         function GuestRetroView({ token, theme, setTheme }) {
             const [board, setBoard] = useState(null);
-            const [info, setInfo] = useState({project: '', sprint: ''});
-            const [input, setInput] = useState(""); 
+            const [info, setInfo] = useState({ project: '', sprint: '' });
+            const [input, setInput] = useState("");
             const [col, setCol] = useState("well");
             const [error, setError] = useState(null);
 
             const fetchBoard = () => {
                 fetch(`${API_BASE}/guest/retro/${token}`)
-                    .then(r => { if(!r.ok) throw new Error("Invalid Link"); return r.json(); })
-                    .then(d => { setBoard(d.board); setInfo({project: d.project, sprint: d.sprint}); setError(null); })
+                    .then(r => { if (!r.ok) throw new Error("Invalid Link"); return r.json(); })
+                    .then(d => { setBoard(d.board); setInfo({ project: d.project, sprint: d.sprint }); setError(null); })
                     .catch(e => setError("This invite link has expired or is invalid."));
             };
 
@@ -213,13 +424,13 @@
             }, [token]);
 
             const add = async () => {
-                if(!input.trim()) return;
+                if (!input.trim()) return;
                 const r = await fetch(`${API_BASE}/guest/retro/${token}/add`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({column: col, text: input})
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ column: col, text: input })
                 });
                 const res = await r.json();
-                if(res.status === 'success') { setBoard(res.board); setInput(""); }
+                if (res.status === 'success') { setBoard(res.board); setInput(""); }
             };
 
             if (error) return <div className="h-screen flex items-center justify-center text-danger font-bold text-xl">{error}</div>;
@@ -228,7 +439,7 @@
             return (
                 <div className="h-screen flex flex-col relative transition-colors duration-500 bg-bg-body p-8">
                     <div className="absolute top-4 right-4 z-50"><ThemeToggle theme={theme} setTheme={setTheme} /></div>
-                    
+
                     <header className="mb-10 text-center">
                         <div className="w-16 h-16 rounded-xl flex items-center justify-center text-white font-black text-2xl mx-auto mb-4 shadow-xl bg-gradient-to-br from-primary to-amber-600">IG</div>
                         <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Retrospective</h2>
@@ -238,20 +449,20 @@
                     <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col">
                         <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-2xl">
                             <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">
-                                {['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={()=>setCol(c)} className={`px-8 py-4 rounded-lg text-sm font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}
+                                {['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={() => setCol(c)} className={`px-8 py-4 rounded-lg text-sm font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}
                             </div>
-                            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Drop an anonymous note here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-xl outline-none" />
+                            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Drop an anonymous note here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-xl outline-none" />
                             <button onClick={add} className="bg-primary px-12 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all text-lg">Post</button>
                         </div>
-                        
+
                         <div className="grid grid-cols-3 gap-10 flex-1 pb-10">
                             {['well', 'improve', 'kudos'].map(c => (
-                                <div key={c} className="retro-col shadow-2xl border-t-4" style={{borderTopColor: c==='well' ? 'var(--success)' : c==='improve' ? 'var(--danger)' : 'var(--primary)'}}>
-                                    <div className="retro-col-header bg-bg-card/50 text-sm"><span>{c}</span><Icon name={c==='well'?'CheckCircle':c==='improve'?'TrendingDown':'Star'} size={20}/></div>
+                                <div key={c} className="retro-col shadow-2xl border-t-4" style={{ borderTopColor: c === 'well' ? 'var(--success)' : c === 'improve' ? 'var(--danger)' : 'var(--primary)' }}>
+                                    <div className="retro-col-header bg-bg-card/50 text-sm"><span>{c}</span><Icon name={c === 'well' ? 'CheckCircle' : c === 'improve' ? 'TrendingDown' : 'Star'} size={20} /></div>
                                     <div className="retro-col-body bg-bg-body/50 p-4">
                                         <AnimatePresence>
                                             {board[c]?.map(i => (
-                                                <motion.div key={i.id} initial={{opacity:0, y:-10}} animate={{opacity:1, y:0}} className="retro-card font-medium text-base p-5 border-l-4" style={{borderLeftColor: 'var(--primary)'}}>{i.text}</motion.div>
+                                                <motion.div key={i.id} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="retro-card font-medium text-base p-5 border-l-4" style={{ borderLeftColor: 'var(--primary)' }}>{i.text}</motion.div>
                                             ))}
                                         </AnimatePresence>
                                     </div>
@@ -277,7 +488,7 @@
                         const newConfig = { license_key: savedLicense, role: savedRole };
                         localStorage.setItem('ig_config', JSON.stringify(newConfig));
                         localStorage.removeItem('pending_license'); localStorage.removeItem('pending_role');
-                        window.history.replaceState({}, document.title, window.location.pathname); 
+                        window.history.replaceState({}, document.title, window.location.pathname);
                         onLogin(newConfig);
                     }
                 }
@@ -290,19 +501,19 @@
             };
 
             return (
-                <div className="h-screen flex items-center justify-center relative transition-colors duration-500" style={{backgroundColor: 'var(--bg-body)'}}>
+                <div className="h-screen flex items-center justify-center relative transition-colors duration-500" style={{ backgroundColor: 'var(--bg-body)' }}>
                     <div className="absolute top-4 right-4"><ThemeToggle theme={theme} setTheme={setTheme} /></div>
                     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-[420px] glass-card p-10 z-10 shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-48 h-48 bg-primary-dim rounded-full blur-3xl -mr-10 -mt-10 opacity-50"></div>
                         <div className="mb-10 text-center relative z-10">
                             <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-white font-black text-3xl mx-auto mb-6 shadow-xl bg-gradient-to-br from-primary to-amber-600">IG</div>
-                            <h1 className="text-3xl font-extrabold tracking-tight" style={{color: 'var(--text-main)'}}>Agile Intelligence</h1>
-                            <p className="text-sm font-medium mt-2" style={{color: 'var(--text-muted)'}}>Enterprise Edition</p>
+                            <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: 'var(--text-main)' }}>Agile Intelligence</h1>
+                            <p className="text-sm font-medium mt-2" style={{ color: 'var(--text-muted)' }}>Enterprise Edition</p>
                         </div>
                         <div className="space-y-6 relative z-10">
-                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 block" style={{color: 'var(--text-muted)'}}>Role Profile</label><select value={role} onChange={e=>setRole(e.target.value)} className="w-full p-3 rounded-lg text-sm input-field font-semibold shadow-sm"><option value="leadership">👑 Executive / CDO</option><option value="scrum_master">⚔️ Scrum Master / PM</option></select></div>
-                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2" style={{color: 'var(--text-muted)'}}><Icon name="Key" size={14}/> License Key</label><input value={licenseKey} onChange={e=>setLicenseKey(e.target.value)} placeholder="IG-ENT-..." className="w-full p-3 rounded-lg text-sm input-field shadow-sm font-mono tracking-wide" /></div>
-                            <button onClick={handleOAuthLogin} disabled={loading} className="w-full text-white font-bold p-4 rounded-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all flex justify-center items-center gap-3 text-sm bg-primary disabled:opacity-70 disabled:hover:scale-100">{loading ? <span className="loader w-5 h-5 border-2"></span> : <><Icon name="Activity" size={20}/> Log in with Atlassian</>}</button>
+                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 block" style={{ color: 'var(--text-muted)' }}>Role Profile</label><select value={role} onChange={e => setRole(e.target.value)} className="w-full p-3 rounded-lg text-sm input-field font-semibold shadow-sm"><option value="leadership">👑 Executive / CDO</option><option value="scrum_master">⚔️ Scrum Master / PM</option></select></div>
+                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2" style={{ color: 'var(--text-muted)' }}><Icon name="Key" size={14} /> License Key</label><input value={licenseKey} onChange={e => setLicenseKey(e.target.value)} placeholder="IG-ENT-..." className="w-full p-3 rounded-lg text-sm input-field shadow-sm font-mono tracking-wide" /></div>
+                            <button onClick={handleOAuthLogin} disabled={loading} className="w-full text-white font-bold p-4 rounded-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all flex justify-center items-center gap-3 text-sm bg-primary disabled:opacity-70 disabled:hover:scale-100">{loading ? <span className="loader w-5 h-5 border-2"></span> : <><Icon name="Activity" size={20} /> Log in with Atlassian</>}</button>
                         </div>
                     </motion.div>
                 </div>
@@ -310,15 +521,15 @@
         }
 
         function DashboardLayout({ userRole, theme, setTheme }) {
-            const [view, setView] = useState('smartdeck');
+            const [view, setView] = useState('timeline');
             const [projects, setProjects] = useState([]);
             const [activeProject, setActiveProject] = useState(null);
-            const [isGlobalLoading, setIsGlobalLoading] = useState(false); 
+            const [isGlobalLoading, setIsGlobalLoading] = useState(false);
 
             useEffect(() => {
                 secureFetch('/projects').then(r => r ? r.json() : []).then(data => {
                     if (data && data.length > 0) { setProjects(data); setActiveProject(data[0].key); }
-                    else { setProjects([{key: 'DEMO', name: 'Demo Project'}]); setActiveProject('DEMO'); }
+                    else { setProjects([{ key: 'DEMO', name: 'Demo Project' }]); setActiveProject('DEMO'); }
                 });
             }, []);
 
@@ -334,17 +545,17 @@
                                 <NavBtn id="smartdeck" icon="Monitor" label="AI Sprint Deck" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="roadmap" icon="Map" label="Strategic Roadmap" active={view} set={setView} disabled={isGlobalLoading} />
-                                {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Calendar" label="Timeline Flow" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
+                                {userRole !== 'leadership' && <><NavBtn id="timeline" icon="Zap" label="Timeline & Backlog" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="standup" icon="MessageSquare" label="Standup Bot" active={view} set={setView} disabled={isGlobalLoading} /></>}
                                 {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="reports" icon="FileText" label="Reports & Reviews" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
                         </div>
                         <div className="p-6 border-t border-border space-y-6">
                             <ThemeToggle theme={theme} setTheme={setTheme} fullWidth />
-                            <div><label className="text-xs font-bold uppercase mb-3 block text-text-muted tracking-wider">Active Project</label><select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} disabled={isGlobalLoading} className={`w-full p-3 rounded-lg border text-sm input-field transition-all font-semibold ${isGlobalLoading ? 'opacity-30 cursor-not-allowed bg-slate-800' : 'cursor-pointer'}`}>{projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}</select></div>
-                            <button onClick={()=>{localStorage.removeItem('ig_config'); window.location.reload()}} className="w-full text-left text-xs p-2 hover:bg-danger/10 rounded-lg font-bold text-danger transition-colors flex items-center gap-2"><Icon name="X" size={14}/> Sign Out</button>
+                            <div><label className="text-xs font-bold uppercase mb-3 block text-text-muted tracking-wider">Active Project</label><select value={activeProject || ''} onChange={e => setActiveProject(e.target.value)} disabled={isGlobalLoading} className={`w-full p-3 rounded-lg border text-sm input-field transition-all font-semibold ${isGlobalLoading ? 'opacity-30 cursor-not-allowed bg-slate-800' : 'cursor-pointer'}`}>{projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}</select></div>
+                            <button onClick={() => { localStorage.removeItem('ig_config'); window.location.reload() }} className="w-full text-left text-xs p-2 hover:bg-danger/10 rounded-lg font-bold text-danger transition-colors flex items-center gap-2"><Icon name="X" size={14} /> Sign Out</button>
                         </div>
                     </aside>
-                    <main className="flex-1 overflow-hidden relative transition-colors duration-300 bg-bg-body" style={{padding: view === 'smartdeck' ? '0' : '2.5rem'}}>
+                    <main className="flex-1 overflow-hidden relative transition-colors duration-300 bg-bg-body p-10">
                         {activeProject ? (
                             <div className="h-full">
                                 {view === 'smartdeck' && <SmartDeckView project={activeProject} endpoint={`/super_deck/${activeProject}?sprint_id=active`} isFullScreenLayout={true} />}
@@ -361,9 +572,9 @@
             );
         }
 
-        const NavBtn = ({ id, icon, label, active, set, disabled }) => (<button onClick={()=>set(id)} disabled={disabled} className={`nav-btn w-full ${active===id ? 'active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}><Icon name={icon} size={20} /> {label}</button>);
+        const NavBtn = ({ id, icon, label, active, set, disabled }) => (<button onClick={() => set(id)} disabled={disabled} className={`nav-btn w-full ${active === id ? 'active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}><Icon name={icon} size={20} /> {label}</button>);
         function ThemeToggle({ theme, setTheme, fullWidth }) { return (<button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-3 rounded-lg border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-3 transition hover:bg-bg-hover border-border text-text-muted bg-bg-card ${fullWidth ? 'w-full' : ''}`}><Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} /> {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</button>); }
-        function MetricCard({ label, value, color, isDanger }) { return (<div className="glass-card p-6 border-l-4 transition-all hover:scale-[1.02]" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}><div className="text-xs font-bold uppercase tracking-widest mb-2 text-text-muted">{label}</div><div className="text-4xl font-extrabold text-text-main">{value}</div></div>); }
+        function MetricCard({ label, value, color, isDanger }) { return (<div className="glass-card p-6 border-l-4 transition-all hover:scale-[1.02]" style={{ borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})` }}><div className="text-xs font-bold uppercase tracking-widest mb-2 text-text-muted">{label}</div><div className="text-4xl font-extrabold text-text-main">{value}</div></div>); }
 
         function RenderSlide({ slide }) {
             const layout = slide.layout || 'standard';
@@ -373,7 +584,7 @@
             const flowVars = { hidden: { opacity: 0, x: -40, scale: 0.9 }, visible: { opacity: 1, x: 0, scale: 1, transition: { type: "spring", bounce: 0.5 } } };
             const bulletVars = { hidden: { opacity: 0, x: -20 }, visible: { opacity: 1, x: 0, transition: { type: "spring", bounce: 0.3 } } };
 
-            const safeItems = Array.isArray(slide.items) ? slide.items : (slide.items ? [{title: slide.items, label: "Item", value: slide.items, text: slide.items}] : []);
+            const safeItems = Array.isArray(slide.items) ? slide.items : (slide.items ? [{ title: slide.items, label: "Item", value: slide.items, text: slide.items }] : []);
             const safeContent = Array.isArray(slide.content) ? slide.content : (slide.content ? [slide.content] : []);
 
             if (layout === 'hero') return (
@@ -407,10 +618,10 @@
                         {safeItems.map((step, i) => (
                             <React.Fragment key={i}>
                                 <motion.div variants={flowVars} className="flex-1 glass-card p-8 text-center relative hover:-translate-y-3 transition-transform border-b-4 border-primary">
-                                    <div className="text-lg font-black text-primary mb-2 uppercase tracking-widest">Step {i+1}</div>
+                                    <div className="text-lg font-black text-primary mb-2 uppercase tracking-widest">Step {i + 1}</div>
                                     <div className="text-xl font-bold text-text-main">{step.title}</div>
                                 </motion.div>
-                                {i < (safeItems.length - 1) && <motion.div variants={flowVars}><Icon name="ChevronRight" size={40} className="text-border shrink-0"/></motion.div>}
+                                {i < (safeItems.length - 1) && <motion.div variants={flowVars}><Icon name="ChevronRight" size={40} className="text-border shrink-0" /></motion.div>}
                             </React.Fragment>
                         ))}
                     </div>
@@ -456,7 +667,7 @@
             const [isExporting, setIsExporting] = useState(false);
             const [scale, setScale] = useState(1);
             const [aiError, setAiError] = useState(null);
-            
+
             const containerRef = useRef(null);
             const wrapperRef = useRef(null);
 
@@ -464,13 +675,13 @@
                 setLoading(true); setAiError(null);
                 secureFetch(endpoint)
                     .then(r => r?.json())
-                    .then(data => { 
+                    .then(data => {
                         if (data && data.status === 'success' && data.slides) {
-                            setSlides(data.slides); 
+                            setSlides(data.slides);
                         } else {
                             setAiError(data?.message || "Failed to generate deck data.");
                         }
-                        setLoading(false); 
+                        setLoading(false);
                     })
                     .catch(() => {
                         setAiError("Network connection to AI failed.");
@@ -482,10 +693,10 @@
                 const calculateScale = () => {
                     if (containerRef.current) {
                         const { clientWidth, clientHeight } = containerRef.current;
-                        const padding = 64; 
+                        const padding = 64;
                         const scaleX = (clientWidth - padding) / 1280;
                         const scaleY = (clientHeight - padding) / 720;
-                        setScale(Math.min(scaleX, scaleY)); 
+                        setScale(Math.min(scaleX, scaleY));
                     }
                 };
                 const ro = new ResizeObserver(calculateScale);
@@ -513,7 +724,7 @@
                 setIsExporting(true);
                 try {
                     const res = await secureFetch('/generate_ppt', { method: 'POST', body: JSON.stringify({ project: project, slides: slides }) });
-                    if(res && res.ok) {
+                    if (res && res.ok) {
                         const blob = await res.blob();
                         const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
@@ -523,7 +734,7 @@
                         a.click();
                         a.remove();
                     } else { alert("Failed to compile native Presentation."); }
-                } catch(e) { console.error(e); }
+                } catch (e) { console.error(e); }
                 setIsExporting(false);
             };
 
@@ -533,274 +744,341 @@
 
             return (
                 <div ref={wrapperRef} className={`flex flex-col relative overflow-hidden animate-fade-in ${isFullScreenLayout ? 'h-full bg-bg-body' : 'h-[650px] rounded-2xl border border-border shadow-2xl mb-8 bg-bg-body'}`}>
-                    
+
                     <div className="h-20 shrink-0 flex items-center justify-between px-8 border-b border-border bg-bg-card z-40">
                         <div className="flex items-center gap-4">
-                            <div className="px-4 py-1.5 bg-primary-dim text-primary rounded-full text-xs font-black border border-primary-dim flex items-center gap-2 uppercase tracking-wider"><Icon name="Sparkles" size={14}/> AI Generated Deck</div>
+                            <div className="px-4 py-1.5 bg-primary-dim text-primary rounded-full text-xs font-black border border-primary-dim flex items-center gap-2 uppercase tracking-wider"><Icon name="Sparkles" size={14} /> AI Generated Deck</div>
                             <span className="text-text-muted text-sm font-bold">Slide {currentIdx + 1} of {slides.length}</span>
                         </div>
                         <div className="flex gap-4">
                             <button onClick={toggleFullScreen} className="flex items-center gap-2 px-4 py-2.5 bg-bg-body hover:bg-bg-hover text-text-main rounded-lg text-sm font-bold transition border border-border" title="Present Mode">
-                                <Icon name="Maximize" size={18}/>
+                                <Icon name="Maximize" size={18} />
                             </button>
                             <button onClick={handleExportPPTX} disabled={isExporting} className="flex items-center gap-3 px-6 py-2.5 text-white rounded-lg text-sm font-bold transition shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-70 disabled:hover:scale-100 bg-primary">
-                                {isExporting ? <span className="loader w-4 h-4 border-2"></span> : <Icon name="Download" size={18}/>}
+                                {isExporting ? <span className="loader w-4 h-4 border-2"></span> : <Icon name="Download" size={18} />}
                                 {isExporting ? 'Compiling PPTX...' : 'Export Native PPTX'}
                             </button>
-                            {onClose && <button onClick={onClose} className="p-2.5 ml-2 text-text-muted hover:text-text-main transition bg-bg-body hover:bg-bg-hover rounded-lg border border-border"><Icon name="X" size={22}/></button>}
+                            {onClose && <button onClick={onClose} className="p-2.5 ml-2 text-text-muted hover:text-text-main transition bg-bg-body hover:bg-bg-hover rounded-lg border border-border"><Icon name="X" size={22} /></button>}
                         </div>
                     </div>
 
                     <div ref={containerRef} className="flex-1 relative flex items-center justify-center p-8 bg-bg-body/50 backdrop-blur-xl overflow-hidden">
                         <div className="shrink-0 flex items-center justify-center relative" style={{ width: '1280px', height: '720px', transform: `scale(${scale})`, transformOrigin: 'center center', transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
                             <AnimatePresence mode="wait">
-                                <motion.div 
-                                    key={currentIdx} 
-                                    initial={{ opacity: 0, scale: 0.92, filter: 'blur(12px)' }} 
-                                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }} 
-                                    exit={{ opacity: 0, scale: 1.08, filter: 'blur(12px)' }} 
-                                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }} 
+                                <motion.div
+                                    key={currentIdx}
+                                    initial={{ opacity: 0, scale: 0.92, filter: 'blur(12px)' }}
+                                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                                    exit={{ opacity: 0, scale: 1.08, filter: 'blur(12px)' }}
+                                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
                                     className="absolute inset-0 w-full h-full rounded-3xl overflow-hidden shadow-[0_32px_64px_rgba(0,0,0,0.2)] border border-border bg-bg-body"
                                 >
                                     <RenderSlide slide={slides[currentIdx]} />
                                 </motion.div>
                             </AnimatePresence>
                         </div>
-                        <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0} className="absolute left-8 w-16 h-16 rounded-full bg-bg-card/80 hover:bg-primary hover:text-white text-text-main flex items-center justify-center transition disabled:opacity-30 border border-border z-30 shadow-2xl backdrop-blur-md"><Icon name="ChevronLeft" size={32}/></button>
-                        <button onClick={() => setCurrentIdx(Math.min(slides.length - 1, currentIdx + 1))} disabled={currentIdx === slides.length - 1} className="absolute right-8 w-16 h-16 rounded-full bg-bg-card/80 hover:bg-primary hover:text-white text-text-main flex items-center justify-center transition disabled:opacity-30 border border-border z-30 shadow-2xl backdrop-blur-md"><Icon name="ChevronRight" size={32}/></button>
+                        <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0} className="absolute left-8 w-16 h-16 rounded-full bg-bg-card/80 hover:bg-primary hover:text-white text-text-main flex items-center justify-center transition disabled:opacity-30 border border-border z-30 shadow-2xl backdrop-blur-md"><Icon name="ChevronLeft" size={32} /></button>
+                        <button onClick={() => setCurrentIdx(Math.min(slides.length - 1, currentIdx + 1))} disabled={currentIdx === slides.length - 1} className="absolute right-8 w-16 h-16 rounded-full bg-bg-card/80 hover:bg-primary hover:text-white text-text-main flex items-center justify-center transition disabled:opacity-30 border border-border z-30 shadow-2xl backdrop-blur-md"><Icon name="ChevronRight" size={32} /></button>
                     </div>
                 </div>
             );
         }
 
-        function RoadmapView({ project, setIsLoading }) {
-            const [roadmap, setRoadmap] = useState(null);
-            useEffect(() => { setIsLoading(true); setRoadmap(null); secureFetch(`/roadmap/${project}`).then(r => r?.json()).then(data => { setRoadmap(data); setIsLoading(false); }).catch(() => setIsLoading(false)); }, [project]);
-            if (!roadmap) return <LoadingScreen msg="AI is analyzing the backlog and predicting release timelines..." />;
-            const trackColors = ["linear-gradient(to right, #3b82f6, #60a5fa)", "linear-gradient(to right, #10b981, #34d399)", "linear-gradient(to right, #8b5cf6, #a78bfa)", "linear-gradient(to right, #f59e0b, #fbbf24)"];
-
-            return (
-                <div className="animate-fade-in h-full flex flex-col pr-4 pb-12">
-                    <header className="mb-8 flex justify-between items-end pb-6 border-b border-border">
-                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Strategic Roadmap</h2><p className="text-base font-medium mt-2 text-text-muted">AI-Predicted Release Timeline based on Priority & Dependencies</p></div>
-                        <div className="flex items-center gap-3 px-5 py-2.5 rounded-full border text-xs font-black uppercase tracking-wider bg-primary-dim text-primary border-primary-dim"><Icon name="Sparkles" size={16}/> 12-Week Horizon</div>
-                    </header>
-                    <div className="flex-1 overflow-auto hide-scroll rounded-2xl border border-border shadow-2xl relative bg-bg-card">
-                        <div className="min-w-[1200px]">
-                            <div className="roadmap-grid sticky top-0 z-30 border-b border-border bg-bg-card">
-                                <div className="roadmap-header text-left pl-8">Workstream</div>{roadmap.timeline.map((wk, i) => (<div key={i} className="roadmap-header">{wk}</div>))}
-                            </div>
-                            {roadmap.tracks.map((track, trackIdx) => (
-                                <div key={trackIdx} className="relative border-b last:border-b-0 border-border">
-                                    <div className="roadmap-grid border-0 rounded-none absolute inset-0 h-full"><div className="roadmap-cell border-r border-border"></div>{roadmap.timeline.map((_, i) => (<div key={i} className="roadmap-cell border-r border-border"></div>))}</div>
-                                    <div className="relative z-10 flex">
-                                        <div className="w-[250px] shrink-0 p-8 flex flex-col justify-center border-r border-border"><span className="font-bold text-base leading-snug text-text-main">{track.name}</span><span className="text-xs mt-2 uppercase font-black tracking-wider text-text-muted">{track.items.length} Items</span></div>
-                                        <div className="flex-1 relative" style={{minHeight: `${Math.max(track.items.length * 56 + 32, 96)}px`}}>
-                                            <AnimatePresence>
-                                                {track.items.map((item, i) => {
-                                                    const start = Math.max(0, Math.min(item.start, 11)); const dur = Math.max(1, Math.min(item.duration, 12 - start));
-                                                    return (
-                                                        <motion.div key={item.key} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1, ease: "easeOut" }} className="roadmap-item shadow-lg" style={{background: trackColors[trackIdx % trackColors.length], left: `calc(${(start / 12) * 100}% + 12px)`, width: `calc(${(dur / 12) * 100}% - 24px)`, top: `${i * 56 + 16}px`, height: '40px'}} title={`${item.key}: ${item.summary} [Priority: ${item.priority}]`}><span className="font-black opacity-90 mr-3 shrink-0 text-xs">{item.key}</span><span className="truncate font-bold text-sm">{item.summary}</span></motion.div>
-                                                    )
-                                                })}
-                                            </AnimatePresence>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
-            const [data, setData] = useState(null); const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState('active'); 
-            useEffect(() => { secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { if(d && d.length) setSprints(d); }); }, [project]);
-            useEffect(() => { setData(null); setIsLoading(true); secureFetch(activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`).then(r => r ? r.json() : null).then(d => { setData(d); setIsLoading(false); }); }, [project, activeSprint]);
-            if (!data) return <LoadingScreen msg="AI is analyzing descriptions, acceptance criteria, and assignee comments..." />;
-            return (
-                <div className="animate-fade-in space-y-8 h-full overflow-y-auto pb-12 pr-4">
-                    <header className="flex justify-between items-end mb-10 border-b border-border pb-6">
-                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Executive Insights</h2><p className="text-base font-medium mt-2 text-text-muted">AI-driven delivery analysis & business value</p></div>
-                        <div className="flex items-center gap-3"><span className="text-xs font-black uppercase tracking-wider text-text-muted">Target Sprint</span><select value={activeSprint} onChange={e=>setActiveSprint(e.target.value)} disabled={isGlobalLoading} className={`p-3 rounded-lg border text-sm input-field font-bold min-w-[220px] ${isGlobalLoading?'opacity-50':''}`}><option value="active">🟢 Active Sprint</option>{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-                    </header>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6"><MetricCard label="Velocity (Pts)" value={data.metrics.points} color="primary" /><MetricCard label="Total Tickets" value={data.metrics.total} color="success" /><MetricCard label="Blockers" value={data.metrics.blockers} color="danger" isDanger={data.metrics.blockers > 0} /><MetricCard label="Bugs Found" value={data.metrics.bugs} color="warning" /></div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="glass-card p-8 border-t-4 border-primary"><h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-6 text-text-muted"><Icon name="Activity" size={18}/> Executive Summary</h3><p className="text-base leading-relaxed font-medium text-text-main">{data.ai_insights?.executive_summary}</p></div>
-                        <div className="glass-card p-8 border-t-4 border-success"><h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-6 text-text-muted"><Icon name="TrendingDown" size={18}/> Business Value Delivered</h3><div className="text-base leading-relaxed font-medium text-text-main prose" dangerouslySetInnerHTML={{ __html: marked.parse(data.ai_insights?.business_value || "") }}></div></div>
-                    </div>
-                    <div>
-                        <h3 className="text-2xl font-extrabold mb-6 mt-10 text-text-main">Deep Story Progress Analysis</h3>
-                        <div className="grid grid-cols-1 gap-4">
-                            {data.ai_insights?.story_progress?.map((story, idx) => (
-                                <div key={idx} className="glass-card p-5 flex gap-6 items-center hover:border-primary transition-colors">
-                                    <div className="w-28 text-center shrink-0"><div className="text-sm font-black text-primary">{story.key}</div><div className="text-[10px] uppercase tracking-wider font-bold mt-2 px-3 py-1 rounded-full border border-border inline-block text-text-muted bg-bg-body">{story.status}</div></div>
-                                    <div className="flex-1 border-l border-border pl-6"><div className="text-base font-bold mb-2 text-text-main">{story.summary} <span className="font-medium opacity-60 ml-2">({story.assignee})</span></div><div className="text-sm font-medium text-text-muted"><strong className="text-warning">AI Note: </strong> {story.analysis}</div></div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
+        // ================= ✨ THE REBUILT TIMELINE & BACKLOG VIEW (STORY + EPIC GENERATORS) ✨ =================
         function TimelineView({ project, setIsLoading }) {
-            const [data, setData] = useState(null); 
-            const [prompt, setPrompt] = useState(""); 
-            const [isGeneratingStory, setIsGeneratingStory] = useState(false); 
-            const [generatedStory, setGeneratedStory] = useState(null); 
-            const [isCreatingIssue, setIsCreatingIssue] = useState(false);
-            const [pushStatus, setPushStatus] = useState(null);
+            const [data, setData] = useState(null);
+
+            // Story State
+            const [storyPrompt, setStoryPrompt] = useState("");
+            const [isGeneratingStory, setIsGeneratingStory] = useState(false);
+            const [generatedStory, setGeneratedStory] = useState(null);
+            const [isCreatingStory, setIsCreatingStory] = useState(false);
+            const [storyStatus, setStoryStatus] = useState(null);
             const [selectedImage, setSelectedImage] = useState(null);
             const [imagePreview, setImagePreview] = useState(null);
             const fileInputRef = useRef(null);
-            
-            useEffect(() => { 
-                setData(null); setIsLoading(true); 
-                secureFetch(`/analytics/${project}`).then(r=>r?.json()).then(d => { setData(d); setIsLoading(false); }); 
+
+            // Epic State
+            const [epicPrompt, setEpicPrompt] = useState("");
+            const [isGeneratingEpic, setIsGeneratingEpic] = useState(false);
+            const [generatedEpic, setGeneratedEpic] = useState(null);
+            const [isCreatingEpic, setIsCreatingEpic] = useState(false);
+            const [epicStatus, setEpicStatus] = useState(null);
+
+            useEffect(() => {
+                setData(null); setIsLoading(true);
+                secureFetch(`/analytics/${project}`).then(r => r?.json()).then(d => { setData(d); setIsLoading(false); });
             }, [project]);
 
             const handleImageChange = (e) => {
                 const file = e.target.files[0];
-                if (file) {
-                    setSelectedImage(file);
-                    const reader = new FileReader();
-                    reader.onloadend = () => setImagePreview(reader.result);
-                    reader.readAsDataURL(file);
-                }
+                if (file) { setSelectedImage(file); const reader = new FileReader(); reader.onloadend = () => setImagePreview(reader.result); reader.readAsDataURL(file); }
             };
 
-            const clearImage = () => { setSelectedImage(null); setImagePreview(null); if(fileInputRef.current) fileInputRef.current.value = ""; };
-            
-            const handleGenerateStory = async () => { 
-                if(!prompt.trim() && !selectedImage) return; 
-                setIsGeneratingStory(true); 
-                setGeneratedStory(null); 
-                setPushStatus(null);
+            const clearImage = () => { setSelectedImage(null); setImagePreview(null); if (fileInputRef.current) fileInputRef.current.value = ""; };
 
+            const handleGenerateStory = async () => {
+                if (!storyPrompt.trim() && !selectedImage) return;
+                setIsGeneratingStory(true); setGeneratedStory(null); setStoryStatus(null);
                 let imageDataUrl = null;
-                if (selectedImage) {
-                    imageDataUrl = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result);
-                        reader.readAsDataURL(selectedImage);
-                    });
-                }
+                if (selectedImage) imageDataUrl = await new Promise((resolve) => { const reader = new FileReader(); reader.onloadend = () => resolve(reader.result); reader.readAsDataURL(selectedImage); });
 
                 try {
-                    const payload = { project, prompt };
+                    const payload = { project, prompt: storyPrompt };
                     if (imageDataUrl) payload.image_data = imageDataUrl;
-
-                    const r = await secureFetch('/timeline/generate_story', { method: 'POST', body: JSON.stringify(payload) }); 
-                    const res = await r.json(); 
-                    if(res.status === 'success') { 
-                        setGeneratedStory(res.story);
-                        clearImage(); 
-                    } else { 
-                        setPushStatus({ type: 'error', text: res.message || "AI failed to generate story." });
-                    }
-                } catch(e) { setPushStatus({ type: 'error', text: "Network error generating story." }); }
-                setIsGeneratingStory(false); 
+                    const r = await secureFetch('/timeline/generate_story', { method: 'POST', body: JSON.stringify(payload) });
+                    const res = await r.json();
+                    if (res.status === 'success') { setGeneratedStory(res.story); clearImage(); }
+                    else { setStoryStatus({ type: 'error', text: res.message || "AI failed to generate story." }); }
+                } catch (e) { setStoryStatus({ type: 'error', text: "Network error generating story." }); }
+                setIsGeneratingStory(false);
             };
 
-            const handleCreateIssue = async () => { 
-                setIsCreatingIssue(true); 
-                setPushStatus(null);
+            const handlePushStory = async () => {
+                setIsCreatingStory(true); setStoryStatus(null);
                 try {
-                    const r = await secureFetch('/timeline/create_issue', { method: 'POST', body: JSON.stringify({ project, story: generatedStory }) }); 
-                    const res = await r.json(); 
-                    if(res.status === 'success') { 
-                        const url = res.url || `https://id.atlassian.com/browse/${res.key}`;
-                        setPushStatus({ type: 'success', text: `Success! Issue ${res.key} added to Jira.`, url });
-                        setTimeout(() => { setGeneratedStory(null); setPrompt(""); setPushStatus(null); }, 8000); 
-                    } else { 
-                        setPushStatus({ type: 'error', text: res.message || "Failed to create issue. Check Jira permissions." });
-                    }
-                } catch(e) { console.error(e); setPushStatus({ type: 'error', text: "Network connection to backend failed." }); }
-                setIsCreatingIssue(false); 
+                    const r = await secureFetch('/timeline/create_issue', { method: 'POST', body: JSON.stringify({ project, issue_type: "Story", story: generatedStory }) });
+                    const res = await r.json();
+                    if (res.status === 'success') {
+                        setStoryStatus({ type: 'success', text: `Success! Story ${res.key} added to Jira.`, url: res.url });
+                        setTimeout(() => { setGeneratedStory(null); setStoryPrompt(""); setStoryStatus(null); }, 8000);
+                    } else { setStoryStatus({ type: 'error', text: res.message }); }
+                } catch (e) { setStoryStatus({ type: 'error', text: "Network connection to backend failed." }); }
+                setIsCreatingStory(false);
             };
 
-            if (!data) return <LoadingScreen msg="Loading Resource Allocation and Capacity..." />;
-            
+            const handleGenerateEpic = async () => {
+                if (!epicPrompt.trim()) return;
+                setIsGeneratingEpic(true); setGeneratedEpic(null); setEpicStatus(null);
+                try {
+                    const r = await secureFetch('/timeline/generate_epic', { method: 'POST', body: JSON.stringify({ project, prompt: epicPrompt }) });
+                    const res = await r.json();
+                    if (res.status === 'success') { setGeneratedEpic(res.epic); }
+                    else { setEpicStatus({ type: 'error', text: res.message || "AI failed to generate Epic." }); }
+                } catch (e) { setEpicStatus({ type: 'error', text: "Network error generating Epic." }); }
+                setIsGeneratingEpic(false);
+            };
+
+            const handlePushEpic = async () => {
+                setIsCreatingEpic(true); setEpicStatus(null);
+                try {
+                    const r = await secureFetch('/timeline/create_issue', { method: 'POST', body: JSON.stringify({ project, issue_type: "Epic", story: generatedEpic }) });
+                    const res = await r.json();
+                    if (res.status === 'success') {
+                        setEpicStatus({ type: 'success', text: `Success! Epic ${res.key} added to Jira.`, url: res.url });
+                        setTimeout(() => { setGeneratedEpic(null); setEpicPrompt(""); setEpicStatus(null); }, 8000);
+                    } else { setEpicStatus({ type: 'error', text: res.message }); }
+                } catch (e) { setEpicStatus({ type: 'error', text: "Network connection failed." }); }
+                setIsCreatingEpic(false);
+            };
+
+            if (!data) return <LoadingScreen msg="Loading Workspace..." />;
+
             return (
-                <div className="animate-fade-in h-full overflow-y-auto pb-12 flex flex-col pr-4 relative">
-                    <header className="mb-8"><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Timeline & Capacity</h2></header>
-                    <div className="space-y-6 mb-12">
-                        {Object.entries(data.metrics.assignees).map(([name, stats]) => (
-                            <div key={name} className="glass-card p-5 flex items-center gap-8 overflow-hidden hover:border-primary transition-all">
-                                <div className="w-56 shrink-0 flex items-center gap-4 pr-6 border-r border-border">{stats.avatar ? <img src={stats.avatar} className="w-12 h-12 rounded-xl border-2 border-primary shadow-sm" /> : <div className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black text-white bg-primary shadow-lg">{name.charAt(0)}</div>}<div className="min-w-0"><div className="text-base font-extrabold truncate text-text-main">{name.split(" ")[0]}</div><div className="text-xs font-black mt-1 px-2.5 py-1 rounded-md bg-primary-dim text-primary inline-block uppercase tracking-wider">{stats.points} Points</div></div></div>
-                                <div className="flex-1 flex gap-4 overflow-x-auto hide-scroll pb-2 pt-2">{stats.tasks?.map(t => (<div key={t.key} className="shrink-0 w-72 p-4 rounded-xl border shadow-sm flex flex-col justify-between bg-bg-body transition-all hover:-translate-y-1 hover:shadow-md" style={{borderColor: t.priority==='High' ? 'var(--danger)' : 'var(--border)'}}><div><div className="flex justify-between items-center mb-3"><span className="text-sm font-black text-primary">{t.key}</span><span className="text-[10px] uppercase font-bold tracking-wider text-text-muted">{t.status}</span></div><p className="text-sm text-text-main leading-relaxed line-clamp-2 font-medium">{t.summary}</p></div><div className="mt-4 flex justify-end"><span className="text-[10px] font-black uppercase tracking-wider bg-bg-card text-text-muted px-3 py-1.5 rounded-md border border-border">{t.points} pts</span></div></div>))}</div>
-                            </div>
-                        ))}
+                <div className="animate-fade-in h-full overflow-y-auto pb-20 flex flex-col pr-4 relative space-y-16">
+
+                    {/* --- PART 1: TEAM TIMELINE --- */}
+                    <div>
+                        <header className="mb-8"><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Timeline & Capacity</h2></header>
+                        <div className="space-y-6">
+                            {Object.entries(data.metrics.assignees).map(([name, stats]) => (
+                                <div key={name} className="glass-card p-5 flex items-center gap-8 overflow-hidden hover:border-primary transition-all">
+                                    <div className="w-56 shrink-0 flex items-center gap-4 pr-6 border-r border-border">{stats.avatar ? <img src={stats.avatar} className="w-12 h-12 rounded-xl border-2 border-primary shadow-sm" /> : <div className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-black text-white bg-primary shadow-lg">{name.charAt(0)}</div>}<div className="min-w-0"><div className="text-base font-extrabold truncate text-text-main">{name.split(" ")[0]}</div><div className="text-xs font-black mt-1 px-2.5 py-1 rounded-md bg-primary-dim text-primary inline-block uppercase tracking-wider">{stats.points} Points</div></div></div>
+                                    <div className="flex-1 flex gap-4 overflow-x-auto hide-scroll pb-2 pt-2">{stats.tasks?.map(t => (<div key={t.key} className="shrink-0 w-72 p-4 rounded-xl border shadow-sm flex flex-col justify-between bg-bg-body transition-all hover:-translate-y-1 hover:shadow-md" style={{ borderColor: t.priority === 'High' ? 'var(--danger)' : 'var(--border)' }}><div><div className="flex justify-between items-center mb-3"><span className="text-sm font-black text-primary">{t.key}</span><span className="text-[10px] uppercase font-bold tracking-wider text-text-muted">{t.status}</span></div><p className="text-sm text-text-main leading-relaxed line-clamp-2 font-medium">{t.summary}</p></div><div className="mt-4 flex justify-end"><span className="text-[10px] font-black uppercase tracking-wider bg-bg-card text-text-muted px-3 py-1.5 rounded-md border border-border">{t.points} pts</span></div></div>))}</div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    
-                    <div className="mt-auto relative z-10">
+
+                    {/* --- PART 2: STORY GENERATOR (EDITABLE) --- */}
+                    <div className="relative z-10">
                         <div className="glass-card border-t-4 border-primary p-8 relative overflow-hidden shadow-2xl">
-                             <div className="absolute top-0 right-0 w-80 h-80 bg-primary-dim rounded-full blur-3xl -mr-24 -mt-24 pointer-events-none opacity-40"></div>
-                            <h3 className="text-2xl font-extrabold flex items-center gap-3 mb-6 text-text-main"><Icon name="Sparkles" size={24} className="text-primary"/> Auto-Generate User Story (with Vision)</h3>
-                            
+                            <div className="absolute top-0 right-0 w-80 h-80 bg-primary-dim rounded-full blur-3xl -mr-24 -mt-24 pointer-events-none opacity-40"></div>
+                            <h3 className="text-2xl font-extrabold flex items-center gap-3 mb-6 text-text-main"><Icon name="Sparkles" size={24} className="text-primary" /> Auto-Generate User Story (with Vision)</h3>
+
                             <div className="flex flex-col gap-4">
-                                <textarea value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Describe the feature, or paste requirements here..." className="w-full bg-bg-body border border-border rounded-xl px-5 py-4 text-base font-medium text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary-dim transition-all resize-none h-32 shadow-inner" ></textarea>
-                                
+                                <textarea value={storyPrompt} onChange={e => setStoryPrompt(e.target.value)} placeholder="Describe the feature, or paste requirements here..." className="w-full bg-bg-body border border-border rounded-xl px-5 py-4 text-base font-medium text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary-dim transition-all resize-none h-32 shadow-inner" ></textarea>
                                 <div className="flex gap-4 items-start">
                                     <input type="file" accept="image/*" onChange={handleImageChange} ref={fileInputRef} className="hidden" />
                                     <button onClick={() => fileInputRef.current.click()} className="px-5 py-3 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-text-main hover:border-primary transition flex items-center gap-3 shrink-0">
-                                        <Icon name="Image" size={20}/> {selectedImage ? 'Change Image' : 'Upload Screenshot / Diagram'}
+                                        <Icon name="Image" size={20} /> {selectedImage ? 'Change Image' : 'Upload Screenshot / Diagram'}
                                     </button>
-                                    
                                     {imagePreview && (
                                         <div className="relative group">
                                             <img src={imagePreview} alt="Preview" className="h-20 w-auto rounded-lg border border-border shadow-md" />
-                                            <button onClick={clearImage} className="absolute -top-2 -right-2 bg-danger text-white rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition"><Icon name="X" size={12}/></button>
+                                            <button onClick={clearImage} className="absolute -top-2 -right-2 bg-danger text-white rounded-full p-1 shadow-lg opacity-0 group-hover:opacity-100 transition"><Icon name="X" size={12} /></button>
                                         </div>
                                     )}
-
-                                    <button onClick={handleGenerateStory} disabled={isGeneratingStory || (!prompt && !selectedImage)} className="flex-1 px-8 py-4 font-extrabold text-white rounded-xl transition-all hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 bg-primary flex items-center justify-center gap-3 text-lg shadow-lg">
-                                        {isGeneratingStory ? <span className="loader w-6 h-6 border-2"></span> : <Icon name="Sparkles" size={22}/>}
+                                    <button onClick={handleGenerateStory} disabled={isGeneratingStory || (!storyPrompt && !selectedImage)} className="flex-1 px-8 py-4 font-extrabold text-white rounded-xl transition-all hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 bg-primary flex items-center justify-center gap-3 text-lg shadow-lg">
+                                        {isGeneratingStory ? <span className="loader w-6 h-6 border-2"></span> : <Icon name="Sparkles" size={22} />}
                                         {isGeneratingStory ? 'Synthesizing...' : 'Generate Story'}
                                     </button>
                                 </div>
                             </div>
 
                             <AnimatePresence>
-                                {pushStatus && !generatedStory && (
-                                     <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} className={`mt-6 p-4 rounded-xl text-sm font-bold border flex items-center gap-3 shadow-lg ${pushStatus.type === 'error' ? 'bg-danger/10 text-danger border-danger/30' : 'bg-success/10 text-success border-success/30'}`}>
-                                        <Icon name={pushStatus.type === 'error' ? 'AlertTriangle' : 'CheckCircle'} size={20}/>
-                                        {pushStatus.text}
-                                     </motion.div>
+                                {storyStatus && !generatedStory && (
+                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`mt-6 p-4 rounded-xl text-sm font-bold border flex items-center gap-3 shadow-lg ${storyStatus.type === 'error' ? 'bg-danger/10 text-danger border-danger/30' : 'bg-success/10 text-success border-success/30'}`}>
+                                        <Icon name={storyStatus.type === 'error' ? 'AlertTriangle' : 'CheckCircle'} size={20} />
+                                        {storyStatus.text}
+                                    </motion.div>
                                 )}
                             </AnimatePresence>
 
+                            {/* EDITABLE STORY FORM */}
                             <AnimatePresence>
                                 {generatedStory && (
-                                    <motion.div initial={{opacity:0, height:0, y: 20}} animate={{opacity:1, height:'auto', y: 0}} exit={{opacity:0, height:0, y: 20}} transition={{ type: "spring", bounce: 0.3 }} className="mt-8 pt-8 border-t border-border">
-                                        <div className="bg-bg-card rounded-2xl p-8 border border-border shadow-xl relative overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-64 h-64 bg-primary-dim rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none opacity-30"></div>
-                                            <div className="flex justify-between items-start mb-6 relative z-10">
-                                                <h4 className="text-2xl font-extrabold text-text-main pr-4 leading-tight">{generatedStory.title}</h4>
-                                                <div className="flex gap-3 shrink-0">
-                                                    <span className="px-4 py-1.5 bg-primary-dim text-primary rounded-full text-xs font-black uppercase tracking-wider border border-primary-dim">{generatedStory.points} Points</span>
-                                                    <span className="px-4 py-1.5 bg-success/10 text-success rounded-full text-xs font-black uppercase tracking-wider border border-success/20">Assignee: {generatedStory.assignee}</span>
+                                    <motion.div initial={{ opacity: 0, height: 0, y: 20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: 20 }} transition={{ type: "spring", bounce: 0.3 }} className="mt-8 pt-8 border-t border-border">
+                                        <div className="bg-bg-card rounded-2xl p-8 border border-border shadow-xl relative overflow-hidden flex flex-col gap-6">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <h4 className="text-sm font-black text-primary uppercase tracking-widest flex items-center gap-2"><Icon name="AlignLeft" size={16} /> Review & Edit Story</h4>
+                                            </div>
+
+                                            <div className="grid grid-cols-4 gap-6">
+                                                <div className="col-span-3">
+                                                    <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Story Summary</label>
+                                                    <input value={generatedStory.title} onChange={e => setGeneratedStory({ ...generatedStory, title: e.target.value })} className="w-full bg-bg-body border border-border rounded-xl px-4 py-3 text-lg font-bold text-text-main outline-none focus:border-primary transition-all" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Story Points</label>
+                                                    <input type="number" value={generatedStory.points} onChange={e => setGeneratedStory({ ...generatedStory, points: e.target.value })} className="w-full bg-bg-body border border-border rounded-xl px-4 py-3 text-lg font-bold text-primary text-center outline-none focus:border-primary transition-all" />
                                                 </div>
                                             </div>
-                                            <div className="mb-8 relative z-10"><h5 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Description</h5><p className="text-base text-text-main whitespace-pre-wrap leading-relaxed font-medium bg-bg-body p-5 rounded-xl border border-border">{generatedStory.description}</p></div>
-                                            <div className="mb-8 relative z-10"><h5 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Acceptance Criteria</h5><ul className="list-none pl-2 space-y-3">{generatedStory.acceptance_criteria.map((ac, i) => <li key={i} className="flex items-start gap-3 text-base font-medium text-text-main"><Icon name="CheckCircle" size={18} className="text-success shrink-0 mt-1"/>{ac}</li>)}</ul></div>
-                                            <div className="bg-primary-dim p-5 rounded-xl border border-primary/20 flex gap-4 items-start relative z-10"><Icon name="Sparkles" size={20} className="text-primary shrink-0 mt-0.5"/><div><h5 className="text-xs font-black text-primary uppercase tracking-widest mb-1">AI Reasoning</h5><p className="text-sm text-text-main leading-relaxed font-semibold">{generatedStory.tech_stack_inferred}</p></div></div>
-                                            
-                                            <div className="mt-8 flex flex-col items-end gap-4 relative z-10">
+
+                                            <div>
+                                                <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Description</label>
+                                                <textarea rows="4" value={generatedStory.description} onChange={e => setGeneratedStory({ ...generatedStory, description: e.target.value })} className="w-full bg-bg-body border border-border rounded-xl px-4 py-3 text-sm font-medium text-text-main outline-none focus:border-primary transition-all resize-y" />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Acceptance Criteria (One per line)</label>
+                                                <textarea rows="4" value={generatedStory.acceptance_criteria.join('\n')} onChange={e => setGeneratedStory({ ...generatedStory, acceptance_criteria: e.target.value.split('\n') })} className="w-full bg-bg-body border border-border rounded-xl px-4 py-3 text-sm font-medium text-text-main outline-none focus:border-primary transition-all resize-y leading-relaxed" />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-6">
+                                                <div>
+                                                    <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Target Assignee</label>
+                                                    <input value={generatedStory.assignee} onChange={e => setGeneratedStory({ ...generatedStory, assignee: e.target.value })} className="w-full bg-bg-body border border-border rounded-xl px-4 py-3 text-sm font-bold text-text-main outline-none focus:border-primary transition-all" />
+                                                </div>
+                                                <div className="bg-primary-dim p-4 rounded-xl border border-primary/20 flex gap-4 items-start">
+                                                    <Icon name="Sparkles" size={20} className="text-primary shrink-0 mt-0.5" />
+                                                    <div><h5 className="text-xs font-black text-primary uppercase tracking-widest mb-1">AI Reasoning</h5><p className="text-xs text-text-main leading-relaxed font-semibold">{generatedStory.tech_stack_inferred}</p></div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-4 flex flex-col items-end gap-4 border-t border-border pt-6">
                                                 <AnimatePresence>
-                                                    {pushStatus && (
-                                                        <motion.div initial={{opacity:0, y:10}} animate={{opacity:1, y:0}} exit={{opacity:0}} className={`p-4 rounded-xl text-sm w-full flex items-center gap-3 font-bold border shadow-md ${pushStatus.type === 'error' ? 'bg-danger/10 text-danger border-danger/30' : 'bg-success/10 text-success border-success/30'}`}>
-                                                            <Icon name={pushStatus.type === 'error' ? 'AlertTriangle' : 'CheckCircle'} size={20}/>
-                                                            <span className="flex-1">{pushStatus.text}</span>
-                                                            {pushStatus.url && <a href={pushStatus.url} target="_blank" className="px-4 py-2 bg-success text-white rounded-lg font-bold flex items-center gap-2 hover:shadow-lg transition shadow-md text-xs uppercase tracking-wider">View in Jira <Icon name="ExternalLink" size={14}/></a>}
+                                                    {storyStatus && (
+                                                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`p-4 rounded-xl text-sm w-full flex items-center gap-3 font-bold border shadow-md ${storyStatus.type === 'error' ? 'bg-danger/10 text-danger border-danger/30' : 'bg-success/10 text-success border-success/30'}`}>
+                                                            <Icon name={storyStatus.type === 'error' ? 'AlertTriangle' : 'CheckCircle'} size={20} />
+                                                            <span className="flex-1">{storyStatus.text}</span>
+                                                            {storyStatus.url && <a href={storyStatus.url} target="_blank" className="px-4 py-2 bg-success text-white rounded-lg font-bold flex items-center gap-2 hover:shadow-lg transition shadow-md text-xs uppercase tracking-wider">View in Jira <Icon name="ExternalLink" size={14} /></a>}
                                                         </motion.div>
                                                     )}
                                                 </AnimatePresence>
-                                                <button onClick={handleCreateIssue} disabled={isCreatingIssue || (pushStatus && pushStatus.type === 'success')} className="px-8 py-4 text-base font-extrabold text-white rounded-xl transition-all hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 bg-success flex items-center gap-3 shadow-lg">
-                                                    {isCreatingIssue ? <span className="loader w-5 h-5 border-2"></span> : <Icon name="Upload" size={20}/>}
-                                                    {isCreatingIssue ? 'Pushing to Jira...' : 'Push to Jira Backlog'}
+                                                <button onClick={handlePushStory} disabled={isCreatingStory || (storyStatus && storyStatus.type === 'success')} className="px-10 py-4 text-base font-extrabold text-white rounded-xl transition-all hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 bg-success flex items-center gap-3 shadow-lg w-full md:w-auto justify-center">
+                                                    {isCreatingStory ? <span className="loader w-5 h-5 border-2"></span> : <Icon name="Upload" size={20} />}
+                                                    {isCreatingStory ? 'Pushing to Jira...' : 'Confirm & Push Story to Jira'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
+                    </div>
+
+                    {/* --- PART 3: THE AI BACKLOG GENERATOR (EPICS) --- */}
+                    <div className="glass-card overflow-hidden shadow-2xl border-t-4 border-indigo-500 relative">
+                        {/* Marketing Header */}
+                        <div className="bg-indigo-900/10 border-b border-border p-10 relative">
+                            <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl -mr-32 -mt-32 pointer-events-none"></div>
+                            <div className="max-w-3xl relative z-10">
+                                <h3 className="text-3xl font-extrabold text-text-main flex items-center gap-3 mb-4"><Icon name="Target" size={28} className="text-indigo-500" /> The AI Backlog Generator</h3>
+                                <h4 className="text-lg font-bold text-indigo-400 mb-3">Built right into your agile flow</h4>
+                                <p className="text-base text-text-muted leading-relaxed font-medium">Writing clear, structured backlog items takes time. And when they’re vague or incomplete, teams go off track — leading to rework, missed deadlines, and wasted effort. The AI Epic Generator transforms raw ideas into implementation-ready Epics — so everyone understands exactly what to build, why, and how long it takes.</p>
+                            </div>
+                        </div>
+
+                        {/* 3 Column Features */}
+                        <div className="grid grid-cols-3 gap-8 p-10 bg-bg-body border-b border-border relative z-10">
+                            <div>
+                                <h5 className="font-extrabold text-text-main text-lg mb-2 flex items-center gap-2"><Icon name="MessageSquare" size={18} className="text-indigo-500" /> Write the way you talk</h5>
+                                <p className="text-sm text-text-muted font-medium leading-relaxed">Just tell the AI in a short sentence what you want to build. No tech jargon required. No sacrifice for speed.</p>
+                            </div>
+                            <div>
+                                <h5 className="font-extrabold text-text-main text-lg mb-2 flex items-center gap-2"><Icon name="Zap" size={18} className="text-indigo-500" /> Auto-Generated Epics</h5>
+                                <p className="text-sm text-text-muted font-medium leading-relaxed">Get a detailed and structured Epics according to agile best practices with a full description, acceptance criteria & more.</p>
+                            </div>
+                            <div>
+                                <h5 className="font-extrabold text-text-main text-lg mb-2 flex items-center gap-2"><Icon name="CheckCircle" size={18} className="text-indigo-500" /> Better clarity for everyone</h5>
+                                <p className="text-sm text-text-muted font-medium leading-relaxed">Actionable, consistent epics that leave no room for confusion and keep Stakeholder, Product Owner and Dev Teams aligned.</p>
+                            </div>
+                        </div>
+
+                        {/* Input Area */}
+                        <div className="p-10 bg-bg-card relative z-10">
+                            <h4 className="text-lg font-bold text-text-main mb-6 text-center">How the AI Backlog Generator works<br /><span className="text-indigo-500 text-sm font-black uppercase tracking-widest mt-2 block">From messy notes to developer-ready Epics — in seconds.</span></h4>
+
+                            <div className="flex flex-col gap-4 max-w-4xl mx-auto">
+                                <textarea value={epicPrompt} onChange={e => setEpicPrompt(e.target.value)} placeholder="e.g. I need a feature to create and manage customer journeys..." className="w-full bg-bg-body border border-indigo-500/30 focus:border-indigo-500 rounded-xl px-6 py-5 text-lg font-medium text-text-main outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all resize-none h-32 shadow-inner" ></textarea>
+                                <button onClick={handleGenerateEpic} disabled={isGeneratingEpic || !epicPrompt} className="self-end px-10 py-4 font-extrabold text-white rounded-xl transition-all hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 bg-indigo-600 flex items-center justify-center gap-3 text-lg shadow-lg">
+                                    {isGeneratingEpic ? <span className="loader w-6 h-6 border-2"></span> : <Icon name="Sparkles" size={22} />}
+                                    {isGeneratingEpic ? 'Crafting Epic...' : 'Generate Epic'}
+                                </button>
+                            </div>
+
+                            <AnimatePresence>
+                                {epicStatus && !generatedEpic && (
+                                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`mt-6 max-w-4xl mx-auto p-4 rounded-xl text-sm font-bold border flex items-center gap-3 shadow-lg ${epicStatus.type === 'error' ? 'bg-danger/10 text-danger border-danger/30' : 'bg-success/10 text-success border-success/30'}`}>
+                                        <Icon name={epicStatus.type === 'error' ? 'AlertTriangle' : 'CheckCircle'} size={20} />
+                                        {epicStatus.text}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* EDITABLE EPIC FORM */}
+                            <AnimatePresence>
+                                {generatedEpic && (
+                                    <motion.div initial={{ opacity: 0, height: 0, y: 20 }} animate={{ opacity: 1, height: 'auto', y: 0 }} exit={{ opacity: 0, height: 0, y: 20 }} transition={{ type: "spring", bounce: 0.3 }} className="mt-10 max-w-4xl mx-auto">
+                                        <div className="bg-bg-body rounded-2xl p-8 border border-indigo-500/20 shadow-xl flex flex-col gap-6">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <h4 className="text-sm font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2"><Icon name="AlignLeft" size={16} /> Review & Edit Epic</h4>
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Epic Summary</label>
+                                                <input value={generatedEpic.title} onChange={e => setGeneratedEpic({ ...generatedEpic, title: e.target.value })} className="w-full bg-bg-card border border-border rounded-xl px-4 py-3 text-lg font-bold text-text-main outline-none focus:border-indigo-500 transition-all" />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Motivation / Business Value</label>
+                                                <textarea rows="3" value={generatedEpic.motivation} onChange={e => setGeneratedEpic({ ...generatedEpic, motivation: e.target.value })} className="w-full bg-bg-card border border-border rounded-xl px-4 py-3 text-sm font-medium text-text-main outline-none focus:border-indigo-500 transition-all resize-y" />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Description</label>
+                                                <textarea rows="5" value={generatedEpic.description} onChange={e => setGeneratedEpic({ ...generatedEpic, description: e.target.value })} className="w-full bg-bg-card border border-border rounded-xl px-4 py-3 text-sm font-medium text-text-main outline-none focus:border-indigo-500 transition-all resize-y" />
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Acceptance Criteria (One per line)</label>
+                                                <textarea rows="5" value={generatedEpic.acceptance_criteria.join('\n')} onChange={e => setGeneratedEpic({ ...generatedEpic, acceptance_criteria: e.target.value.split('\n') })} className="w-full bg-bg-card border border-border rounded-xl px-4 py-3 text-sm font-medium text-text-main outline-none focus:border-indigo-500 transition-all resize-y leading-relaxed" />
+                                            </div>
+
+                                            <div className="mt-4 flex flex-col items-end gap-4 border-t border-border pt-6">
+                                                <AnimatePresence>
+                                                    {epicStatus && (
+                                                        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`p-4 rounded-xl text-sm w-full flex items-center gap-3 font-bold border shadow-md ${epicStatus.type === 'error' ? 'bg-danger/10 text-danger border-danger/30' : 'bg-success/10 text-success border-success/30'}`}>
+                                                            <Icon name={epicStatus.type === 'error' ? 'AlertTriangle' : 'CheckCircle'} size={20} />
+                                                            <span className="flex-1">{epicStatus.text}</span>
+                                                            {epicStatus.url && <a href={epicStatus.url} target="_blank" className="px-4 py-2 bg-success text-white rounded-lg font-bold flex items-center gap-2 hover:shadow-lg transition shadow-md text-xs uppercase tracking-wider">View in Jira <Icon name="ExternalLink" size={14} /></a>}
+                                                        </motion.div>
+                                                    )}
+                                                </AnimatePresence>
+                                                <button onClick={handlePushEpic} disabled={isCreatingEpic || (epicStatus && epicStatus.type === 'success')} className="px-10 py-4 text-base font-extrabold text-white rounded-xl transition-all hover:shadow-xl hover:scale-[1.02] disabled:opacity-60 disabled:hover:scale-100 bg-indigo-600 flex items-center gap-3 shadow-lg w-full md:w-auto justify-center">
+                                                    {isCreatingEpic ? <span className="loader w-5 h-5 border-2"></span> : <Icon name="Upload" size={20} />}
+                                                    {isCreatingEpic ? 'Pushing to Jira...' : 'Confirm & Push Epic to Jira'}
                                                 </button>
                                             </div>
                                         </div>
@@ -813,17 +1091,18 @@
             );
         }
 
-        function ReportsView({ project, setIsLoading, isGlobalLoading }) { 
-            const [data, setData] = useState(null); 
+        // ================= DOSSIER REPORTS =================
+        function ReportsView({ project, setIsLoading, isGlobalLoading }) {
+            const [data, setData] = useState(null);
             const [timeframe, setTimeframe] = useState('weekly');
             const [showDeck, setShowDeck] = useState(false);
 
-            useEffect(()=>{ 
-                setData(null); setShowDeck(false); setIsLoading(true); 
-                secureFetch(`/reports/${project}/${timeframe}`).then(r=>r?.json()).then(d => { setData(d); setIsLoading(false); }); 
-            },[project, timeframe]);
-            
-            if(!data) return <LoadingScreen msg={`Compiling ${timeframe} AI Dossier...`}/>;
+            useEffect(() => {
+                setData(null); setShowDeck(false); setIsLoading(true);
+                secureFetch(`/reports/${project}/${timeframe}`).then(r => r?.json()).then(d => { setData(d); setIsLoading(false); });
+            }, [project, timeframe]);
+
+            if (!data) return <LoadingScreen msg={`Compiling ${timeframe} AI Dossier...`} />;
             const dossier = data.dossier || {};
 
             return (
@@ -834,142 +1113,31 @@
                     </header>
 
                     <div className="bg-gradient-to-br from-primary to-amber-700 p-8 rounded-2xl border border-primary/20 flex justify-between items-center shadow-xl relative overflow-hidden">
-                         <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none"></div>
                         <div className="relative z-10">
-                            <h3 className="text-2xl font-extrabold text-white mb-2 flex items-center gap-3"><Icon name="Monitor" size={24}/> Generate {timeframe.charAt(0).toUpperCase() + timeframe.slice(1)} Business Review</h3>
+                            <h3 className="text-2xl font-extrabold text-white mb-2 flex items-center gap-3"><Icon name="Monitor" size={24} /> Generate {timeframe.charAt(0).toUpperCase() + timeframe.slice(1)} Business Review</h3>
                             <p className="text-base text-white/80 font-medium">The Super Agent will write a structured, multi-slide executive presentation.</p>
                         </div>
-                        <button onClick={() => setShowDeck(true)} className="bg-white text-primary px-8 py-4 rounded-xl font-extrabold shadow-lg hover:shadow-xl hover:scale-105 transition-all relative z-10 flex items-center gap-3"><Icon name="Sparkles" size={20}/> Generate Deck</button>
+                        <button onClick={() => setShowDeck(true)} className="bg-white text-primary px-8 py-4 rounded-xl font-extrabold shadow-lg hover:shadow-xl hover:scale-105 transition-all relative z-10 flex items-center gap-3"><Icon name="Sparkles" size={20} /> Generate Deck</button>
                     </div>
 
                     {showDeck && <SmartDeckView project={project} endpoint={`/report_deck/${project}/${timeframe}`} isFullScreenLayout={false} onClose={() => setShowDeck(false)} />}
 
-                    <div className="glass-card p-10 border-t-4 border-primary"><h3 className="text-sm font-black text-primary mb-6 uppercase tracking-widest flex items-center gap-3"><Icon name="Sparkles" size={18}/> The AI Verdict</h3><p className="text-3xl font-bold leading-relaxed text-text-main">{dossier.ai_verdict}</p></div>
+                    <div className="glass-card p-10 border-t-4 border-primary"><h3 className="text-sm font-black text-primary mb-6 uppercase tracking-widest flex items-center gap-3"><Icon name="Sparkles" size={18} /> The AI Verdict</h3><p className="text-3xl font-bold leading-relaxed text-text-main">{dossier.ai_verdict}</p></div>
                     <div className="grid grid-cols-3 gap-8">
                         <div className="glass-card p-8 text-center hover:border-success transition-colors"><span className="text-xs font-black text-text-muted uppercase tracking-widest">Issues Completed</span><div className="text-6xl font-black text-success mt-4">{data.completed_count}</div></div>
                         <div className="glass-card p-8 text-center hover:border-primary transition-colors"><span className="text-xs font-black text-text-muted uppercase tracking-widest">Velocity Delivered</span><div className="text-6xl font-black text-primary mt-4">{data.completed_points}</div></div>
-                        <div className="glass-card p-8 text-center border-t-4 border-warning relative overflow-hidden"><div className="absolute top-0 left-0 w-full h-1 bg-warning"></div><Icon name="Star" size={32} className="text-warning mx-auto mb-4"/><span className="text-xs font-black text-text-muted uppercase tracking-widest">Top Contributor</span><div className="text-2xl font-extrabold mt-3 text-text-main">{dossier.top_contributor?.split('-')[0]}</div><div className="text-sm text-text-muted font-bold mt-2">{dossier.top_contributor?.split('-')[1]}</div></div>
+                        <div className="glass-card p-8 text-center border-t-4 border-warning relative overflow-hidden"><div className="absolute top-0 left-0 w-full h-1 bg-warning"></div><Icon name="Star" size={32} className="text-warning mx-auto mb-4" /><span className="text-xs font-black text-text-muted uppercase tracking-widest">Top Contributor</span><div className="text-2xl font-extrabold mt-3 text-text-main">{dossier.top_contributor?.split('-')[0]}</div><div className="text-sm text-text-muted font-bold mt-2">{dossier.top_contributor?.split('-')[1]}</div></div>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="glass-card p-8 border-t-4 border-success">
-                            <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-8 text-success"><Icon name="TrendingDown" size={18}/> Key Accomplishments</h3>
-                            <div className="space-y-6">{dossier.key_accomplishments?.map((acc, i) => (<div key={i} className="flex gap-5 items-start pb-6 border-b last:border-0 border-border"><div className="w-8 h-8 rounded-lg bg-success/10 text-success flex items-center justify-center font-black text-sm shrink-0">{i+1}</div><div><h4 className="text-lg font-extrabold mb-2 text-text-main">{acc.title}</h4><p className="text-sm leading-relaxed font-medium text-text-muted">{acc.impact}</p></div></div>))}</div>
+                            <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-8 text-success"><Icon name="TrendingDown" size={18} /> Key Accomplishments</h3>
+                            <div className="space-y-6">{dossier.key_accomplishments?.map((acc, i) => (<div key={i} className="flex gap-5 items-start pb-6 border-b last:border-0 border-border"><div className="w-8 h-8 rounded-lg bg-success/10 text-success flex items-center justify-center font-black text-sm shrink-0">{i + 1}</div><div><h4 className="text-lg font-extrabold mb-2 text-text-main">{acc.title}</h4><p className="text-sm leading-relaxed font-medium text-text-muted">{acc.impact}</p></div></div>))}</div>
                         </div>
                         <div className="glass-card p-8 border-l-4 border-danger bg-danger/5">
-                            <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-8 text-danger"><Icon name="AlertTriangle" size={18}/> Hidden Friction Detected</h3>
+                            <h3 className="text-sm font-black uppercase tracking-widest flex items-center gap-3 mb-8 text-danger"><Icon name="AlertTriangle" size={18} /> Hidden Friction Detected</h3>
                             <div className="p-6 rounded-xl bg-bg-body border border-danger/20 shadow-inner"><p className="text-base leading-relaxed font-bold text-text-main">{dossier.hidden_friction}</p></div>
-                        </div>
-                    </div>
-                </div>
-            ); 
-        }
-
-// ================= RETRO BOARD (WITH MAGIC GUEST LINK & DELETE CAPABILITY) =================
-        function RetroView({ project, setIsLoading, isGlobalLoading }) {
-            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
-            const [toast, setToast] = useState(null);
-
-            useEffect(() => { secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { setSprints(d); if(d && d.length) setActiveSprint(d[0].id); }); }, [project]);
-            
-            const fetchBoard = () => { if(activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r=>r?.json()).then(setBoard); } };
-            useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
-
-            const save = (b) => { setBoard(b); secureFetch(`/retro/update`, {method:'POST', body:JSON.stringify({project, sprint:activeSprint, board:b})}); };
-            
-            const add = () => { if(!input.trim()) return; const n = board[col] ? [...board[col]] : []; n.push({id:Date.now(), text:input}); save({...board, [col]: n}); setInput(""); };
-            
-            // ✨ NEW: Clear/Delete Method ✨
-            const remove = (columnName, itemId) => {
-                const updatedCol = board[columnName].filter(item => item.id !== itemId);
-                save({...board, [columnName]: updatedCol});
-            };
-
-            const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions: [...(board.actions||[]), ...d.actions]}); setLoadingAI(false); }); };
-            
-            const generateInviteLink = async () => {
-                const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
-                const r = await secureFetch(`/retro/generate_link`, {
-                    method: 'POST', body: JSON.stringify({project, sprint: activeSprint, license_key: config.license_key})
-                });
-                const d = await r.json();
-                if(d.token) {
-                    const link = `${window.location.origin}${window.location.pathname}?guest_token=${d.token}`;
-                    navigator.clipboard.writeText(link);
-                    setToast("Guest Link copied to clipboard!");
-                    setTimeout(() => setToast(null), 3000);
-                }
-            };
-
-            if(!board) return <LoadingScreen msg="Fetching Retrospective..." />;
-            return (
-                <div className="h-full flex flex-col animate-fade-in pr-4 relative">
-                    <header className="flex justify-between items-center mb-8">
-                        <div>
-                            <h2 className="text-4xl font-extrabold text-text-main flex items-center gap-4">
-                                Retrospective
-                                <button onClick={generateInviteLink} className="text-sm px-4 py-2 bg-primary-dim text-primary rounded-lg font-bold flex items-center gap-2 hover:bg-primary hover:text-white transition-colors border border-primary-dim shadow-sm">
-                                    <Icon name="Link" size={16}/> Invite Team
-                                </button>
-                            </h2>
-                        </div>
-                        <select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm">{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
-                    </header>
-
-                    {/* Toast Notification */}
-                    <AnimatePresence>
-                        {toast && (
-                            <motion.div initial={{opacity:0, y:-20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="absolute top-0 right-4 z-50 bg-success text-white px-6 py-3 rounded-lg font-bold shadow-lg flex items-center gap-3">
-                                <Icon name="CheckCircle" size={18}/> {toast}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-
-                    <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-lg">
-                        <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">{['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={()=>setCol(c)} className={`px-6 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}</div>
-                        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" />
-                        <button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button>
-                    </div>
-                    
-                    <div className="grid grid-cols-4 gap-8 flex-1 pb-6">
-                        {/* Standard Columns */}
-                        {['well', 'improve', 'kudos'].map(c => (
-                            <div key={c} className="retro-col shadow-xl">
-                                <div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c==='well'?'CheckCircle':c==='improve'?'TrendingDown':'Star'} size={18}/></div>
-                                <div className="retro-col-body bg-bg-body/50">
-                                    {board[c]?.map(i => (
-                                        <div key={i.id} className="retro-card font-medium relative group">
-                                            <span className="pr-6 block">{i.text}</span>
-                                            {/* Hover Delete Button */}
-                                            <button onClick={() => remove(c, i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
-                                                <Icon name="Trash" size={14}/>
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-
-                        {/* Action Plan Column */}
-                        <div className="retro-col border-primary/30 shadow-xl" style={{background: 'var(--primary-dim)'}}>
-                            <div className="retro-col-header bg-primary/10 text-primary">
-                                <span>Action Plan</span>
-                                <button onClick={genActions} disabled={loadingAI} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider hover:shadow-md transition-all flex items-center gap-2">
-                                    {loadingAI ? <span className="loader w-3 h-3 border-2"></span> : <Icon name="Sparkles" size={14}/>} Gen AI
-                                </button>
-                            </div>
-                            <div className="retro-col-body bg-primary/5">
-                                {board.actions?.map(i => (
-                                    <div key={i.id} className="retro-card border-primary/20 font-bold flex items-start gap-3 relative group">
-                                        <Icon name="CheckCircle" size={18} className="text-primary shrink-0 mt-0.5"/>
-                                        <span className="pr-6">{i.text}</span>
-                                        {/* Hover Delete Button */}
-                                        <button onClick={() => remove('actions', i.id)} className="absolute top-2 right-2 p-1.5 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
-                                            <Icon name="Trash" size={14}/>
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -978,10 +1146,11 @@
 
         function StandupView() { return <div className="h-full flex items-center justify-center text-2xl font-black text-text-muted uppercase tracking-widest">Standup Bot Coming Soon</div>; }
         function BurndownView() { return <div className="h-full flex items-center justify-center text-2xl font-black text-text-muted uppercase tracking-widest">Burndown Component Coming Soon</div>; }
-        function LoadingScreen({ msg = "Loading..." }) { return (<div className="h-full w-full flex flex-col items-center justify-center animate-pulse"><div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mb-6 text-primary" style={{borderColor: 'var(--border)', borderTopColor: 'var(--primary)'}}></div><div className="text-base font-bold tracking-wider text-primary uppercase">{msg}</div></div>); }
+        function LoadingScreen({ msg = "Loading..." }) { return (<div className="h-full w-full flex flex-col items-center justify-center animate-pulse"><div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mb-6 text-primary" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }}></div><div className="text-base font-bold tracking-wider text-primary uppercase">{msg}</div></div>); }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
 </body>
+
 </html>
