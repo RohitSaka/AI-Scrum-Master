@@ -57,16 +57,12 @@
         }
 
         body { font-family: 'Inter', sans-serif; background-color: var(--bg-body); color: var(--text-main); transition: background-color var(--transition-speed), color var(--transition-speed); overflow: hidden; margin: 0; }
-        
         .glass-card { background: var(--glass-bg); border: 1px solid var(--glass-border); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12); backdrop-filter: blur(12px); border-radius: 1rem; }
-        
         .nav-btn { color: var(--text-muted); padding: 0.75rem 1rem; border-radius: 0.5rem; transition: all 0.2s; display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; font-weight: 600; cursor: pointer; border-left: 3px solid transparent; }
         .nav-btn:hover { background: var(--bg-hover); color: var(--text-main); }
         .nav-btn.active { background: var(--primary-dim); color: var(--primary); border-left-color: var(--primary); }
-        
         .input-field { background-color: var(--bg-body); border: 1px solid var(--border); color: var(--text-main); outline: none; transition: all 0.2s; }
         .input-field:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-dim); }
-        
         .prose strong { color: var(--text-main); font-weight: 700; }
         .prose ul { list-style-type: disc; padding-left: 1.2rem; }
         .prose li { margin-bottom: 0.25rem; }
@@ -98,9 +94,7 @@
             html, body, #root, div { height: auto !important; overflow: visible !important; position: static !important; }
             body * { visibility: hidden; } 
             #print-engine-container, #print-engine-container * { visibility: visible; }
-            #print-engine-container { 
-                position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; display: block !important; opacity: 1 !important; z-index: 99999 !important; 
-            }
+            #print-engine-container { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; display: block !important; opacity: 1 !important; z-index: 99999 !important; }
             .print-slide { width: 1280px !important; height: 720px !important; page-break-after: always !important; break-after: page !important; background: #0B1121 !important; margin: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             @page { size: landscape; margin: 0; }
         }
@@ -164,14 +158,17 @@
                 Star: <><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></>,
                 AlertTriangle: <><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></>,
                 CheckCircle: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></>,
-                ExternalLink: <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></>
+                ExternalLink: <><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></>,
+                Link: <><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></>,
+                Copy: <><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{icons[name] || null}</svg>;
         };
 
         const secureFetch = async (endpoint, options = {}) => {
             const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
-            if (!config.license_key && !config.token) return null; 
+            const isGuest = endpoint.startsWith('/guest'); // Bypass auth for guest routes
+            if (!isGuest && !config.license_key && !config.token) return null; 
             const headers = { 'Content-Type': 'application/json', 'x-license-key': config.license_key || '', 'x-jira-domain': config.domain || '', 'x-jira-email': config.email || '', 'x-jira-token': config.token || '', ...options.headers };
             try {
                 const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
@@ -181,11 +178,89 @@
         };
 
         function App() {
-            const [config, setConfig] = useState(JSON.parse(localStorage.getItem('ig_config')));
             const [theme, setTheme] = useState(localStorage.getItem('ig_theme') || 'dark');
             useEffect(() => { document.body.className = theme === 'dark' ? 'dark-mode' : 'light-mode'; localStorage.setItem('ig_theme', theme); }, [theme]);
+            
+            // ✨ NEW: MAGIC GUEST LINK ROUTING ✨
+            const params = new URLSearchParams(window.location.search);
+            const guestToken = params.get('guest_token');
+            if (guestToken) return <GuestRetroView token={guestToken} theme={theme} setTheme={setTheme} />;
+
+            const [config, setConfig] = useState(JSON.parse(localStorage.getItem('ig_config')));
             if (!config || (!config.token && !config.license_key)) return <LoginScreen onLogin={setConfig} theme={theme} setTheme={setTheme} />;
             return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
+        }
+
+        // ================= ✨ NEW: ANONYMOUS GUEST RETRO COMPONENT ✨ =================
+        function GuestRetroView({ token, theme, setTheme }) {
+            const [board, setBoard] = useState(null);
+            const [info, setInfo] = useState({project: '', sprint: ''});
+            const [input, setInput] = useState(""); 
+            const [col, setCol] = useState("well");
+            const [error, setError] = useState(null);
+
+            const fetchBoard = () => {
+                fetch(`${API_BASE}/guest/retro/${token}`)
+                    .then(r => { if(!r.ok) throw new Error("Invalid Link"); return r.json(); })
+                    .then(d => { setBoard(d.board); setInfo({project: d.project, sprint: d.sprint}); setError(null); })
+                    .catch(e => setError("This invite link has expired or is invalid."));
+            };
+
+            useEffect(() => {
+                fetchBoard();
+                const interval = setInterval(fetchBoard, 3000); // ✨ LIVE POLLING! ✨
+                return () => clearInterval(interval);
+            }, [token]);
+
+            const add = async () => {
+                if(!input.trim()) return;
+                const r = await fetch(`${API_BASE}/guest/retro/${token}/add`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({column: col, text: input})
+                });
+                const res = await r.json();
+                if(res.status === 'success') { setBoard(res.board); setInput(""); }
+            };
+
+            if (error) return <div className="h-screen flex items-center justify-center text-danger font-bold text-xl">{error}</div>;
+            if (!board) return <LoadingScreen msg="Joining Team Retro..." />;
+
+            return (
+                <div className="h-screen flex flex-col relative transition-colors duration-500 bg-bg-body p-8">
+                    <div className="absolute top-4 right-4 z-50"><ThemeToggle theme={theme} setTheme={setTheme} /></div>
+                    
+                    <header className="mb-10 text-center">
+                        <div className="w-16 h-16 rounded-xl flex items-center justify-center text-white font-black text-2xl mx-auto mb-4 shadow-xl bg-gradient-to-br from-primary to-amber-600">IG</div>
+                        <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Retrospective</h2>
+                        <p className="text-lg font-medium mt-2 text-text-muted">Sprint {info.sprint} • Anonymous Guest Mode</p>
+                    </header>
+
+                    <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col">
+                        <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-2xl">
+                            <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">
+                                {['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={()=>setCol(c)} className={`px-8 py-4 rounded-lg text-sm font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}
+                            </div>
+                            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Drop an anonymous note here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-xl outline-none" />
+                            <button onClick={add} className="bg-primary px-12 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all text-lg">Post</button>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-10 flex-1 pb-10">
+                            {['well', 'improve', 'kudos'].map(c => (
+                                <div key={c} className="retro-col shadow-2xl border-t-4" style={{borderTopColor: c==='well' ? 'var(--success)' : c==='improve' ? 'var(--danger)' : 'var(--primary)'}}>
+                                    <div className="retro-col-header bg-bg-card/50 text-sm"><span>{c}</span><Icon name={c==='well'?'CheckCircle':c==='improve'?'TrendingDown':'Star'} size={20}/></div>
+                                    <div className="retro-col-body bg-bg-body/50 p-4">
+                                        <AnimatePresence>
+                                            {board[c]?.map(i => (
+                                                <motion.div key={i.id} initial={{opacity:0, y:-10}} animate={{opacity:1, y:0}} className="retro-card font-medium text-base p-5 border-l-4" style={{borderLeftColor: 'var(--primary)'}}>{i.text}</motion.div>
+                                            ))}
+                                        </AnimatePresence>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
         }
 
         function LoginScreen({ onLogin, theme, setTheme }) {
@@ -215,18 +290,18 @@
             };
 
             return (
-                <div className="h-screen flex items-center justify-center relative transition-colors duration-500 bg-bg-body">
+                <div className="h-screen flex items-center justify-center relative transition-colors duration-500" style={{backgroundColor: 'var(--bg-body)'}}>
                     <div className="absolute top-4 right-4"><ThemeToggle theme={theme} setTheme={setTheme} /></div>
                     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-[420px] glass-card p-10 z-10 shadow-2xl relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-48 h-48 bg-primary-dim rounded-full blur-3xl -mr-10 -mt-10 opacity-50"></div>
                         <div className="mb-10 text-center relative z-10">
                             <div className="w-20 h-20 rounded-2xl flex items-center justify-center text-white font-black text-3xl mx-auto mb-6 shadow-xl bg-gradient-to-br from-primary to-amber-600">IG</div>
-                            <h1 className="text-3xl font-extrabold tracking-tight text-text-main">Agile Intelligence</h1>
-                            <p className="text-sm font-medium mt-2 text-text-muted">Enterprise Edition</p>
+                            <h1 className="text-3xl font-extrabold tracking-tight" style={{color: 'var(--text-main)'}}>Agile Intelligence</h1>
+                            <p className="text-sm font-medium mt-2" style={{color: 'var(--text-muted)'}}>Enterprise Edition</p>
                         </div>
                         <div className="space-y-6 relative z-10">
-                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 block text-text-muted">Role Profile</label><select value={role} onChange={e=>setRole(e.target.value)} className="w-full p-3 rounded-lg text-sm input-field font-semibold shadow-sm"><option value="leadership">👑 Executive / CDO</option><option value="scrum_master">⚔️ Scrum Master / PM</option></select></div>
-                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2 text-text-muted"><Icon name="Key" size={14}/> License Key</label><input value={licenseKey} onChange={e=>setLicenseKey(e.target.value)} placeholder="IG-ENT-..." className="w-full p-3 rounded-lg text-sm input-field shadow-sm font-mono tracking-wide" /></div>
+                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 block" style={{color: 'var(--text-muted)'}}>Role Profile</label><select value={role} onChange={e=>setRole(e.target.value)} className="w-full p-3 rounded-lg text-sm input-field font-semibold shadow-sm"><option value="leadership">👑 Executive / CDO</option><option value="scrum_master">⚔️ Scrum Master / PM</option></select></div>
+                            <div><label className="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-2" style={{color: 'var(--text-muted)'}}><Icon name="Key" size={14}/> License Key</label><input value={licenseKey} onChange={e=>setLicenseKey(e.target.value)} placeholder="IG-ENT-..." className="w-full p-3 rounded-lg text-sm input-field shadow-sm font-mono tracking-wide" /></div>
                             <button onClick={handleOAuthLogin} disabled={loading} className="w-full text-white font-bold p-4 rounded-lg shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all flex justify-center items-center gap-3 text-sm bg-primary disabled:opacity-70 disabled:hover:scale-100">{loading ? <span className="loader w-5 h-5 border-2"></span> : <><Icon name="Activity" size={20}/> Log in with Atlassian</>}</button>
                         </div>
                     </motion.div>
@@ -253,7 +328,7 @@
                         <div className="p-6">
                             <div className="mb-10 pl-2 flex items-center gap-4">
                                 <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-lg bg-gradient-to-br from-primary to-amber-600">IG</div>
-                                <div><h1 className="text-xl font-extrabold tracking-tight leading-none text-text-main">Agile Intel</h1><p className="text-xs font-semibold text-primary mt-1">Enterprise</p></div>
+                                <div><h1 className="text-xl font-extrabold tracking-tight leading-none text-text-main">Agile Scrum</h1></div>
                             </div>
                             <nav className="space-y-2">
                                 <NavBtn id="smartdeck" icon="Monitor" label="AI Sprint Deck" active={view} set={setView} disabled={isGlobalLoading} />
@@ -265,7 +340,7 @@
                         </div>
                         <div className="p-6 border-t border-border space-y-6">
                             <ThemeToggle theme={theme} setTheme={setTheme} fullWidth />
-                            <div><label className="text-xs font-bold uppercase mb-3 block text-text-muted tracking-wider">Active Project</label><select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} disabled={isGlobalLoading} className={`w-full p-3 rounded-lg border text-sm input-field transition-all font-semibold ${isGlobalLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>{projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}</select></div>
+                            <div><label className="text-xs font-bold uppercase mb-3 block text-text-muted tracking-wider">Active Project</label><select value={activeProject || ''} onChange={e=>setActiveProject(e.target.value)} disabled={isGlobalLoading} className={`w-full p-3 rounded-lg border text-sm input-field transition-all font-semibold ${isGlobalLoading ? 'opacity-30 cursor-not-allowed bg-slate-800' : 'cursor-pointer'}`}>{projects.map(p => <option key={p.key} value={p.key}>{p.name} ({p.key})</option>)}</select></div>
                             <button onClick={()=>{localStorage.removeItem('ig_config'); window.location.reload()}} className="w-full text-left text-xs p-2 hover:bg-danger/10 rounded-lg font-bold text-danger transition-colors flex items-center gap-2"><Icon name="X" size={14}/> Sign Out</button>
                         </div>
                     </aside>
@@ -290,7 +365,6 @@
         function ThemeToggle({ theme, setTheme, fullWidth }) { return (<button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-3 rounded-lg border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-3 transition hover:bg-bg-hover border-border text-text-muted bg-bg-card ${fullWidth ? 'w-full' : ''}`}><Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} /> {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</button>); }
         function MetricCard({ label, value, color, isDanger }) { return (<div className="glass-card p-6 border-l-4 transition-all hover:scale-[1.02]" style={{borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})`}}><div className="text-xs font-bold uppercase tracking-widest mb-2 text-text-muted">{label}</div><div className="text-4xl font-extrabold text-text-main">{value}</div></div>); }
 
-        // ================= ✨ AI HTML RENDERER (PREMIUM 3D ANIMATIONS & SCALED TYPOGRAPHY) ✨ =================
         function RenderSlide({ slide }) {
             const layout = slide.layout || 'standard';
             const containerVars = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.15, delayChildren: 0.1 } } };
@@ -305,8 +379,8 @@
             if (layout === 'hero') return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center items-center text-center bg-bg-body text-text-main relative overflow-hidden">
                     <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 0.6 }} transition={{ duration: 2, ease: "easeOut" }} className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary-dim rounded-full blur-3xl -mr-32 -mt-32"></motion.div>
-                    {slide.icon && <motion.div variants={titleVars} className="text-7xl mb-8 text-primary">{slide.icon}</motion.div>}
-                    <motion.h1 variants={titleVars} className="text-6xl font-black mb-6 tracking-tight leading-tight">{slide.title}</motion.h1>
+                    {slide.icon && <motion.div variants={titleVars} className="text-6xl mb-8 text-primary">{slide.icon}</motion.div>}
+                    <motion.h1 variants={titleVars} className="text-5xl font-black mb-6 tracking-tight leading-tight">{slide.title}</motion.h1>
                     <motion.p variants={titleVars} className="text-2xl text-primary font-medium">{slide.subtitle}</motion.p>
                 </motion.div>
             );
@@ -314,12 +388,12 @@
             if (layout === 'kpi_grid') return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative perspective-1000">
                     <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-12">{slide.title}</motion.h2>
-                    <div className="grid grid-cols-4 gap-8">
+                    <div className="grid grid-cols-4 gap-6">
                         {safeItems.map((kpi, i) => (
                             <motion.div variants={cardVars} key={i} className="glass-card p-8 flex flex-col items-center justify-center text-center hover:scale-105 transition-transform origin-bottom border-t-4 border-primary">
-                                {kpi.icon && <div className="text-5xl mb-4 text-primary">{kpi.icon}</div>}
-                                <div className="text-5xl font-black text-text-main mb-3">{kpi.value}</div>
-                                <div className="text-base text-text-muted font-bold uppercase tracking-wider">{kpi.label}</div>
+                                {kpi.icon && <div className="text-4xl mb-4 text-primary">{kpi.icon}</div>}
+                                <div className="text-5xl font-black text-text-main mb-2">{kpi.value}</div>
+                                <div className="text-sm text-text-muted font-bold uppercase tracking-wider">{kpi.label}</div>
                             </motion.div>
                         ))}
                     </div>
@@ -333,8 +407,8 @@
                         {safeItems.map((step, i) => (
                             <React.Fragment key={i}>
                                 <motion.div variants={flowVars} className="flex-1 glass-card p-8 text-center relative hover:-translate-y-3 transition-transform border-b-4 border-primary">
-                                    <div className="text-xl font-black text-primary mb-3 uppercase tracking-widest">Step {i+1}</div>
-                                    <div className="text-2xl font-bold text-text-main">{step.title}</div>
+                                    <div className="text-lg font-black text-primary mb-2 uppercase tracking-widest">Step {i+1}</div>
+                                    <div className="text-xl font-bold text-text-main">{step.title}</div>
                                 </motion.div>
                                 {i < (safeItems.length - 1) && <motion.div variants={flowVars}><Icon name="ChevronRight" size={40} className="text-border shrink-0"/></motion.div>}
                             </React.Fragment>
@@ -345,13 +419,13 @@
 
             if (layout === 'icon_columns') return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col justify-center bg-bg-body text-text-main relative perspective-1000">
-                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-12">{slide.title}</motion.h2>
+                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-10">{slide.title}</motion.h2>
                     <div className="grid grid-cols-3 gap-8">
                         {safeItems.map((col, i) => (
                             <motion.div variants={cardVars} key={i} className="glass-card p-8 hover:-translate-y-3 transition-transform border-t-4 border-primary">
-                                {col.icon && <div className="text-5xl mb-6 text-primary">{col.icon}</div>}
-                                <h3 className="text-2xl font-extrabold text-text-main mb-4">{col.title}</h3>
-                                <p className="text-lg text-text-muted leading-relaxed font-medium">{col.text}</p>
+                                {col.icon && <div className="text-5xl mb-4 text-primary">{col.icon}</div>}
+                                <h3 className="text-2xl font-extrabold text-text-main mb-3">{col.title}</h3>
+                                <p className="text-base text-text-muted leading-relaxed font-medium">{col.text}</p>
                             </motion.div>
                         ))}
                     </div>
@@ -360,12 +434,12 @@
 
             return (
                 <motion.div initial="hidden" animate="visible" variants={containerVars} className="w-full h-full p-20 flex flex-col bg-bg-body text-text-main relative">
-                    <motion.h2 variants={titleVars} className="text-4xl font-extrabold mb-8 pb-4 border-b-4 border-primary inline-block self-start">{slide.title}</motion.h2>
+                    <motion.h2 variants={titleVars} className="text-3xl font-extrabold mb-8 pb-4 border-b-4 border-primary inline-block self-start">{slide.title}</motion.h2>
                     <motion.div variants={cardVars} className="glass-card flex-1 p-10 flex flex-col justify-center">
-                        <ul className="list-none pl-2 space-y-6">
+                        <ul className="list-none pl-2 space-y-5">
                             {safeContent.map((bullet, i) => (
-                                <motion.li variants={bulletVars} key={i} className="text-2xl text-text-main leading-relaxed font-medium flex items-start gap-4">
-                                    <span className="text-primary mt-1"><Icon name="ChevronRight" size={24} /></span>
+                                <motion.li variants={bulletVars} key={i} className="text-xl text-text-main leading-relaxed font-medium flex items-start gap-4">
+                                    <span className="text-primary mt-1"><Icon name="ChevronRight" size={20} /></span>
                                     {bullet}
                                 </motion.li>
                             ))}
@@ -375,7 +449,6 @@
             );
         }
 
-        // ================= ✨ UNIVERSAL DECK VIEWER ✨ =================
         function SmartDeckView({ project, endpoint, isFullScreenLayout, onClose }) {
             const [slides, setSlides] = useState([]);
             const [loading, setLoading] = useState(true);
@@ -500,7 +573,6 @@
             );
         }
 
-        // ================= STRATEGIC ROADMAP VIEW =================
         function RoadmapView({ project, setIsLoading }) {
             const [roadmap, setRoadmap] = useState(null);
             useEffect(() => { setIsLoading(true); setRoadmap(null); secureFetch(`/roadmap/${project}`).then(r => r?.json()).then(data => { setRoadmap(data); setIsLoading(false); }).catch(() => setIsLoading(false)); }, [project]);
@@ -542,7 +614,6 @@
             );
         }
 
-        // ================= COMMAND CENTER =================
         function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
             const [data, setData] = useState(null); const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState('active'); 
             useEffect(() => { secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { if(d && d.length) setSprints(d); }); }, [project]);
@@ -574,7 +645,6 @@
             );
         }
 
-        // ================= TIMELINE AI GENERATOR VIEW (WITH VISION) =================
         function TimelineView({ project, setIsLoading }) {
             const [data, setData] = useState(null); 
             const [prompt, setPrompt] = useState(""); 
@@ -645,7 +715,7 @@
                         setPushStatus({ type: 'success', text: `Success! Issue ${res.key} added to Jira.`, url });
                         setTimeout(() => { setGeneratedStory(null); setPrompt(""); setPushStatus(null); }, 8000); 
                     } else { 
-                        setPushStatus({ type: 'error', text: res.message || "Failed to create issue in Jira." });
+                        setPushStatus({ type: 'error', text: res.message || "Failed to create issue. Check Jira permissions." });
                     }
                 } catch(e) { console.error(e); setPushStatus({ type: 'error', text: "Network connection to backend failed." }); }
                 setIsCreatingIssue(false); 
@@ -743,7 +813,6 @@
             );
         }
 
-        // ================= DOSSIER REPORTS =================
         function ReportsView({ project, setIsLoading, isGlobalLoading }) { 
             const [data, setData] = useState(null); 
             const [timeframe, setTimeframe] = useState('weekly');
@@ -796,22 +865,61 @@
             ); 
         }
 
-        // ================= RETRO BOARD =================
+        // ================= RETRO BOARD (WITH MAGIC GUEST LINK) =================
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
             const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well"); const [loadingAI, setLoadingAI] = useState(false);
+            const [toast, setToast] = useState(null);
+
             useEffect(() => { secureFetch(`/sprints/${project}`).then(r=>r?.json()).then(d => { setSprints(d); if(d && d.length) setActiveSprint(d[0].id); }); }, [project]);
-            useEffect(() => { if(activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r=>r?.json()).then(setBoard); } }, [project, activeSprint]);
+            
+            const fetchBoard = () => { if(activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r=>r?.json()).then(setBoard); } };
+            useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
+
             const save = (b) => { setBoard(b); secureFetch(`/retro/update`, {method:'POST', body:JSON.stringify({project, sprint:activeSprint, board:b})}); };
             const add = () => { if(!input.trim()) return; const n = board[col] ? [...board[col]] : []; n.push({id:Date.now(), text:input}); save({...board, [col]: n}); setInput(""); };
             const genActions = () => { setLoadingAI(true); secureFetch(`/retro/generate_actions`, {method:'POST', body:JSON.stringify({board})}).then(r=>r.json()).then(d => { save({...board, actions: [...(board.actions||[]), ...d.actions]}); setLoadingAI(false); }); };
             
+            const generateInviteLink = async () => {
+                const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
+                const r = await secureFetch(`/retro/generate_link`, {
+                    method: 'POST', body: JSON.stringify({project, sprint: activeSprint, license_key: config.license_key})
+                });
+                const d = await r.json();
+                if(d.token) {
+                    const link = `${window.location.origin}${window.location.pathname}?guest_token=${d.token}`;
+                    navigator.clipboard.writeText(link);
+                    setToast("Guest Link copied to clipboard!");
+                    setTimeout(() => setToast(null), 3000);
+                }
+            };
+
             if(!board) return <LoadingScreen msg="Fetching Retrospective..." />;
             return (
-                <div className="h-full flex flex-col animate-fade-in pr-4">
-                    <header className="flex justify-between items-center mb-8"><h2 className="text-4xl font-extrabold text-text-main">Retrospective</h2><select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm">{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></header>
+                <div className="h-full flex flex-col animate-fade-in pr-4 relative">
+                    <header className="flex justify-between items-center mb-8">
+                        <div>
+                            <h2 className="text-4xl font-extrabold text-text-main flex items-center gap-4">
+                                Retrospective
+                                <button onClick={generateInviteLink} className="text-sm px-4 py-2 bg-primary-dim text-primary rounded-lg font-bold flex items-center gap-2 hover:bg-primary hover:text-white transition-colors border border-primary-dim shadow-sm">
+                                    <Icon name="Link" size={16}/> Invite Team
+                                </button>
+                            </h2>
+                        </div>
+                        <select value={activeSprint||""} onChange={e=>setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm">{sprints.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+                    </header>
+
+                    {/* Toast Notification */}
+                    <AnimatePresence>
+                        {toast && (
+                            <motion.div initial={{opacity:0, y:-20}} animate={{opacity:1, y:0}} exit={{opacity:0, y:-20}} className="absolute top-0 right-4 z-50 bg-success text-white px-6 py-3 rounded-lg font-bold shadow-lg flex items-center gap-3">
+                                <Icon name="CheckCircle" size={18}/> {toast}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
                     <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-lg"><div className="flex bg-bg-body rounded-xl p-1.5 border border-border">{['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={()=>setCol(c)} className={`px-6 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}</div><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" /><button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button></div>
                     <div className="grid grid-cols-4 gap-8 flex-1 pb-6">
-                        {['well', 'improve', 'kudos'].map(c => (<div key={c} className="retro-col shadow-xl"><div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c==='well'?'checkCircle':c==='improve'?'trendingDown':'star'} size={18}/></div><div className="retro-col-body bg-bg-body/50">{board[c]?.map(i => (<div key={i.id} className="retro-card font-medium">{i.text}</div>))}</div></div>))}
+                        {['well', 'improve', 'kudos'].map(c => (<div key={c} className="retro-col shadow-xl"><div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c==='well'?'CheckCircle':c==='improve'?'TrendingDown':'Star'} size={18}/></div><div className="retro-col-body bg-bg-body/50">{board[c]?.map(i => (<div key={i.id} className="retro-card font-medium">{i.text}</div>))}</div></div>))}
                         <div className="retro-col border-primary/30 shadow-xl" style={{background: 'var(--primary-dim)'}}><div className="retro-col-header bg-primary/10 text-primary"><span>Action Plan</span><button onClick={genActions} disabled={loadingAI} className="bg-primary text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider hover:shadow-md transition-all flex items-center gap-2">{loadingAI?<span className="loader w-3 h-3 border-2"></span>:<Icon name="Sparkles" size={14}/>} Gen AI</button></div><div className="retro-col-body bg-primary/5">{board.actions?.map(i => (<div key={i.id} className="retro-card border-primary/20 font-bold flex items-start gap-3"><Icon name="CheckCircle" size={18} className="text-primary shrink-0 mt-0.5"/>{i.text}</div>))}</div></div>
                     </div>
                 </div>
