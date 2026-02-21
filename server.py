@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V33 - JIRA ROSTER & EXACT FIELD MAPPING")
+print("🚀 APP STARTING: V33 - TOKEN REFRESH & PYTHON BOOLEAN TRAP FIX")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -101,9 +101,18 @@ def auth_callback(code: str, state: str, db: Session = Depends(get_db)):
     requests.post(f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/webhook", headers={"Authorization": f"Bearer {tokens.get('access_token')}", "Content-Type": "application/json"}, json={"url": f"{APP_URL}/webhook?cloud_id={cloud_id}", "webhooks": [{"events": ["jira:issue_created"], "jqlFilter": "project IS NOT EMPTY"}]}, timeout=15)
     return RedirectResponse(f"{APP_URL}/?success=true")
 
-def get_valid_oauth_session(license_key: str, db: Session):
-    user = db.query(UserAuth).filter(UserAuth.license_key == license_key).first()
+# ✨ FIXED: Omni-token refresher that works for Webhooks AND UI calls
+def get_valid_oauth_session(db: Session, license_key: str = None, cloud_id: str = None):
+    if license_key:
+        user = db.query(UserAuth).filter(UserAuth.license_key == license_key).first()
+    elif cloud_id:
+        user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first()
+    else:
+        user = db.query(UserAuth).first()
+        
     if not user: return None
+    
+    # Auto-Refresh Token if expiring soon
     if int(time.time()) >= user.expires_at - 300:
         res = requests.post("https://auth.atlassian.com/oauth/token", json={"grant_type": "refresh_token", "client_id": CLIENT_ID, "client_secret": CLIENT_SECRET, "refresh_token": user.refresh_token}, timeout=15)
         if res.status_code == 200:
@@ -114,7 +123,7 @@ def get_valid_oauth_session(license_key: str, db: Session):
 
 async def get_jira_creds(x_jira_domain: str = Header(None), x_jira_email: str = Header(None), x_jira_token: str = Header(None), x_license_key: str = Header(None), db: Session = Depends(get_db)):
     if x_license_key:
-        user = get_valid_oauth_session(x_license_key, db)
+        user = get_valid_oauth_session(db=db, license_key=x_license_key)
         if not user: raise HTTPException(status_code=401, detail="Invalid License")
         return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
     if x_jira_domain and x_jira_email and x_jira_token: 
@@ -124,8 +133,8 @@ async def get_jira_creds(x_jira_domain: str = Header(None), x_jira_email: str = 
 def jira_request(method, endpoint, creds, data=None):
     try:
         if creds.get("auth_type") == "oauth":
-            url = f"https://api.atlassian.com/ex/jira/{creds.get('cloud_id', getattr(creds.get('user', None), 'cloud_id', ''))}/rest/api/3/{endpoint}"
-            headers = {"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {creds.get('access_token', getattr(creds.get('user', None), 'access_token', ''))}"}
+            url = f"https://api.atlassian.com/ex/jira/{creds.get('cloud_id')}/rest/api/3/{endpoint}"
+            headers = {"Accept": "application/json", "Content-Type": "application/json", "Authorization": f"Bearer {creds.get('access_token')}"}
             auth = None
         else:
             url = f"https://{creds['domain']}/rest/api/3/{endpoint}"
@@ -139,73 +148,11 @@ def jira_request(method, endpoint, creds, data=None):
         print(f"❌ Jira HTTP Error ({endpoint}): {e}", flush=True)
         return None
 
-# ================= 🧠 JIRA LOGIC & AI CORE =================
+# ================= 🧠 MULTI-MODEL AI CORE WITH VISION =================
 STORY_POINT_CACHE = {} 
 
-def get_assignable_users(project_key, creds):
-    """Fetches a dictionary of exact Display Names -> Account IDs allowed in the project"""
-    res = jira_request("GET", f"user/assignable/search?project={project_key}", creds)
-    users = {}
-    if res and res.status_code == 200:
-        for u in res.json():
-            if 'displayName' in u and 'accountId' in u:
-                users[u['displayName']] = u['accountId']
-    return users
-
-def get_story_point_field(creds):
-    """Smartly detects whether Jira uses 'Story point estimate' or 'Story Points'"""
-    domain_key = creds.get('domain') or creds.get('cloud_id') or getattr(creds.get('user', None), 'cloud_id', 'default')
-    if domain_key in STORY_POINT_CACHE: return STORY_POINT_CACHE[domain_key]
-    res = jira_request("GET", "field", creds)
-    if res and res.status_code == 200:
-        fields = res.json()
-        # 1. Prefer Next-Gen/Team-Managed fields first
-        for f in fields:
-            if f.get('name', '').lower() == "story point estimate":
-                STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
-        # 2. Fallback to Company-Managed
-        for f in fields:
-            if f.get('name', '').lower() == "story points":
-                STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
-        # 3. Last resort
-        for f in fields:
-            if "estimate" in f.get('name', '').lower() or "point" in f.get('name', '').lower():
-                STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
-    return "customfield_10016"
-
-def safe_float(val):
-    try: return float(val) if val is not None else 0.0
-    except: return 0.0
-
-def extract_story_points(issue_fields, sp_field):
-    pts = safe_float(issue_fields.get(sp_field))
-    if pts > 0: return pts
-    for field in ['customfield_10016', 'customfield_10026', 'customfield_10004', 'customfield_10028']:
-        val = safe_float(issue_fields.get(field))
-        if val > 0: return val
-    for key, value in issue_fields.items():
-        if key.startswith("customfield_") and isinstance(value, (int, float)) and 0 < value < 100: return float(value)
-    return 0.0
-
-def get_jira_account_id(display_name, creds):
-    if not display_name or display_name.lower() == "unassigned": return None
-    safe_query = urllib.parse.quote(display_name)
-    res = jira_request("GET", f"user/search?query={safe_query}", creds)
-    if res and res.status_code == 200 and res.json():
-        users = res.json()
-        if isinstance(users, list) and len(users) > 0:
-            return users[0].get("accountId")
-    return None
-
-def extract_adf_text(adf_node):
-    if not adf_node or not isinstance(adf_node, dict): return ""
-    text = ""
-    if adf_node.get('type') == 'text': text += adf_node.get('text', '') + " "
-    for content in adf_node.get('content', []): text += extract_adf_text(content)
-    return text.strip()
-
 def extract_jira_error(res):
-    if not res: return "Connection Timeout or Network Error."
+    if res is None: return "Connection Timeout or Network Error."
     try:
         data = res.json()
         errs = []
@@ -272,6 +219,49 @@ def call_openai(prompt, temperature=0.3, image_data=None):
 def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None):
     if force_openai or image_data: return call_openai(prompt, temperature, image_data)
     return call_gemini(prompt, temperature, image_data)
+
+def safe_float(val):
+    try: return float(val) if val is not None else 0.0
+    except: return 0.0
+
+def get_story_point_field(creds):
+    domain_key = creds.get('domain') or creds.get('cloud_id')
+    if domain_key in STORY_POINT_CACHE: return STORY_POINT_CACHE[domain_key]
+    res = jira_request("GET", "field", creds)
+    if res is not None and res.status_code == 200:
+        fields = res.json()
+        for f in fields:
+            if f.get('name', '').lower() == "story points": STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
+        for f in fields:
+            if "story point" in f.get('name', '').lower() or "estimate" in f.get('name', '').lower(): STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
+    return "customfield_10016"
+
+def extract_story_points(issue_fields, sp_field):
+    pts = safe_float(issue_fields.get(sp_field))
+    if pts > 0: return pts
+    for field in ['customfield_10016', 'customfield_10026', 'customfield_10004', 'customfield_10028']:
+        val = safe_float(issue_fields.get(field))
+        if val > 0: return val
+    for key, value in issue_fields.items():
+        if key.startswith("customfield_") and isinstance(value, (int, float)) and 0 < value < 100: return float(value)
+    return 0.0
+
+def get_jira_account_id(display_name, creds):
+    if not display_name or display_name.lower() in ["unassigned", "none", "null"]: return None
+    safe_query = urllib.parse.quote(display_name)
+    res = jira_request("GET", f"user/search?query={safe_query}", creds)
+    if res is not None and res.status_code == 200 and res.json():
+        users = res.json()
+        if isinstance(users, list) and len(users) > 0:
+            return users[0].get("accountId")
+    return None
+
+def extract_adf_text(adf_node):
+    if not adf_node or not isinstance(adf_node, dict): return ""
+    text = ""
+    if adf_node.get('type') == 'text': text += adf_node.get('text', '') + " "
+    for content in adf_node.get('content', []): text += extract_adf_text(content)
+    return text.strip()
 
 # ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
 C_BG = RGBColor(11, 17, 33)      
@@ -396,7 +386,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
     sp_field = get_story_point_field(creds)
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "fields": ["*all"]})
-    issues = res.json().get('issues', []) if res else []
+    issues = res.json().get('issues', []) if res is not None else []
 
     stats = {"total": len(issues), "points": 0.0, "blockers": 0, "bugs": 0, "stories": 0, "assignees": {}}
     context_for_ai = []
@@ -438,7 +428,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     sp_field = get_story_point_field(creds)
     jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["*all"]})
-    issues = res.json().get('issues', []) if res else []
+    issues = res.json().get('issues', []) if res is not None else []
     
     done_pts = 0.0; total_pts = 0.0; active_users = set(); blockers = []; done_summaries = []
     for i in issues:
@@ -459,7 +449,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res and retro_res.status_code==200 else {}
     
     backlog_res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
-    backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res else ["Backlog Refinement", "Planning"]
+    backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res is not None else ["Backlog Refinement", "Planning"]
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
 
@@ -494,7 +484,7 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
-    issues = res.json().get('issues', []) if res else []
+    issues = res.json().get('issues', []) if res is not None else []
     
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
@@ -564,32 +554,37 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
-    context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res]
+    context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res is not None]
     prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
     try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
     except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
 
-# --- ✨ FIXED: STRICT ROSTER EXTRACTION FOR UI GENERATION ✨ ---
+# --- ✨ FIXED: DEEP ROSTER EXTRACTION FOR UI GENERATION ✨ ---
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     project_key = payload.get('project')
     
-    # Get all strictly allowed assignees for this project
-    assignable_users = get_assignable_users(project_key, creds)
-    team_capacity = {name: 0 for name in assignable_users.keys()}
-    
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
+    # 1. Grab EVERYONE who has been assigned a ticket recently to guarantee a non-empty roster
+    res_roster = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} ORDER BY updated DESC", "maxResults": 50, "fields": ["assignee"]})
+    team_capacity = {}
+    if res_roster is not None and res_roster.status_code == 200:
+        for i in res_roster.json().get('issues', []):
+            name = ((i.get('fields') or {}).get('assignee') or {}).get('displayName')
+            if name: team_capacity[name] = 0
+
+    # 2. Add current sprint workload points to the roster
+    res_sprint = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
     board_context = []
-    if res and res.status_code == 200:
-        for i in res.json().get('issues', []):
+    if res_sprint is not None and res_sprint.status_code == 200:
+        for i in res_sprint.json().get('issues', []):
             f = i.get('fields') or {}
             name = (f.get('assignee') or {}).get('displayName')
             if name and name in team_capacity:
                 team_capacity[name] += extract_story_points(f, sp_field)
             board_context.append(f"Task: {f.get('summary')} | Assignee: {name or 'Unassigned'}")
     
-    prompt_text = f"Product Owner. User Request: '{payload.get('prompt')}'. Current Sprint Context: {' '.join(board_context[:20])}. Team Workload (You MUST pick the EXACT NAME from these keys): {json.dumps(team_capacity)}. Generate a detailed user story. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Exact Name\", \"tech_stack_inferred\": \"...\"}}"
+    prompt_text = f"Product Owner. User Request: '{payload.get('prompt')}'. Current Sprint Context: {' '.join(board_context[:20])}. Team Workload (You MUST pick an EXACT NAME from these keys): {json.dumps(team_capacity)}. Generate a detailed user story. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Exact Name\", \"tech_stack_inferred\": \"...\"}}"
     
     try: 
         raw_response = generate_ai_response(prompt_text, temperature=0.5, image_data=payload.get("image_data"))
@@ -604,22 +599,14 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     story = payload.get("story", {})
     project_key = payload.get("project")
     sp_field = get_story_point_field(creds)
-    
-    # Use exact roster matching
-    assignable_users = get_assignable_users(project_key, creds)
-    target_assignee = story.get("assignee", "")
-    assignee_id = assignable_users.get(target_assignee)
-    
-    # Fallback to search if AI somehow still hallucinated
-    if not assignee_id and target_assignee and target_assignee.lower() != "unassigned":
-        assignee_id = get_jira_account_id(target_assignee, creds)
+    assignee_id = get_jira_account_id(story.get("assignee", ""), creds)
     
     base_url = ""
     if creds.get("auth_type") == "basic":
         base_url = f"https://{creds['domain']}"
     else:
         server_info = jira_request("GET", "serverInfo", creds)
-        if server_info and server_info.status_code == 200:
+        if server_info is not None and server_info.status_code == 200:
             base_url = server_info.json().get("baseUrl", "")
 
     issue_data = {
@@ -633,12 +620,12 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     
     res = jira_request("POST", "issue", creds, issue_data)
     
-    if not res or res.status_code != 201: 
+    if res is None or res.status_code != 201: 
         issue_data["fields"]["issuetype"]["name"] = "Task"
         res_fallback = jira_request("POST", "issue", creds, issue_data)
         if res_fallback is not None: res = res_fallback
             
-    if res and res.status_code == 201:
+    if res is not None and res.status_code == 201:
         new_key = res.json().get("key")
         
         if assignee_id:
@@ -647,15 +634,16 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         points = safe_float(story.get("points", 0))
         if points > 0:
             pts_res = jira_request("PUT", f"issue/{new_key}", creds, {"fields": {sp_field: points}})
-            if pts_res and pts_res.status_code not in [200, 204]:
+            if pts_res is not None and pts_res.status_code not in [200, 204]:
                 print(f"⚠️ Warning: Could not set Story Points on {new_key}. Field {sp_field} likely not on screen.", flush=True)
                 
         jira_request("POST", f"issue/{new_key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"🤖 IG Agile AI Insights:\n- Estimation: {story.get('points', 0)} pts.\n- Reasoning: {story.get('tech_stack_inferred', '')}"}]}]}})
         issue_url = f"{base_url}/browse/{new_key}" if base_url else f"https://id.atlassian.com/browse/{new_key}"
         return {"status": "success", "key": new_key, "url": issue_url}
     
-    print(f"❌ Jira Creation Failed: {extract_jira_error(res)}", flush=True)
-    return {"status": "error", "message": extract_jira_error(res)}
+    error_message = extract_jira_error(res)
+    print(f"❌ Jira Creation Failed: {error_message}", flush=True)
+    return {"status": "error", "message": error_message}
 
 @app.get("/reports/{project_key}/{timeframe}")
 def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
@@ -665,7 +653,7 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
     done_count = 0; done_pts = 0.0; context_data = []
     
-    for i in res.json().get('issues', []) if res else []:
+    for i in res.json().get('issues', []) if res is not None else []:
         f = i.get('fields') or {}
         pts = extract_story_points(f, sp_field)
         if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': 
@@ -682,14 +670,14 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
-    db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
+    db_data = res.json().get('value', {}) if res is not None and res.status_code == 200 else {}
     if str(sprint_id) not in db_data: db_data[str(sprint_id)] = {"well": [], "improve": [], "kudos": [], "actions": []}
     return db_data[str(sprint_id)]
 
 @app.post("/retro/update")
 def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
     project_key = payload.get("project").upper(); sid = str(payload.get("sprint")); res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
-    db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}; db_data[sid] = payload.get("board")
+    db_data = res.json().get('value', {}) if res is not None and res.status_code == 200 else {}; db_data[sid] = payload.get("board")
     jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "saved"}
 
@@ -698,26 +686,23 @@ def generate_actions(payload: dict):
     try: return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(json.loads(generate_ai_response(f"Analyze Retro. GOOD: {payload.get('board').get('well')} BAD: {payload.get('board').get('improve')}. Return JSON array: [\"Action 1\"]").replace('```json','').replace('```','').strip()))]}
     except: return {"actions": []}
 
-# --- ✨ FIXED: THREAD-SAFE SILENT WEBHOOK WITH ROSTER FALLBACK & ADF COMMENTS ✨ ---
+
+# --- ✨ FIXED: BULLETPROOF SILENT WEBHOOK ✨ ---
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:
         print(f"🤖 [1/6] Silent Agent started for: {issue_key}", flush=True)
-        # ✨ Database Lock Fix: Wait for Jira to finish creating the issue before we attempt to edit it.
-        time.sleep(2)
+        # Fix 1: Database Lock Race Condition. Allow Jira to finish saving the issue to its database before we try to PUT edits onto it.
+        time.sleep(3) 
         
         sp_field = get_story_point_field(creds_dict)
         
-        print(f"🤖 [2/6] Fetching strict assignable user roster...", flush=True)
-        assignable_users = get_assignable_users(project_key, creds_dict)
-        team_cap = {name: 0 for name in assignable_users.keys()}
-        
-        res = jira_request("POST", "search/jql", creds_dict, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
-        if res and res.status_code == 200:
+        print(f"🤖 [2/6] Fetching historical roster...", flush=True)
+        res = jira_request("POST", "search/jql", creds_dict, {"jql": f"project={project_key} ORDER BY updated DESC", "maxResults": 50, "fields": ["assignee"]})
+        team_cap = {}
+        if res is not None and res.status_code == 200:
             for i in res.json().get('issues', []):
-                f = i.get('fields') or {}
-                name = (f.get('assignee') or {}).get('displayName')
-                if name and name in team_cap:
-                    team_cap[name] += extract_story_points(f, sp_field)
+                name = ((i.get('fields') or {}).get('assignee') or {}).get('displayName')
+                if name: team_cap[name] = team_cap.get(name, 0)
 
         prompt = f"""
         You are an Autonomous Scrum Master.
@@ -736,16 +721,14 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
         raw = generate_ai_response(prompt, temperature=0.4, force_openai=True) 
         
         if not raw: 
-            print(f"❌ [Webhook Error] AI returned None (Timeout or Quota Issue)", flush=True)
+            print(f"❌ [Webhook Error] AI returned None", flush=True)
             return
             
         est = json.loads(raw.replace('```json','').replace('```','').strip())
         print(f"🧠 [4/6] AI Decision: {est}", flush=True)
         
         target_assignee = est.get('assignee', '')
-        assignee_id = assignable_users.get(target_assignee)
-        if not assignee_id and target_assignee and target_assignee.lower() != "unassigned":
-            assignee_id = get_jira_account_id(target_assignee, creds_dict)
+        assignee_id = get_jira_account_id(target_assignee, creds_dict)
         
         update_fields_basic = {}
         if assignee_id: 
@@ -755,26 +738,28 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
         if gen_desc and len(desc_text.strip()) < 20:
             update_fields_basic["description"] = create_adf_doc("🤖 AI Generated Description:\n\n" + gen_desc)
             
+        # Fix 2: Python Response Boolean Trap. Uses "is not None" to accurately capture 400 errors.
         if update_fields_basic:
             print(f"🤖 [5a/6] Updating Description & Assignee...", flush=True)
             res1 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
-            if res1 and res1.status_code not in [200, 204]: 
-                print(f"⚠️ Webhook Basic Update Failed: {res1.status_code} {res1.text}", flush=True)
-            else:
+            if res1 is not None and res1.status_code in [200, 204]: 
                 print(f"✅ Description/Assignee Updated", flush=True)
+            else:
+                print(f"⚠️ Webhook Basic Update Failed: {res1.status_code if res1 else 'Network Error'} {res1.text if res1 else ''}", flush=True)
             
         points = safe_float(est.get('points', 0))
         if points > 0:
             print(f"🤖 [5b/6] Updating Story Points ({points})...", flush=True)
             res2 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
-            if res2 and res2.status_code not in [200, 204]: 
-                print(f"⚠️ Webhook Points Update Blocked by Jira Screen: {res2.status_code} {res2.text}", flush=True)
-            else:
+            if res2 is not None and res2.status_code in [200, 204]: 
                 print(f"✅ Story Points Updated", flush=True)
+            else:
+                print(f"⚠️ Webhook Points Update Blocked by Jira Screen: {res2.status_code if res2 else 'Network Error'} {res2.text if res2 else ''}", flush=True)
             
-        # ✨ The Ultimate Fallback: Always post the AI's logic as a comment so nothing is lost!
         print(f"🤖 [6/6] Posting Insight Comment to Jira...", flush=True)
         
+        # Fix 3: Ultimate Fallback Comment. If Jira screen schemas block the PUT requests, 
+        # the user STILL sees the AI's work mathematically mapped in a comment block.
         comment_adf = {
             "type": "doc",
             "version": 1,
@@ -828,8 +813,17 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
             creds_dict = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
         else:
             db = SessionLocal()
-            user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first() if cloud_id else db.query(UserAuth).first()
-            if user: creds_dict = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
+            # Look up by explicitly passed cloud_id first, fallback to basic search
+            if cloud_id:
+                user = db.query(UserAuth).filter(UserAuth.cloud_id == cloud_id).first()
+            else:
+                user = db.query(UserAuth).first()
+                
+            if user: 
+                # Call the auto-refresh token grabber!
+                fresh_user = get_valid_oauth_session(db=db, license_key=user.license_key)
+                if fresh_user:
+                    creds_dict = {"auth_type": "oauth", "cloud_id": fresh_user.cloud_id, "access_token": fresh_user.access_token}
             db.close()
             
         if creds_dict: 
