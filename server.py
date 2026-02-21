@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V32 - JIRA RACE CONDITION & ADF COMMENT FALLBACK FIX")
+print("🚀 APP STARTING: V33 - JIRA ROSTER & EXACT FIELD MAPPING")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -139,8 +139,70 @@ def jira_request(method, endpoint, creds, data=None):
         print(f"❌ Jira HTTP Error ({endpoint}): {e}", flush=True)
         return None
 
-# ================= 🧠 MULTI-MODEL AI CORE WITH VISION =================
+# ================= 🧠 JIRA LOGIC & AI CORE =================
 STORY_POINT_CACHE = {} 
+
+def get_assignable_users(project_key, creds):
+    """Fetches a dictionary of exact Display Names -> Account IDs allowed in the project"""
+    res = jira_request("GET", f"user/assignable/search?project={project_key}", creds)
+    users = {}
+    if res and res.status_code == 200:
+        for u in res.json():
+            if 'displayName' in u and 'accountId' in u:
+                users[u['displayName']] = u['accountId']
+    return users
+
+def get_story_point_field(creds):
+    """Smartly detects whether Jira uses 'Story point estimate' or 'Story Points'"""
+    domain_key = creds.get('domain') or creds.get('cloud_id') or getattr(creds.get('user', None), 'cloud_id', 'default')
+    if domain_key in STORY_POINT_CACHE: return STORY_POINT_CACHE[domain_key]
+    res = jira_request("GET", "field", creds)
+    if res and res.status_code == 200:
+        fields = res.json()
+        # 1. Prefer Next-Gen/Team-Managed fields first
+        for f in fields:
+            if f.get('name', '').lower() == "story point estimate":
+                STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
+        # 2. Fallback to Company-Managed
+        for f in fields:
+            if f.get('name', '').lower() == "story points":
+                STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
+        # 3. Last resort
+        for f in fields:
+            if "estimate" in f.get('name', '').lower() or "point" in f.get('name', '').lower():
+                STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
+    return "customfield_10016"
+
+def safe_float(val):
+    try: return float(val) if val is not None else 0.0
+    except: return 0.0
+
+def extract_story_points(issue_fields, sp_field):
+    pts = safe_float(issue_fields.get(sp_field))
+    if pts > 0: return pts
+    for field in ['customfield_10016', 'customfield_10026', 'customfield_10004', 'customfield_10028']:
+        val = safe_float(issue_fields.get(field))
+        if val > 0: return val
+    for key, value in issue_fields.items():
+        if key.startswith("customfield_") and isinstance(value, (int, float)) and 0 < value < 100: return float(value)
+    return 0.0
+
+def get_jira_account_id(display_name, creds):
+    if not display_name or display_name.lower() == "unassigned": return None
+    safe_query = urllib.parse.quote(display_name)
+    res = jira_request("GET", f"user/search?query={safe_query}", creds)
+    if res and res.status_code == 200 and res.json():
+        users = res.json()
+        if isinstance(users, list) and len(users) > 0:
+            return users[0].get("accountId")
+    return None
+
+def extract_adf_text(adf_node):
+    if not adf_node or not isinstance(adf_node, dict): return ""
+    text = ""
+    if adf_node.get('type') == 'text': text += adf_node.get('text', '') + " "
+    for content in adf_node.get('content', []): text += extract_adf_text(content)
+    return text.strip()
 
 def extract_jira_error(res):
     if not res: return "Connection Timeout or Network Error."
@@ -155,7 +217,6 @@ def extract_jira_error(res):
     return f"Status {res.status_code}: {res.text[:200]}"
 
 def create_adf_doc(text_content, ac_list=None):
-    """Safely converts string descriptions with newlines into valid Jira ADF Blocks."""
     blocks = []
     for line in str(text_content).split('\n'):
         clean_line = line.strip()
@@ -211,49 +272,6 @@ def call_openai(prompt, temperature=0.3, image_data=None):
 def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None):
     if force_openai or image_data: return call_openai(prompt, temperature, image_data)
     return call_gemini(prompt, temperature, image_data)
-
-def safe_float(val):
-    try: return float(val) if val is not None else 0.0
-    except: return 0.0
-
-def get_story_point_field(creds):
-    domain_key = creds.get('domain') or creds.get('cloud_id')
-    if domain_key in STORY_POINT_CACHE: return STORY_POINT_CACHE[domain_key]
-    res = jira_request("GET", "field", creds)
-    if res and res.status_code == 200:
-        fields = res.json()
-        for f in fields:
-            if f.get('name', '').lower() == "story points": STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
-        for f in fields:
-            if "story point" in f.get('name', '').lower() or "estimate" in f.get('name', '').lower(): STORY_POINT_CACHE[domain_key] = f['id']; return f['id']
-    return "customfield_10016"
-
-def extract_story_points(issue_fields, sp_field):
-    pts = safe_float(issue_fields.get(sp_field))
-    if pts > 0: return pts
-    for field in ['customfield_10016', 'customfield_10026', 'customfield_10004', 'customfield_10028']:
-        val = safe_float(issue_fields.get(field))
-        if val > 0: return val
-    for key, value in issue_fields.items():
-        if key.startswith("customfield_") and isinstance(value, (int, float)) and 0 < value < 100: return float(value)
-    return 0.0
-
-def get_jira_account_id(display_name, creds):
-    if not display_name or display_name.lower() == "unassigned": return None
-    safe_query = urllib.parse.quote(display_name)
-    res = jira_request("GET", f"user/search?query={safe_query}", creds)
-    if res and res.status_code == 200 and res.json():
-        users = res.json()
-        if isinstance(users, list) and len(users) > 0:
-            return users[0].get("accountId")
-    return None
-
-def extract_adf_text(adf_node):
-    if not adf_node or not isinstance(adf_node, dict): return ""
-    text = ""
-    if adf_node.get('type') == 'text': text += adf_node.get('text', '') + " "
-    for content in adf_node.get('content', []): text += extract_adf_text(content)
-    return text.strip()
 
 # ================= 🎨 MATHEMATICAL NATIVE PPTX ENGINE =================
 C_BG = RGBColor(11, 17, 33)      
@@ -425,7 +443,8 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     done_pts = 0.0; total_pts = 0.0; active_users = set(); blockers = []; done_summaries = []
     for i in issues:
         f = i.get('fields') or {}
-        status_category = (f.get('status') or {}).get('statusCategory') or {}
+        status = f.get('status') or {}
+        status_category = status.get('statusCategory') or {}
         priority = f.get('priority') or {}
         assignee = f.get('assignee') or {}
 
@@ -446,7 +465,9 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
 
     prompt = f"""
     Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}.
-    CRITICAL INSTRUCTION: YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
+    
+    CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE "Point 1", "...", or "Insert Text".
+    YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
     
     Return EXACTLY a JSON array matching this structure:
     [
@@ -548,21 +569,30 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
     except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
 
+# --- ✨ FIXED: STRICT ROSTER EXTRACTION FOR UI GENERATION ✨ ---
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    res = jira_request("POST", "search/jql", creds, {"jql": f"project={payload.get('project')} AND sprint in openSprints()", "fields": ["*all"]})
-    team_capacity = {}; board_context = []
-    for i in res.json().get('issues', []) if res else []:
-        f = i.get('fields') or {}; assignee = (f.get('assignee') or {}).get('displayName') or "Unassigned"; pts = extract_story_points(f, sp_field)
-        team_capacity[assignee] = team_capacity.get(assignee, 0) + pts
-        board_context.append(f"Task: {f.get('summary')} | Desc: {extract_adf_text(f.get('description', {}))[:200]} | Assignee: {assignee}")
+    project_key = payload.get('project')
     
-    prompt_text = f"Product Owner. User Request: '{payload.get('prompt')}'. Current Sprint Context: {' '.join(board_context[:20])}. Team Workload (You MUST pick the EXACT NAME STRING from these keys): {json.dumps(team_capacity)}. Generate a detailed user story. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Exact Name\", \"tech_stack_inferred\": \"...\"}}"
-    image_data = payload.get("image_data") 
-
+    # Get all strictly allowed assignees for this project
+    assignable_users = get_assignable_users(project_key, creds)
+    team_capacity = {name: 0 for name in assignable_users.keys()}
+    
+    res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
+    board_context = []
+    if res and res.status_code == 200:
+        for i in res.json().get('issues', []):
+            f = i.get('fields') or {}
+            name = (f.get('assignee') or {}).get('displayName')
+            if name and name in team_capacity:
+                team_capacity[name] += extract_story_points(f, sp_field)
+            board_context.append(f"Task: {f.get('summary')} | Assignee: {name or 'Unassigned'}")
+    
+    prompt_text = f"Product Owner. User Request: '{payload.get('prompt')}'. Current Sprint Context: {' '.join(board_context[:20])}. Team Workload (You MUST pick the EXACT NAME from these keys): {json.dumps(team_capacity)}. Generate a detailed user story. Return JSON: {{\"title\": \"...\", \"description\": \"...\", \"acceptance_criteria\": [\"...\"], \"points\": 5, \"assignee\": \"Exact Name\", \"tech_stack_inferred\": \"...\"}}"
+    
     try: 
-        raw_response = generate_ai_response(prompt_text, temperature=0.5, image_data=image_data)
+        raw_response = generate_ai_response(prompt_text, temperature=0.5, image_data=payload.get("image_data"))
         if not raw_response: return {"status": "error", "message": "AI model failed to generate response."}
         return {"status": "success", "story": json.loads(raw_response.replace('```json','').replace('```','').strip())}
     except Exception as e: 
@@ -572,8 +602,17 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
 @app.post("/timeline/create_issue")
 async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     story = payload.get("story", {})
+    project_key = payload.get("project")
     sp_field = get_story_point_field(creds)
-    assignee_id = get_jira_account_id(story.get("assignee", ""), creds)
+    
+    # Use exact roster matching
+    assignable_users = get_assignable_users(project_key, creds)
+    target_assignee = story.get("assignee", "")
+    assignee_id = assignable_users.get(target_assignee)
+    
+    # Fallback to search if AI somehow still hallucinated
+    if not assignee_id and target_assignee and target_assignee.lower() != "unassigned":
+        assignee_id = get_jira_account_id(target_assignee, creds)
     
     base_url = ""
     if creds.get("auth_type") == "basic":
@@ -583,10 +622,9 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
         if server_info and server_info.status_code == 200:
             base_url = server_info.json().get("baseUrl", "")
 
-    # STEP 1: CREATE ISSUE (Safest possible payload to bypass screen errors)
     issue_data = {
         "fields": {
-            "project": {"key": payload.get("project")}, 
+            "project": {"key": project_key}, 
             "summary": story.get("title", "AI Story"), 
             "description": create_adf_doc(story.get("description", "AI Generated Story"), story.get("acceptance_criteria")), 
             "issuetype": {"name": "Story"}
@@ -603,7 +641,6 @@ async def create_issue(payload: dict, creds: dict = Depends(get_jira_creds)):
     if res and res.status_code == 201:
         new_key = res.json().get("key")
         
-        # STEP 2: SECONDARY PUT OVERRIDES (Assignee & Points)
         if assignee_id:
             jira_request("PUT", f"issue/{new_key}", creds, {"fields": {"assignee": {"accountId": assignee_id}}})
             
@@ -632,7 +669,8 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
         f = i.get('fields') or {}
         pts = extract_story_points(f, sp_field)
         if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': 
-            done_count += 1; done_pts += pts
+            done_count += 1
+            done_pts += pts
         status_name = (f.get('status') or {}).get('name') or "Unknown"
         assignee = (f.get('assignee') or {}).get('displayName') or "Unassigned"
         context_data.append({"key": i.get('key'), "summary": f.get('summary', ''), "status": status_name, "assignee": assignee, "points": pts})
@@ -664,36 +702,31 @@ def generate_actions(payload: dict):
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:
         print(f"🤖 [1/6] Silent Agent started for: {issue_key}", flush=True)
-        # 1. Sleep briefly to ensure Jira has finished database indexing of the newly created issue
+        # ✨ Database Lock Fix: Wait for Jira to finish creating the issue before we attempt to edit it.
         time.sleep(2)
         
         sp_field = get_story_point_field(creds_dict)
         
-        print(f"🤖 [2/6] Fetching project context...", flush=True)
+        print(f"🤖 [2/6] Fetching strict assignable user roster...", flush=True)
+        assignable_users = get_assignable_users(project_key, creds_dict)
+        team_cap = {name: 0 for name in assignable_users.keys()}
+        
         res = jira_request("POST", "search/jql", creds_dict, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
-        team_cap = {}
         if res and res.status_code == 200:
             for i in res.json().get('issues', []):
                 f = i.get('fields') or {}
                 name = (f.get('assignee') or {}).get('displayName')
-                if name: team_cap[name] = team_cap.get(name, 0) + extract_story_points(f, sp_field)
-                
-        # If Active Sprint is empty, fallback to project history to find actual developers
-        if not team_cap:
-            res_fall = jira_request("POST", "search/jql", creds_dict, {"jql": f"project={project_key} ORDER BY updated DESC", "maxResults": 30, "fields": ["assignee"]})
-            if res_fall and res_fall.status_code == 200:
-                for i in res_fall.json().get('issues', []):
-                    name = ((i.get('fields') or {}).get('assignee') or {}).get('displayName')
-                    if name: team_cap[name] = 0
+                if name and name in team_cap:
+                    team_cap[name] += extract_story_points(f, sp_field)
 
         prompt = f"""
         You are an Autonomous Scrum Master.
         A user created this Jira ticket: Summary: {summary} | Description: {desc_text}
-        Current Workload Roster: {json.dumps(team_cap)}
+        Current Workload Roster (You MUST pick the EXACT NAME from these keys): {json.dumps(team_cap)}
         
         Tasks:
         1. Assign Story Points (1, 2, 3, 5, 8).
-        2. Choose the best assignee from the Workload list (Use EXACT name).
+        2. Choose the best assignee from the Workload list.
         3. If the Description is very short or empty, write a proper technical description.
         
         Return STRICT JSON OBJECT ONLY: {{"points": 3, "assignee": "Exact Name", "generated_description": "Full description", "reasoning": "Explanation"}}
@@ -709,9 +742,11 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
         est = json.loads(raw.replace('```json','').replace('```','').strip())
         print(f"🧠 [4/6] AI Decision: {est}", flush=True)
         
-        assignee_id = get_jira_account_id(est.get('assignee', ''), creds_dict)
+        target_assignee = est.get('assignee', '')
+        assignee_id = assignable_users.get(target_assignee)
+        if not assignee_id and target_assignee and target_assignee.lower() != "unassigned":
+            assignee_id = get_jira_account_id(target_assignee, creds_dict)
         
-        # 2. Update Assignee and Description Safely
         update_fields_basic = {}
         if assignee_id: 
             update_fields_basic["assignee"] = {"accountId": assignee_id}
@@ -728,7 +763,6 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
             else:
                 print(f"✅ Description/Assignee Updated", flush=True)
             
-        # 3. Update Story Points Separately (To bypass Jira Screen configurations safely)
         points = safe_float(est.get('points', 0))
         if points > 0:
             print(f"🤖 [5b/6] Updating Story Points ({points})...", flush=True)
@@ -738,7 +772,7 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
             else:
                 print(f"✅ Story Points Updated", flush=True)
             
-        # 4. Add Insight Comment (If the PUT requests were blocked by Jira settings, this comment guarantees the user still sees the AI's work!)
+        # ✨ The Ultimate Fallback: Always post the AI's logic as a comment so nothing is lost!
         print(f"🤖 [6/6] Posting Insight Comment to Jira...", flush=True)
         
         comment_adf = {
@@ -748,7 +782,7 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
                 {"type": "paragraph", "content": [{"type": "text", "text": "🚀 IG Agile Auto-Triage Complete", "marks": [{"type": "strong"}]}]},
                 {"type": "bulletList", "content": [
                     {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"Estimated Points: {points}"}]}]},
-                    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"Suggested Assignee: {est.get('assignee', 'Unassigned')}"}]}]},
+                    {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"Suggested Assignee: {target_assignee}"}]}]},
                     {"type": "listItem", "content": [{"type": "paragraph", "content": [{"type": "text", "text": f"Reasoning: {est.get('reasoning', '')}"}]}]}
                 ]}
             ]
@@ -783,14 +817,12 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
         summary = fields.get("summary", "")
         project_key = (fields.get("project") or {}).get("key", "")
         
-        # Prevent the AI from triggering an infinite loop if the Agent itself creates a ticket
         if "IG Agile AI Insights" in desc or "AI Generated Description" in desc:
             print(f"⏭️ Skipping Webhook for {key}: Issue was created actively by the UI.", flush=True)
             return {"status": "ignored"}
 
         print(f"\n🔔 WEBHOOK FIRED: New Issue {key} detected in project {project_key}.", flush=True)
         
-        # ✨ FIX: THREAD-SAFE DETACHED DICTIONARY CREATION ✨
         creds_dict = None
         if domain and email and token: 
             creds_dict = {"auth_type": "basic", "domain": domain, "email": email, "token": token}
