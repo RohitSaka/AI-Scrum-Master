@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V41 - GLOBAL SEARCH API STABILIZATION")
+print("🚀 APP STARTING: V42 - BULLETPROOF JIRA SEARCH & CHANGELOGS")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -165,7 +165,7 @@ def get_assignable_users(project_key, creds):
 def build_team_roster(project_key, creds, sp_field):
     assignable_map = get_assignable_users(project_key, creds)
     roster = {name: 0.0 for name in assignable_map.keys()}
-    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["assignee", sp_field]})
+    res = jira_request("POST", "search", creds, {"jql": f'project="{project_key}" AND sprint in openSprints()', "fields": ["assignee", sp_field]})
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []):
             f = i.get('fields') or {}
@@ -392,7 +392,7 @@ def list_projects(creds: dict = Depends(get_jira_creds)):
 
 @app.get("/sprints/{project_key}")
 def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
-    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint is not EMPTY ORDER BY updated DESC", "maxResults": 50, "fields": ["customfield_10020"]})
+    res = jira_request("POST", "search", creds, {"jql": f'project="{project_key}" AND sprint is not EMPTY ORDER BY updated DESC', "maxResults": 50, "fields": ["customfield_10020"]})
     try:
         sprints = {}
         for i in res.json().get('issues', []):
@@ -400,13 +400,20 @@ def get_sprints(project_key: str, creds: dict = Depends(get_jira_creds)):
         return sorted(list(sprints.values()), key=lambda x: x['id'], reverse=True)
     except: return []
 
+# ✨ FIXED: Mid-Sprint Addition Detection Engine
 @app.get("/analytics/{project_key}")
 def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
+    jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
     
-    res = jira_request("POST", "search", creds, {"jql": jql, "fields": ["*all"], "expand": ["changelog"]})
-    issues = res.json().get('issues', []) if res is not None else []
+    # Passing maxResults to ensure all tickets are caught, not just the default 50
+    res = jira_request("POST", "search", creds, {"jql": jql, "maxResults": 100, "fields": ["*all"], "expand": ["changelog"]})
+    
+    if res is None or res.status_code != 200:
+        print(f"Error fetching analytics data from Jira: {res.status_code if res else 'Timeout'}", flush=True)
+        return {"metrics": {"total": 0, "points": 0.0, "blockers": 0, "bugs": 0, "stories": 0, "assignees": {}}, "ai_insights": {}}
+        
+    issues = res.json().get('issues', [])
 
     stats = {"total": len(issues), "points": 0.0, "blockers": 0, "bugs": 0, "stories": 0, "assignees": {}}
     context_for_ai = []
@@ -423,6 +430,7 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
         priority_name = priority.get('name') or "Medium"
         status_name = status.get('name') or "To Do"
         
+        # ✨ FIXED: Crash-proof Mid-Sprint Addition Logic ✨
         added_mid_sprint = False
         try:
             sprint_start = None
@@ -438,14 +446,19 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
                 if created_date and str(created_date) > str(sprint_start):
                     added_mid_sprint = True
                 else:
-                    for history in i.get('changelog', {}).get('histories', []):
+                    changelog = i.get('changelog') or {}
+                    histories = changelog.get('histories') or []
+                    for history in histories:
                         h_created = history.get('created', '')
                         if h_created and str(h_created) > str(sprint_start):
-                            for item in history.get('items', []):
-                                if str(item.get('fieldId')) == 'customfield_10020' or str(item.get('field')).lower() == 'sprint':
+                            items = history.get('items') or []
+                            for item in items:
+                                field_id = str(item.get('fieldId', '')).lower()
+                                field_name = str(item.get('field', '')).lower()
+                                if field_id == 'customfield_10020' or 'sprint' in field_name:
                                     if item.get('to'): added_mid_sprint = True
         except Exception as e:
-            print(f"Warning: Changelog calculation skipped for {i.get('key')} - {e}")
+            print(f"Warning: Changelog calculation skipped for {i.get('key')} - {e}", flush=True)
             pass
 
         stats["points"] += pts; stats["total"] += 1
@@ -472,9 +485,9 @@ def get_analytics(project_key: str, sprint_id: str = None, creds: dict = Depends
 @app.get("/super_deck/{project_key}")
 def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
-    jql = f"project = {project_key} AND sprint = {sprint_id}" if sprint_id and sprint_id != "active" else f"project = {project_key} AND sprint in openSprints()"
+    jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
     res = jira_request("POST", "search", creds, {"jql": jql, "maxResults": 30, "fields": ["*all"]})
-    issues = res.json().get('issues', []) if res is not None else []
+    issues = res.json().get('issues', []) if res is not None and res.status_code == 200 else []
     
     done_pts = 0.0; total_pts = 0.0; active_users = set(); blockers = []; done_summaries = []
     for i in issues:
@@ -491,8 +504,8 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
             
     retro_res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
     retro_data = retro_res.json().get('value', {}).get(str(sprint_id) if sprint_id else 'active', {}) if retro_res is not None and retro_res.status_code==200 else {}
-    backlog_res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint is EMPTY", "maxResults": 4, "fields": ["summary"]})
-    backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res is not None else ["Backlog Refinement", "Planning"]
+    backlog_res = jira_request("POST", "search", creds, {"jql": f'project="{project_key}" AND sprint is EMPTY', "maxResults": 4, "fields": ["summary"]})
+    backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res is not None and backlog_res.status_code == 200 else ["Backlog Refinement", "Planning"]
         
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
 
@@ -500,7 +513,7 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
     try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: print(f"❌ Deck Parse Error: {e}", flush=True); return {"status": "error", "message": "Failed to orchestrate slides."}
+    except Exception e: print(f"❌ Deck Parse Error: {e}", flush=True); return {"status": "error", "message": "Failed to orchestrate slides."}
 
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
@@ -508,8 +521,8 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     
-    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
-    issues = res.json().get('issues', []) if res is not None else []
+    res = jira_request("POST", "search", creds, {"jql": f'project="{project_key}" AND updated >= "{dt}" ORDER BY updated DESC', "maxResults": 40, "fields": ["*all"]})
+    issues = res.json().get('issues', []) if res is not None and res.status_code == 200 else []
     
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
@@ -540,9 +553,9 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
 
 @app.get("/roadmap/{project_key}")
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
-    jql = f"project={project_key} AND statusCategory != Done ORDER BY priority DESC"
+    jql = f'project="{project_key}" AND statusCategory != Done ORDER BY priority DESC'
     res = jira_request("POST", "search", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
-    context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res is not None]
+    context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res is not None and res.status_code == 200]
     prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
     try: return json.loads(generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip())
     except: return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Uncategorized", "items": [{"key": i['key'], "summary": i['summary'], "start": 0, "duration": 3, "priority": i['priority'], "status": i['status']} for i in context_data[:5]]}]}
@@ -553,7 +566,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
     project_key = payload.get('project')
     roster, assignable_map = build_team_roster(project_key, creds, sp_field)
     
-    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND sprint in openSprints()", "fields": ["*all"]})
+    res = jira_request("POST", "search", creds, {"jql": f'project="{project_key}" AND sprint in openSprints()', "fields": ["*all"]})
     board_context = []
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []):
@@ -571,7 +584,7 @@ async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_
 @app.post("/timeline/generate_epic")
 async def generate_epic(payload: dict, creds: dict = Depends(get_jira_creds)):
     project_key = payload.get('project')
-    res = jira_request("POST", "search", creds, {"jql": f"project={project_key}", "maxResults": 10, "fields": ["summary"]})
+    res = jira_request("POST", "search", creds, {"jql": f'project="{project_key}"', "maxResults": 10, "fields": ["summary"]})
     board_context = []
     if res is not None and res.status_code == 200:
         for i in res.json().get('issues', []): board_context.append((i.get('fields') or {}).get('summary', ''))
@@ -650,15 +663,18 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
-    res = jira_request("POST", "search", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
+    res = jira_request("POST", "search", creds, {"jql": f'project="{project_key}" AND updated >= "{dt}" ORDER BY updated DESC', "maxResults": 40, "fields": ["*all"]})
     done_count = 0; done_pts = 0.0; context_data = []
-    for i in res.json().get('issues', []) if res is not None else []:
+    
+    for i in res.json().get('issues', []) if res is not None and res.status_code == 200 else []:
         f = i.get('fields') or {}
         pts = extract_story_points(f, sp_field)
-        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': done_count += 1; done_pts += pts
+        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': 
+            done_count += 1; done_pts += pts
         status_name = (f.get('status') or {}).get('name') or "Unknown"
         assignee = (f.get('assignee') or {}).get('displayName') or "Unassigned"
         context_data.append({"key": i.get('key'), "summary": f.get('summary', ''), "status": status_name, "assignee": assignee, "points": pts})
+        
     try: ai_dossier = json.loads(generate_ai_response(f"Elite Agile Analyst. DATA: {json.dumps(context_data)}. Return JSON: {{\"ai_verdict\": \"...\", \"sprint_vibe\": \"...\", \"key_accomplishments\": [{{\"title\": \"...\", \"impact\": \"...\"}}], \"hidden_friction\": \"...\", \"top_contributor\": \"Name - Reason\"}}", temperature=0.4).replace('```json','').replace('```','').strip())
     except: ai_dossier = {"ai_verdict": "Error", "sprint_vibe": "Error", "key_accomplishments": [], "hidden_friction": "", "top_contributor": ""}
     return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(context_data), "dossier": ai_dossier}
