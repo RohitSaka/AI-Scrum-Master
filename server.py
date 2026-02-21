@@ -31,7 +31,7 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V36 - INVITE GUEST LINK PROXY ENGINE")
+print("🚀 APP STARTING: V36 - RETROSPECTIVE AI FIX")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -58,7 +58,6 @@ class UserAuth(Base):
     cloud_id = Column(String) 
     expires_at = Column(Integer)
 
-# ✨ NEW: Guest Link Token Database ✨
 class GuestLink(Base):
     __tablename__ = "guest_links"
     token = Column(String, primary_key=True, index=True)
@@ -480,8 +479,10 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
 
     prompt = f"""
     Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}.
+    
     CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS LIKE "Point 1", "...", or "Insert Text".
     YOU MUST WRITE FULL, PROFESSIONAL BUSINESS SENTENCES SUMMARIZING THE REAL PROVIDED DATA. 
+    
     Return EXACTLY a JSON array matching this structure:
     [
       {{ "id": 1, "layout": "hero", "title": "Sprint Review", "subtitle": "{context['current_date']}", "icon": "🚀" }},
@@ -494,24 +495,31 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     """
     
     raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
-    try: return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
-    except Exception as e: print(f"❌ Deck Parse Error: {e}", flush=True); return {"status": "error", "message": "Failed to orchestrate slides."}
+    try: 
+        return {"status": "success", "slides": json.loads(raw.replace('```json','').replace('```','').strip())}
+    except Exception as e: 
+        print(f"❌ Deck Parse Error: {e} \nRaw AI String: {raw}", flush=True)
+        return {"status": "error", "message": "Failed to orchestrate slides."}
 
 @app.get("/report_deck/{project_key}/{timeframe}")
 def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+    
     res = jira_request("POST", "search/jql", creds, {"jql": f"project={project_key} AND updated >= '{dt}' ORDER BY updated DESC", "maxResults": 40, "fields": ["*all"]})
     issues = res.json().get('issues', []) if res is not None else []
     
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
         f = i.get('fields') or {}
+        status_category = (f.get('status') or {}).get('statusCategory') or {}
+        priority = f.get('priority') or {}
+
         pts = extract_story_points(f, sp_field)
-        if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': 
+        if status_category.get('key') == 'done': 
             done_count += 1; done_pts += pts; accomplishments.append(f.get('summary', ''))
-        if (f.get('priority') or {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
+        if priority.get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
 
     context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
 
@@ -646,13 +654,34 @@ def update_retro(payload: dict, creds: dict = Depends(get_jira_creds)):
     jira_request("PUT", f"project/{project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "saved"}
 
+# ✨ FIXED: GENERATE ACTIONS PROMPT ✨
 @app.post("/retro/generate_actions")
 def generate_actions(payload: dict):
-    try: return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(json.loads(generate_ai_response(f"Analyze Retro. GOOD: {payload.get('board').get('well')} BAD: {payload.get('board').get('improve')}. Return JSON array: [\"Action 1\"]").replace('```json','').replace('```','').strip()))]}
-    except: return {"actions": []}
+    board = payload.get('board', {})
+    well_data = [item.get('text') for item in board.get('well', [])]
+    improve_data = [item.get('text') for item in board.get('improve', [])]
+    
+    prompt = f"""
+    Act as an Expert Agile Coach. Analyze this sprint retrospective data:
+    WENT WELL: {well_data}
+    NEEDS IMPROVEMENT: {improve_data}
+    
+    Generate 3 specific, actionable steps the team should take next sprint to improve. 
+    CRITICAL: Write real, professional sentences. DO NOT use placeholders like 'Action 1'.
+    
+    Return EXACTLY a JSON array of strings matching this format:
+    ["Implement a new CI/CD pipeline check", "Schedule a backlog refinement session", "Create a shared availability calendar"]
+    """
+    
+    try: 
+        raw = generate_ai_response(prompt, temperature=0.6, force_openai=True)
+        actions = json.loads(raw.replace('```json','').replace('```','').strip())
+        return {"actions": [{"id": int(time.time()*1000)+i, "text": t} for i,t in enumerate(actions)]}
+    except Exception as e: 
+        print(f"❌ Retro Gen AI Error: {e}", flush=True)
+        return {"actions": []}
 
-# --- ✨ NEW: GUEST LINK GENERATOR & PROXY ROUTES ✨ ---
-@app.post("/retro/generate_link")
+@app.post("/guest/retro/generate_link")
 def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
     project_key = payload.get("project")
     sprint_id = payload.get("sprint")
@@ -743,12 +772,12 @@ def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dic
             
         if update_fields_basic:
             print(f"🤖 [5a/6] Updating Description & Assignee...", flush=True)
-            res1 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
+            jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": update_fields_basic})
             
         points = safe_float(est.get('points', 0))
         if points > 0:
             print(f"🤖 [5b/6] Updating Story Points ({points})...", flush=True)
-            res2 = jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
+            jira_request("PUT", f"issue/{issue_key}", creds_dict, {"fields": {sp_field: points}})
             
         print(f"🤖 [6/6] Posting Insight Comment to Jira...", flush=True)
         comment_text = f"🚀 *IG Agile Auto-Triage Complete*\n"
