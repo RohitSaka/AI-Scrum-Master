@@ -694,6 +694,76 @@ Return STRICT JSON: {{"subject": "Clear subject line", "body": "Professional ema
     
     return {"subject": f"Sprint Update — {project}", "body": f"Hi Team,\n\nHere is a brief update on project {project}.\n\n[Add your update here]\n\nBest regards"}
 
+@app.post("/team/send_email")
+def send_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Send email directly via SMTP from within the application."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    smtp_host = payload.get("smtp_host", "smtp.gmail.com")
+    smtp_port = int(payload.get("smtp_port", 587))
+    smtp_email = payload.get("smtp_email", "")
+    smtp_password = payload.get("smtp_password", "")
+    sender_name = payload.get("sender_name", smtp_email)
+    recipients = payload.get("recipients", [])
+    subject = payload.get("subject", "")
+    body = payload.get("body", "")
+    
+    if not smtp_email or not smtp_password:
+        return {"status": "error", "message": "SMTP credentials not configured. Please set up your email and app password."}
+    if not recipients:
+        return {"status": "error", "message": "No recipients specified."}
+    if not subject and not body:
+        return {"status": "error", "message": "Email subject and body are both empty."}
+    
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['From'] = f"{sender_name} <{smtp_email}>" if sender_name and sender_name != smtp_email else smtp_email
+        msg['To'] = ', '.join(recipients)
+        msg['Subject'] = subject
+        
+        # Plain text version
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # HTML version with professional formatting
+        html_body = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;">
+            <div style="border-bottom: 3px solid #3B82F6; padding-bottom: 16px; margin-bottom: 24px;">
+                <strong style="color: #3B82F6; font-size: 13px; letter-spacing: 1px;">IG AGILE SCRUM</strong>
+            </div>
+            {''.join(f'<p style="margin: 0 0 12px 0; line-height: 1.7; font-size: 15px;">{line}</p>' for line in body.split(chr(10)) if line.strip())}
+            <div style="border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 16px;">
+                <small style="color: #6b7280; font-size: 11px;">Sent via IG Agile Scrum — Enterprise Agile Intelligence Platform</small>
+            </div>
+        </div>"""
+        msg.attach(MIMEText(html_body, 'html'))
+        
+        # Connect and send
+        print(f"[EMAIL] Connecting to {smtp_host}:{smtp_port}...", flush=True)
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(smtp_email, smtp_password)
+            server.sendmail(smtp_email, recipients, msg.as_string())
+        
+        print(f"[EMAIL] ✅ Sent to {len(recipients)} recipients: {', '.join(recipients)}", flush=True)
+        return {"status": "sent", "recipients_count": len(recipients)}
+    
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[EMAIL] ❌ Auth failed: {e}", flush=True)
+        return {"status": "error", "message": "Authentication failed. Check your email and app password. For Gmail, use an App Password (not your regular password)."}
+    except smtplib.SMTPRecipientsRefused as e:
+        print(f"[EMAIL] ❌ Recipients refused: {e}", flush=True)
+        return {"status": "error", "message": "One or more recipient addresses were rejected by the server."}
+    except smtplib.SMTPException as e:
+        print(f"[EMAIL] ❌ SMTP Error: {e}", flush=True)
+        return {"status": "error", "message": f"SMTP Error: {str(e)}"}
+    except Exception as e:
+        print(f"[EMAIL] ❌ General Error: {e}", flush=True)
+        return {"status": "error", "message": f"Failed to send: {str(e)}"}
+
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:
         print(f"[1/6] Silent Agent started for: {issue_key}", flush=True)

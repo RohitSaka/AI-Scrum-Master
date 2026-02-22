@@ -1472,7 +1472,7 @@
             return (
                 <div className="animate-fade-in space-y-8 h-full overflow-y-auto pb-12 pr-4">
                     <header className="flex justify-between items-end mb-10 border-b border-border pb-6">
-                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">AI Performance Dossier</h2></div>
+                        <div><h2 className="text-4xl font-extrabold tracking-tight text-text-main">Artifacts</h2><p className="text-base font-medium mt-2 text-text-muted">AI Performance Dossier &middot; Executive Reports</p></div>
                         <div className="flex items-center gap-2 bg-bg-card p-1.5 rounded-xl border border-border shadow-sm">{['weekly', 'monthly', 'quarterly'].map(t => (<button key={t} onClick={() => setTimeframe(t)} className={`px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${timeframe === t ? 'text-white shadow-md' : 'text-text-muted hover:text-text-main hover:bg-bg-hover'}`} style={timeframe === t ? { background: 'var(--accent-gradient)' } : {}}>{t}</button>))}</div>
                     </header>
 
@@ -1622,6 +1622,21 @@
             const [emailSubject, setEmailSubject] = useState('');
             const [emailBody, setEmailBody] = useState('');
             const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
+            const [isSendingEmail, setIsSendingEmail] = useState(false);
+            const [emailSentStatus, setEmailSentStatus] = useState(null);
+
+            // SMTP settings (persisted in localStorage)
+            const [showSmtpConfig, setShowSmtpConfig] = useState(false);
+            const [smtpConfig, setSmtpConfig] = useState(() => {
+                const saved = localStorage.getItem('ig_smtp_config');
+                return saved ? JSON.parse(saved) : { host: 'smtp.gmail.com', port: '587', email: '', password: '', sender_name: '' };
+            });
+            const smtpConfigured = smtpConfig.email && smtpConfig.password;
+
+            const saveSmtpConfig = (updated) => {
+                setSmtpConfig(updated);
+                localStorage.setItem('ig_smtp_config', JSON.stringify(updated));
+            };
 
             // Load team on mount
             useEffect(() => {
@@ -1749,7 +1764,45 @@
                 setIsGeneratingEmail(false);
             };
 
-            const sendEmail = () => {
+            const sendDirectEmail = async () => {
+                const toEmails = selectedRecipients.filter(r => r.email).map(r => r.email);
+                if (!toEmails.length) { showToast('No email addresses found for selected recipients.', 'error'); return; }
+                if (!smtpConfigured) { showToast('Please configure your SMTP settings first.', 'error'); setShowSmtpConfig(true); return; }
+                if (!emailSubject.trim() && !emailBody.trim()) { showToast('Please add a subject or message.', 'error'); return; }
+
+                setIsSendingEmail(true); setEmailSentStatus(null);
+                try {
+                    const r = await secureFetch('/team/send_email', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            smtp_host: smtpConfig.host,
+                            smtp_port: parseInt(smtpConfig.port),
+                            smtp_email: smtpConfig.email,
+                            smtp_password: smtpConfig.password,
+                            sender_name: smtpConfig.sender_name || smtpConfig.email,
+                            recipients: toEmails,
+                            subject: emailSubject,
+                            body: emailBody
+                        })
+                    });
+                    if (r && r.ok) {
+                        const data = await r.json();
+                        if (data.status === 'sent') {
+                            setEmailSentStatus({ type: 'success', text: `Email sent successfully to ${toEmails.length} recipient${toEmails.length > 1 ? 's' : ''}!` });
+                            showToast('Email sent!', 'success');
+                        } else {
+                            setEmailSentStatus({ type: 'error', text: data.message || 'Failed to send email.' });
+                        }
+                    } else {
+                        setEmailSentStatus({ type: 'error', text: 'Server error. Try "Open in Email Client" instead.' });
+                    }
+                } catch (e) {
+                    setEmailSentStatus({ type: 'error', text: 'Network error. Try "Open in Email Client" instead.' });
+                }
+                setIsSendingEmail(false);
+            };
+
+            const openInMailClient = () => {
                 const toEmails = selectedRecipients.filter(r => r.email).map(r => r.email).join(',');
                 if (!toEmails) { showToast('No email addresses found for selected recipients.', 'error'); return; }
                 const mailtoLink = `mailto:${toEmails}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
@@ -1794,7 +1847,7 @@
                                 <Icon name="UserPlus" size={16} /> Add Team Member
                             </button>
                             {membersWithEmail.length > 0 && (
-                                <button onClick={() => { setShowEmailCompose(true); setSelectedRecipients([]); setEmailSubject(''); setEmailBody(''); }} className="px-5 py-3 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #F43F5E)' }}>
+                                <button onClick={() => { setShowEmailCompose(true); setSelectedRecipients([]); setEmailSubject(''); setEmailBody(''); setEmailSentStatus(null); }} className="px-5 py-3 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #F43F5E)' }}>
                                     <Icon name="Mail" size={16} /> Compose Email
                                 </button>
                             )}
@@ -2000,8 +2053,53 @@
 
                                 {/* Email Compose */}
                                 {selectedRecipients.length > 0 && (
-                                    <div className="p-8 relative z-10">
-                                        <div className="flex gap-4 mb-4">
+                                    <div className="p-8 relative z-10 space-y-6">
+                                        {/* SMTP Configuration Toggle */}
+                                        <div className="rounded-xl border overflow-hidden" style={{ borderColor: smtpConfigured ? 'var(--success)' : 'var(--warning)', background: smtpConfigured ? 'rgba(16,185,129,0.04)' : 'rgba(245,158,11,0.04)' }}>
+                                            <button onClick={() => setShowSmtpConfig(!showSmtpConfig)} className="w-full flex items-center justify-between p-4 text-sm font-bold transition-colors hover:bg-bg-hover">
+                                                <div className="flex items-center gap-3">
+                                                    {smtpConfigured
+                                                        ? <><Icon name="CheckCircle" size={18} className="text-success" /><span className="text-success">SMTP Configured</span><span className="text-text-muted font-normal">— {smtpConfig.email}</span></>
+                                                        : <><Icon name="AlertTriangle" size={18} className="text-warning" /><span className="text-warning">Configure SMTP to Send Directly</span></>
+                                                    }
+                                                </div>
+                                                <Icon name={showSmtpConfig ? 'ChevronLeft' : 'ChevronRight'} size={16} className="text-text-muted" style={{ transform: showSmtpConfig ? 'rotate(-90deg)' : 'rotate(90deg)', transition: 'transform 0.2s' }} />
+                                            </button>
+                                            <AnimatePresence>
+                                                {showSmtpConfig && (
+                                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                                        <div className="p-5 pt-0 border-t border-border">
+                                                            <p className="text-xs text-text-muted mb-4 font-medium">For Gmail: use <strong>smtp.gmail.com:587</strong> with an <a href="https://myaccount.google.com/apppasswords" target="_blank" className="text-primary underline">App Password</a>. For Outlook: <strong>smtp.office365.com:587</strong>.</p>
+                                                            <div className="grid grid-cols-4 gap-4">
+                                                                <div>
+                                                                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1.5 block">SMTP Host</label>
+                                                                    <input value={smtpConfig.host} onChange={e => saveSmtpConfig({ ...smtpConfig, host: e.target.value })} placeholder="smtp.gmail.com" className="w-full p-2.5 rounded-lg text-xs input-field font-semibold" />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1.5 block">Port</label>
+                                                                    <input value={smtpConfig.port} onChange={e => saveSmtpConfig({ ...smtpConfig, port: e.target.value })} placeholder="587" className="w-full p-2.5 rounded-lg text-xs input-field font-semibold" />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1.5 block">Your Email</label>
+                                                                    <input value={smtpConfig.email} onChange={e => saveSmtpConfig({ ...smtpConfig, email: e.target.value })} placeholder="you@company.com" className="w-full p-2.5 rounded-lg text-xs input-field font-semibold" />
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1.5 block">App Password</label>
+                                                                    <input type="password" value={smtpConfig.password} onChange={e => saveSmtpConfig({ ...smtpConfig, password: e.target.value })} placeholder="••••••••" className="w-full p-2.5 rounded-lg text-xs input-field font-semibold" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="mt-3">
+                                                                <label className="text-[10px] font-black text-text-muted uppercase tracking-widest mb-1.5 block">Sender Display Name (optional)</label>
+                                                                <input value={smtpConfig.sender_name || ''} onChange={e => saveSmtpConfig({ ...smtpConfig, sender_name: e.target.value })} placeholder="e.g. Neetha Kotigiri — Scrum Master" className="w-full p-2.5 rounded-lg text-xs input-field font-semibold max-w-md" />
+                                                            </div>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </AnimatePresence>
+                                        </div>
+
+                                        {/* Subject + AI Draft */}
+                                        <div className="flex gap-4">
                                             <div className="flex-1">
                                                 <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Subject</label>
                                                 <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)} placeholder="e.g. Sprint Review Update — Project ABC" className="w-full p-3 rounded-xl text-sm input-field font-semibold shadow-sm" />
@@ -2011,17 +2109,37 @@
                                                 AI Draft
                                             </button>
                                         </div>
+
+                                        {/* Body */}
                                         <div>
                                             <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Message Body</label>
                                             <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} rows={8} placeholder="Write your message here, or click AI Draft to auto-generate..." className="w-full p-4 rounded-xl text-sm input-field font-medium shadow-sm resize-y leading-relaxed" />
                                         </div>
-                                        <div className="flex justify-end gap-3 mt-6">
-                                            <button onClick={copyEmailAddresses} className="px-5 py-3 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-text-main transition-all flex items-center gap-2 text-sm">
-                                                <Icon name="Copy" size={16} /> Copy Addresses
+
+                                        {/* Send Status */}
+                                        <AnimatePresence>
+                                            {emailSentStatus && (
+                                                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`p-4 rounded-xl text-sm font-bold border flex items-center gap-3 shadow-md ${emailSentStatus.type === 'success' ? 'bg-success/10 text-success border-success/30' : 'bg-danger/10 text-danger border-danger/30'}`}>
+                                                    <Icon name={emailSentStatus.type === 'success' ? 'CheckCircle' : 'AlertTriangle'} size={20} />
+                                                    <span className="flex-1">{emailSentStatus.text}</span>
+                                                    <button onClick={() => setEmailSentStatus(null)} className="p-1 hover:opacity-70 transition"><Icon name="X" size={14} /></button>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+
+                                        {/* Action Buttons */}
+                                        <div className="flex justify-between items-center pt-2 border-t border-border">
+                                            <button onClick={copyEmailAddresses} className="px-4 py-2.5 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-text-main transition-all flex items-center gap-2 text-xs">
+                                                <Icon name="Copy" size={14} /> Copy Addresses
                                             </button>
-                                            <button onClick={sendEmail} disabled={!emailSubject && !emailBody} className="px-8 py-3 text-white rounded-xl font-extrabold text-sm shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #F59E0B, #F43F5E)' }}>
-                                                <Icon name="Send" size={16} /> Open in Email Client
-                                            </button>
+                                            <div className="flex gap-3">
+                                                <button onClick={openInMailClient} disabled={!emailSubject && !emailBody} className="px-5 py-3 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-primary hover:border-primary transition-all flex items-center gap-2 text-sm disabled:opacity-40">
+                                                    <Icon name="ExternalLink" size={16} /> Open in Mail Client
+                                                </button>
+                                                <button onClick={sendDirectEmail} disabled={isSendingEmail || (!emailSubject && !emailBody)} className="px-8 py-3 text-white rounded-xl font-extrabold text-sm shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                                                    {isSendingEmail ? <><span className="loader w-4 h-4 border-2"></span> Sending...</> : <><Icon name="Send" size={16} /> Send Email</>}
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
