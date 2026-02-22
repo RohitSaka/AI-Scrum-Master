@@ -550,6 +550,38 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
         ai_dossier = {"ai_verdict": "Error analyzing data.", "sprint_vibe": "Error", "key_accomplishments": [], "hidden_friction": "", "top_contributor": ""}
     return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(context_data), "dossier": ai_dossier}
 
+# --- LIVE TYPING INDICATOR STATE ---
+TYPING_STATE = {} # Format: { "project_sprint": { "GuestName": timestamp } }
+
+@app.post("/retro/typing")
+def update_typing_status(payload: dict):
+    key = f"{payload.get('project')}_{payload.get('sprint')}"
+    name = payload.get("name", "Anonymous").strip() or "Anonymous"
+    
+    if key not in TYPING_STATE:
+        TYPING_STATE[key] = {}
+        
+    if payload.get("is_typing"):
+        TYPING_STATE[key][name] = time.time()
+    else:
+        TYPING_STATE[key].pop(name, None)
+    return {"status": "ok"}
+
+@app.get("/retro/typing/{project}/{sprint}")
+def get_typing_status(project: str, sprint: str):
+    key = f"{project}_{sprint}"
+    active_typers = []
+    
+    if key in TYPING_STATE:
+        now = time.time()
+        for name, ts in list(TYPING_STATE[key].items()):
+            if now - ts < 3.0:
+                active_typers.append(name)
+            else:
+                del TYPING_STATE[key][name]
+                
+    return {"typing": active_typers}
+
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
