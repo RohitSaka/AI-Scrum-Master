@@ -33,7 +33,8 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("🚀 APP STARTING: V45 — MATHEMATICAL PPTX ENGINE v3")
+print("🚀 APP STARTING: V46 — MATHEMATICAL PPTX ENGINE v4")
+print("   4-Theme System | Ascension Colors | Zero Obstruction")
 print("="*60 + "\n")
 
 # ================= 🗄️ DATABASE SETUP =================
@@ -275,104 +276,195 @@ def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data
 
 
 # ==============================================================================
-# 🎨 MATHEMATICAL PPTX ENGINE v3 — Professional Grade Slide Generation
+# 🎨 MATHEMATICAL PPTX ENGINE v4 — Zero-Obstruction Professional Slides
 #
-# Philosophy: Same blue brand family, 6 depth shades + 2 accent colors.
-# Each layout uses mathematical geometry (Golden Ratio, Fibonacci, trigonometry)
-# to create depth through layered shapes — never just "title + text box".
+# CORE PRINCIPLE: Decorative shapes NEVER overlap content text zones.
+#   - All decorative geometry is drawn FIRST (lowest z-order)
+#   - Decorative elements are confined to edges/corners with margin buffers
+#   - Content zones are mathematically reserved and respected
 #
-# Layouts:
-#   hero         → Fibonacci concentric circles, centered focal composition
-#   kpi_grid     → Numbers-as-heroes, Fibonacci accent progression per card
-#   flowchart    → Circle nodes, connecting lines, Golden Ratio step sizing
-#   icon_columns → Three panels, alternating depth shades, icon caps
-#   split_panel  → Golden-ratio left/right split, decorative geometry
-#   big_statement→ Oversized quote/statement with decorative quotation ring
+# 4 THEME FAMILIES (each deck type has its own visual identity):
+#   sprint    → Ascension dark teal + colorful accent borders (cyan/gold/emerald)
+#   weekly    → Clean light corporate with blue header band
+#   monthly   → Salesforce-inspired dark header + white content cards
+#   quarterly → Premium Ascension teal, rich layered depth
+#
+# MATHEMATICAL FOUNDATIONS:
+#   φ (Golden Ratio) = 1.618... → panel splits, margin ratios
+#   Fibonacci sequence → accent bar progressions, spacing rhythm
+#   Harmonic proportions → card sizing, grid gaps
 # ==============================================================================
 
 PHI = (1 + math.sqrt(5)) / 2   # Golden Ratio ≈ 1.618
-FIB = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]  # Fibonacci sequence
-
-# ── Monochromatic blue palette: 6 depth levels ──────────────────────────────
-#    All same hue family (220°), progressing from near-black → mid-blue
-P_D0 = RGBColor(5,   8,  20)   # Midnight  — deepest background
-P_D1 = RGBColor(10,  16, 38)   # Base bg   — main slide background
-P_D2 = RGBColor(14,  26, 64)   # Navy      — secondary zones
-P_D3 = RGBColor(19,  40, 94)   # Dusk      — card backgrounds
-P_D4 = RGBColor(26,  56, 130)  # Medium    — elevated cards
-P_D5 = RGBColor(38,  80, 172)  # Bright    — highlight backgrounds
-
-# ── Accent colors (warm + cool contrast to the blue family) ─────────────────
-P_AC = RGBColor(0,  113, 227)  # Apple Blue  — primary CTA accent
-P_AW = RGBColor(217, 119,  6)  # Amber       — warm accent
-P_AE = RGBColor(16,  185, 129) # Emerald     — cool accent
-
-# ── Neutral text colors ──────────────────────────────────────────────────────
-P_WH = RGBColor(255, 255, 255) # White
-P_SL = RGBColor(226, 232, 240) # Silver light
-P_MU = RGBColor(148, 163, 184) # Muted
-P_SU = RGBColor(71,   85, 105) # Subtle (very muted)
+FIB = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]
 
 # ── Slide dimensions ─────────────────────────────────────────────────────────
 SW = 13.333   # slide width  (inches)
 SH = 7.5      # slide height (inches)
 
-# ── Accent color cycle for multi-card slides ─────────────────────────────────
-ACCENT_CYCLE = [P_AC, P_D5, P_AW, P_AE]
+
+# ==============================================================================
+# THEME DEFINITIONS — Ascension-inspired color system
+# ==============================================================================
+
+class Theme:
+    """Color and style configuration for a presentation theme."""
+    def __init__(self, name, bg_primary, bg_secondary, bg_card, bg_card_alt,
+                 accent_1, accent_2, accent_3, accent_4,
+                 text_primary, text_secondary, text_muted, text_subtle,
+                 header_bg, header_text, divider, card_border_radius=0.08):
+        self.name = name
+        self.bg_primary = bg_primary        # Main slide background
+        self.bg_secondary = bg_secondary    # Secondary zones / panels
+        self.bg_card = bg_card              # Card background
+        self.bg_card_alt = bg_card_alt      # Alternate card bg
+        self.accent_1 = accent_1            # Primary accent (CTAs, highlights)
+        self.accent_2 = accent_2            # Secondary accent
+        self.accent_3 = accent_3            # Tertiary accent
+        self.accent_4 = accent_4            # Quaternary accent
+        self.text_primary = text_primary    # Main text
+        self.text_secondary = text_secondary # Secondary text
+        self.text_muted = text_muted        # Muted/caption text
+        self.text_subtle = text_subtle      # Very subtle text
+        self.header_bg = header_bg          # Header bar background
+        self.header_text = header_text      # Header bar text
+        self.divider = divider              # Divider lines
+        self.card_border_radius = card_border_radius
+        self.accent_cycle = [accent_1, accent_2, accent_3, accent_4]
+
+# ── SPRINT THEME (Ascension Dark Teal + Colorful Cards) ─────────────────────
+THEME_SPRINT = Theme(
+    name='sprint',
+    bg_primary   = RGBColor(0, 40, 60),      # #00283C — Ascension teal-black
+    bg_secondary = RGBColor(0, 50, 75),       # #00324B — slightly lighter teal
+    bg_card      = RGBColor(0, 60, 90),       # #003C5A — card background
+    bg_card_alt  = RGBColor(0, 75, 110),      # #004B6E — elevated card
+    accent_1     = RGBColor(0, 193, 151),      # #00C197 — Ascension emerald
+    accent_2     = RGBColor(0, 163, 196),      # #00A3C4 — Ascension cyan
+    accent_3     = RGBColor(253, 199, 4),      # #FDC704 — Ascension gold
+    accent_4     = RGBColor(255, 0, 105),      # #FF0069 — Ascension pink
+    text_primary = RGBColor(255, 255, 255),    # White
+    text_secondary=RGBColor(200, 220, 230),    # Light blue-gray
+    text_muted   = RGBColor(140, 170, 190),    # Muted blue-gray
+    text_subtle  = RGBColor(80, 110, 130),     # Very muted
+    header_bg    = RGBColor(0, 30, 48),        # #001E30 — darker header
+    header_text  = RGBColor(255, 255, 255),
+    divider      = RGBColor(0, 80, 120),       # #005078
+)
+
+# ── WEEKLY THEME (Clean Corporate — Light bg, Blue accents) ──────────────────
+THEME_WEEKLY = Theme(
+    name='weekly',
+    bg_primary   = RGBColor(244, 246, 249),    # #F4F6F9 — soft light gray
+    bg_secondary = RGBColor(255, 255, 255),    # #FFFFFF — white
+    bg_card      = RGBColor(255, 255, 255),    # White cards
+    bg_card_alt  = RGBColor(240, 248, 255),    # #F0F8FF — ice blue tint
+    accent_1     = RGBColor(0, 112, 210),      # #0070D2 — Salesforce blue
+    accent_2     = RGBColor(27, 150, 255),     # #1B96FF — bright blue
+    accent_3     = RGBColor(46, 132, 74),      # #2E844A — green
+    accent_4     = RGBColor(230, 126, 34),     # #E67E22 — orange
+    text_primary = RGBColor(22, 50, 92),       # #16325C — dark navy
+    text_secondary=RGBColor(51, 65, 85),       # #334155 — slate
+    text_muted   = RGBColor(84, 105, 141),     # #54698D — muted slate
+    text_subtle  = RGBColor(160, 180, 200),    # Light muted
+    header_bg    = RGBColor(3, 45, 96),        # #032D60 — deep navy
+    header_text  = RGBColor(255, 255, 255),
+    divider      = RGBColor(224, 224, 224),    # #E0E0E0
+)
+
+# ── MONTHLY THEME (Executive — Dark navy + White content) ────────────────────
+THEME_MONTHLY = Theme(
+    name='monthly',
+    bg_primary   = RGBColor(240, 243, 248),    # #F0F3F8 — warm light
+    bg_secondary = RGBColor(3, 45, 96),        # #032D60 — deep navy panels
+    bg_card      = RGBColor(255, 255, 255),    # White cards
+    bg_card_alt  = RGBColor(234, 245, 254),    # #EAF5FE — light blue tint
+    accent_1     = RGBColor(0, 123, 255),      # #007BFF — blue
+    accent_2     = RGBColor(142, 68, 173),     # #8E44AD — purple
+    accent_3     = RGBColor(39, 174, 96),      # #27AE60 — emerald
+    accent_4     = RGBColor(243, 156, 18),     # #F39C12 — amber
+    text_primary = RGBColor(0, 31, 69),        # #001F45 — near-black navy
+    text_secondary=RGBColor(51, 51, 51),       # #333333
+    text_muted   = RGBColor(84, 105, 141),     # #54698D
+    text_subtle  = RGBColor(180, 190, 200),
+    header_bg    = RGBColor(3, 45, 96),        # #032D60
+    header_text  = RGBColor(255, 255, 255),
+    divider      = RGBColor(200, 210, 225),
+)
+
+# ── QUARTERLY THEME (Premium Ascension — Rich teal depth) ────────────────────
+THEME_QUARTERLY = Theme(
+    name='quarterly',
+    bg_primary   = RGBColor(0, 40, 60),        # #00283C — Ascension teal
+    bg_secondary = RGBColor(0, 55, 82),        # #003752
+    bg_card      = RGBColor(0, 65, 98),        # #004162
+    bg_card_alt  = RGBColor(0, 80, 115),       # #005073
+    accent_1     = RGBColor(0, 214, 242),      # #00D6F2 — vivid cyan
+    accent_2     = RGBColor(0, 193, 151),      # #00C197 — emerald
+    accent_3     = RGBColor(253, 199, 4),      # #FDC704 — gold
+    accent_4     = RGBColor(255, 0, 105),      # #FF0069 — hot pink
+    text_primary = RGBColor(255, 255, 255),
+    text_secondary=RGBColor(200, 225, 240),
+    text_muted   = RGBColor(140, 175, 200),
+    text_subtle  = RGBColor(80, 115, 140),
+    header_bg    = RGBColor(0, 25, 40),        # #001928
+    header_text  = RGBColor(255, 255, 255),
+    divider      = RGBColor(0, 90, 130),
+)
+
+THEMES = {
+    'sprint':    THEME_SPRINT,
+    'weekly':    THEME_WEEKLY,
+    'monthly':   THEME_MONTHLY,
+    'quarterly': THEME_QUARTERLY,
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Low-level drawing primitives
+# Low-level drawing primitives (zero-obstruction safe)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _px(n: float) -> int:
-    """Convert inches to EMU"""
+def _i(n: float) -> int:
+    """Convert inches to EMU via python-pptx Inches()"""
     return Inches(n)
 
-def solid_rect(slide, x: float, y: float, w: float, h: float, color: RGBColor, radius: float = 0.0):
-    """Draw a solid filled rectangle (rounded if radius > 0)"""
-    from pptx.util import Inches
-    from pptx.enum.shapes import MSO_SHAPE_TYPE
-    # Use integer MSO shape values (6=RECTANGLE, 5=ROUNDED_RECTANGLE)
-    shape_id = 5 if radius > 0 else 1  # 1=rectangle, 5=rounded rectangle
-    shp = slide.shapes.add_shape(shape_id, _px(x), _px(y), _px(w), _px(h))
+def rect(slide, x, y, w, h, color, radius=0.0):
+    """Draw a filled rectangle. Radius > 0 for rounded corners."""
+    shape_id = 5 if radius > 0 else 1
+    shp = slide.shapes.add_shape(shape_id, _i(x), _i(y), _i(w), _i(h))
     shp.fill.solid()
     shp.fill.fore_color.rgb = color
     shp.line.fill.background()
     if radius > 0:
-        try:
-            # Adjust rounding amount (0–100000 scale in pptx)
-            shp.adjustments[0] = min(radius, 0.5)
-        except Exception:
-            pass
+        try: shp.adjustments[0] = min(radius, 0.5)
+        except: pass
     return shp
 
-def solid_oval(slide, cx: float, cy: float, rx: float, ry: float, color: RGBColor):
-    """Draw a solid filled oval centered at (cx, cy) with radii (rx, ry)"""
-    shp = slide.shapes.add_shape(9, _px(cx - rx), _px(cy - ry), _px(rx * 2), _px(ry * 2))  # 9=oval
+def oval(slide, cx, cy, rx, ry, color):
+    """Draw a filled oval centered at (cx, cy)."""
+    shp = slide.shapes.add_shape(9, _i(cx - rx), _i(cy - ry), _i(rx * 2), _i(ry * 2))
     shp.fill.solid()
     shp.fill.fore_color.rgb = color
     shp.line.fill.background()
     return shp
 
-def hline(slide, x: float, y: float, w: float, t: float, color: RGBColor):
-    """Horizontal line as thin rectangle"""
-    return solid_rect(slide, x, y, w, max(t, 0.02), color)
+def hbar(slide, x, y, w, h, color):
+    """Thin horizontal bar."""
+    return rect(slide, x, y, w, max(h, 0.02), color)
 
-def vline(slide, x: float, y: float, h: float, t: float, color: RGBColor):
-    """Vertical line as thin rectangle"""
-    return solid_rect(slide, x, y, max(t, 0.02), h, color)
+def vbar(slide, x, y, w, h, color):
+    """Thin vertical bar."""
+    return rect(slide, x, y, max(w, 0.02), h, color)
 
-def textbox(slide, text: str, x: float, y: float, w: float, h: float,
-            size: float, color: RGBColor, bold: bool = False, italic: bool = False,
-            align=PP_ALIGN.LEFT, wrap: bool = True, font: str = 'Calibri Light'):
-    """Add a styled text box"""
-    if not text: return None
-    txb = slide.shapes.add_textbox(_px(x), _px(y), _px(w), _px(h))
+def text(slide, txt, x, y, w, h, size, color, bold=False, italic=False,
+         align=PP_ALIGN.LEFT, wrap=True, font='Calibri Light'):
+    """Add a styled text box."""
+    if not txt: return None
+    txb = slide.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
     tf = txb.text_frame
     tf.word_wrap = wrap
     p = tf.paragraphs[0]
-    p.text = str(text)
+    p.text = str(txt)
     p.font.size = Pt(size)
     p.font.color.rgb = color
     p.font.bold = bold
@@ -381,12 +473,11 @@ def textbox(slide, text: str, x: float, y: float, w: float, h: float,
     p.alignment = align
     return txb
 
-def textbox_multiline(slide, lines: list, x: float, y: float, w: float, h: float,
-                      size: float, color: RGBColor, spacing_pt: float = 14,
-                      bullet: str = '•  ', font: str = 'Calibri Light'):
-    """Add a multi-line (bulleted) text box"""
+def multiline(slide, lines, x, y, w, h, size, color, spacing=14,
+              bullet='›  ', font='Calibri Light'):
+    """Multi-line bulleted text box."""
     if not lines: return None
-    txb = slide.shapes.add_textbox(_px(x), _px(y), _px(w), _px(h))
+    txb = slide.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
     tf = txb.text_frame
     tf.word_wrap = True
     for i, line in enumerate(lines):
@@ -395,446 +486,666 @@ def textbox_multiline(slide, lines: list, x: float, y: float, w: float, h: float
         p.font.size = Pt(size)
         p.font.color.rgb = color
         p.font.name = font
-        p.space_after = Pt(spacing_pt)
+        p.space_after = Pt(spacing)
     return txb
 
-def eyebrow(slide, label: str, x: float, y: float):
-    """Small uppercase section tag with leading accent line"""
-    hline(slide, x, y + 0.09, 0.22, 0.035, P_AC)
-    textbox(slide, label.upper(), x + 0.32, y, 5, 0.32,
-            9, P_AC, bold=True, font='Calibri')
+def eyebrow_label(slide, label, x, y, color):
+    """Small uppercase section label with accent bar."""
+    hbar(slide, x, y + 0.08, 0.2, 0.03, color)
+    text(slide, label.upper(), x + 0.3, y, 5, 0.3, 9, color, bold=True, font='Calibri')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Mathematical background generators
+# SAFE decorative backgrounds — confined to edges, never overlapping content
+# Content safe zone: x ∈ [0.7, SW-0.7], y ∈ [0.4, SH-0.3]
 # ─────────────────────────────────────────────────────────────────────────────
 
-def bg_fibonacci_circles(slide, cx: float, cy: float, max_radius: float, base_color_idx: int = 2):
+def deco_corner_arcs(slide, T: Theme, intensity='medium'):
     """
-    Draw concentric circles at Fibonacci-scaled radii.
-    Radii sequence: max_r / φ^n  for n = 0,1,2,3
-    Color shifts darker with each ring (deeper into the palette).
+    Draw subtle corner arcs that are FULLY in corner zones (off-screen overlap).
+    These never enter the content safe zone.
     """
-    colors = [P_D5, P_D4, P_D3, P_D2]
-    for n in range(4):
-        r = max_radius / (PHI ** n)
-        c_idx = min(base_color_idx + n, 4)
-        colors_seq = [P_D5, P_D4, P_D3, P_D2, P_D1]
-        solid_oval(slide, cx, cy, r, r, colors_seq[c_idx])
+    if intensity == 'none': return
+    # Top-right corner — arc mostly off-screen
+    r1 = 1.8 if intensity == 'medium' else 2.4
+    oval(slide, SW + 0.6, -0.6, r1, r1, T.bg_secondary)
+    if intensity == 'high':
+        oval(slide, SW + 0.6, -0.6, r1 * 0.6, r1 * 0.6, T.bg_card)
+    # Bottom-left corner — arc mostly off-screen
+    r2 = 1.4 if intensity == 'medium' else 2.0
+    oval(slide, -0.6, SH + 0.6, r2, r2, T.bg_secondary)
 
-def bg_diagonal_band(slide, angle_factor: float = 0.12):
-    """
-    Thin diagonal decorative band at golden-ratio height.
-    Implemented as a set of slightly offset very thin horizontal rects.
-    """
-    band_y = SH - SH / PHI  # ≈ 2.87" from top
-    hline(slide, 0, band_y, SW * 0.6, 0.04, P_AC)
-    hline(slide, 0, band_y + 0.12, SW * 0.4, 0.025, P_D5)
+def deco_top_band(slide, T: Theme, band_h=1.8):
+    """Dark header band at top of slide."""
+    rect(slide, 0, 0, SW, band_h, T.header_bg)
+    # Thin accent line at bottom of band
+    hbar(slide, 0, band_h - 0.04, SW, 0.04, T.accent_1)
 
-def bg_corner_circles(slide, corner: str = 'tr'):
-    """
-    Place decorative circles in a corner.
-    corner: 'tr' (top-right), 'bl' (bottom-left), 'tl', 'br'
-    Radii use Fibonacci: 0.8, 1.3, 2.1
-    """
-    pos_map = {
-        'tr': (SW + 0.5, -0.5),
-        'bl': (-0.5,     SH + 0.5),
-        'tl': (-0.5,     -0.5),
-        'br': (SW + 0.5, SH + 0.5),
-    }
-    cx, cy = pos_map.get(corner, (SW + 0.5, -0.5))
-    colors = [P_D3, P_D2, P_D2]
-    for r, c in zip([2.1, 1.3, 0.8], colors):
-        solid_oval(slide, cx, cy, r, r, c)
+def deco_side_accent(slide, T: Theme, side='left', width=0.06):
+    """Thin accent bar along left or right edge."""
+    if side == 'left':
+        vbar(slide, 0, 0, width, SH, T.accent_1)
+    else:
+        vbar(slide, SW - width, 0, width, SH, T.accent_1)
+
+def deco_bottom_rule(slide, T: Theme, y=None):
+    """Subtle bottom rule line."""
+    if y is None: y = SH - 0.35
+    hbar(slide, 0.7, y, SW - 1.4, 0.02, T.divider)
+
+def deco_dot_grid(slide, T: Theme, x_start, y_start, cols, rows, spacing=0.25, radius=0.04):
+    """Subtle dot grid pattern for texture — stays in designated zone only."""
+    for r in range(rows):
+        for c in range(cols):
+            dx = x_start + c * spacing
+            dy = y_start + r * spacing
+            if 0 <= dx <= SW and 0 <= dy <= SH:
+                oval(slide, dx, dy, radius, radius, T.divider)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Layout builders — one function per slide type
+# LAYOUT BUILDERS — Each respects content safe zones
+# Safe zone: MARGIN_X = 0.7, top varies by layout
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_hero(slide, data: dict):
+MX = 0.7  # Horizontal margin
+GAP = 0.2  # Standard gap between elements
+
+
+def build_hero(slide, data: dict, T: Theme):
     """
-    HERO: Full-bleed cinematic opener.
-    Math: 3 Fibonacci circles at (SW·φ/2, SH/2), icon + title + rule + subtitle.
-    Visual layers: deep bg → off-canvas circles → content.
+    HERO SLIDE — Cinematic title opener.
+    
+    Sprint/Quarterly (dark): Full dark bg, centered title with accent rule
+    Weekly/Monthly (light): Dark header band covering full slide, centered content
+    
+    Math: Title positioned at vertical golden-ratio point (SH/φ ≈ 2.87")
+    Accent rule width = min(title_len * 0.08 + 0.5, 3.5)
     """
     title    = str(data.get('title', 'Presentation'))
     subtitle = str(data.get('subtitle', ''))
-    icon     = str(data.get('icon', ''))
 
-    # BG
-    solid_rect(slide, 0, 0, SW, SH, P_D0)
+    is_dark = T.name in ('sprint', 'quarterly')
 
-    # Fibonacci circles at golden-ratio focal point (right-center zone)
-    # φ-center: x = SW·(1 - 1/φ) = SW/φ² ≈ 5.09  → place circles off right
-    cx, cy = SW * 0.78, SH * 0.5
-    bg_fibonacci_circles(slide, cx, cy, max_radius=4.2, base_color_idx=1)
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary if is_dark else T.header_bg)
 
-    # Small accent circle, bottom-left
-    solid_oval(slide, 0.8, SH - 0.8, 0.65, 0.65, P_D3)
+    # ── LAYER 2: Decorative geometry (safe zones only) ──
+    if is_dark:
+        # Subtle corner arcs — offset far into corners
+        oval(slide, SW + 1.0, -1.0, 2.5, 2.5, T.bg_secondary)
+        oval(slide, SW + 1.0, -1.0, 1.5, 1.5, T.bg_card)
+        oval(slide, -1.0, SH + 1.0, 1.8, 1.8, T.bg_secondary)
+        # Bottom-right small accent
+        oval(slide, SW - 0.3, SH - 0.3, 0.5, 0.5, T.bg_card)
+        # Top accent bar
+        hbar(slide, 0, 0, SW * 0.35, 0.045, T.accent_1)
+        hbar(slide, SW * 0.65, SH - 0.045, SW * 0.35, 0.045, T.accent_2)
+    else:
+        # Light theme: subtle dot pattern in top-right corner
+        deco_dot_grid(slide, T, SW - 3.0, 0.4, 10, 6, 0.28, 0.03)
+        # Bottom gradient band
+        rect(slide, 0, SH - 0.06, SW, 0.06, T.accent_1)
 
-    # Accent bars
-    hline(slide, 0, 0, SW * 0.38, 0.045, P_AC)
-    hline(slide, SW * 0.62, SH - 0.045, SW * 0.38, 0.045, P_D5)
+    # ── LAYER 3: Content (always on top) ──
+    center_y = SH / PHI - 0.5  # Golden-ratio vertical position ≈ 2.37"
 
-    # Content — centered in left 64% of slide
-    content_w = SW * 0.64
-    if icon:
-        textbox(slide, icon, 0, 0.8, content_w, 1.0, 48, P_WH, align=PP_ALIGN.CENTER)
+    # Title — large, centered
+    fs = 48 if len(title) > 40 else (42 if len(title) > 28 else 54)
+    text(slide, title, MX, center_y, SW - MX * 2, 2.0,
+         fs, T.text_primary, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
 
-    fs = 52 if len(title) > 36 else (44 if len(title) > 28 else 58)
-    textbox(slide, title, 0.8, 2.0, content_w - 1.6, 1.9,
-            fs, P_WH, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
+    # Accent rule below title
+    rule_w = min(len(title) * 0.08 + 0.5, 3.5)
+    rule_y = center_y + 1.8
+    hbar(slide, (SW - rule_w) / 2, rule_y, rule_w, 0.045, T.accent_1)
 
-    # Rule bar below title
-    rule_w = min(len(title) * 0.1 + 0.5, 4.2)
-    hline(slide, (content_w - rule_w) / 2, 4.15, rule_w, 0.045, P_AC)
-
+    # Subtitle below rule
     if subtitle:
-        textbox(slide, subtitle, 1.2, 4.42, content_w - 2.4, 1.0,
-                18, P_MU, align=PP_ALIGN.CENTER)
+        text(slide, subtitle, MX + 1, rule_y + 0.3, SW - MX * 2 - 2, 0.8,
+             16, T.text_muted, align=PP_ALIGN.CENTER)
 
 
-def build_kpi_grid(slide, data: dict):
+def build_kpi_grid(slide, data: dict, T: Theme):
     """
-    KPI GRID: Numbers as heroes.
-    Math: card width = (SW - 2·margin - gaps·(n-1)) / n  using golden-ratio margin.
-    Each card's top accent bar height follows Fibonacci: 0.04, 0.055, 0.07, 0.09.
-    Corner decorative ovals behind each card.
+    KPI GRID — Numbers as heroes in cards.
+    
+    Math: card_w = (SW - 2·MX - (n-1)·GAP) / n
+    Fibonacci accent bar heights: h_i = 0.04 · FIB[i+2] / FIB[2]
+    Cards use golden-ratio split for value (top 60%) vs label (bottom 40%)
     """
     title = str(data.get('title', 'Metrics'))
     kpis  = (data.get('items') or [])[:4]
     n     = max(len(kpis), 1)
+    is_dark = T.name in ('sprint', 'quarterly')
 
-    # BG layers
-    solid_rect(slide, 0, 0, SW, SH, P_D1)
-    solid_rect(slide, 0, 0, SW, 2.3, P_D0)           # dark header zone
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary)
+    # Header band
+    header_h = 2.0
+    rect(slide, 0, 0, SW, header_h, T.header_bg)
+    hbar(slide, 0, header_h - 0.04, SW, 0.04, T.accent_1)
 
-    # Corner geometry
-    bg_corner_circles(slide, 'tr')
-    solid_oval(slide, 0, SH, 1.8, 1.8, P_D2)         # bottom-left corner accent
+    # ── LAYER 2: Corner decoration (safe) ──
+    deco_corner_arcs(slide, T, 'medium')
 
-    # Header content
-    eyebrow(slide, 'Performance Metrics', 0.85, 0.58)
-    fs = 38 if len(title) > 28 else 44
-    textbox(slide, title, 0.85, 1.02, SW - 1.7, 1.1,
-            fs, P_WH, bold=True, font='Calibri')
+    # ── LAYER 3: Header text ──
+    eyebrow_label(slide, 'Performance Metrics', MX, 0.45, T.accent_1)
+    fs = 36 if len(title) > 30 else 40
+    text(slide, title, MX, 0.85, SW - MX * 2, 1.0,
+         fs, T.header_text, bold=True, font='Calibri')
 
-    # Cards
-    margin_x = 0.85
-    gap      = 0.22
-    card_w   = (SW - 2 * margin_x - gap * (n - 1)) / n
-    card_y   = 2.55
-    card_h   = SH - card_y - 0.45
-
-    # Fibonacci accent heights for top shimmer bars
-    fib_h = [0.04, 0.055, 0.07, 0.09]
+    # ── LAYER 4: KPI Cards ──
+    card_w = (SW - 2 * MX - GAP * (n - 1)) / n
+    card_y = header_h + 0.35
+    card_h = SH - card_y - 0.45
+    fib_heights = [0.04, 0.055, 0.065, 0.08]
 
     for i, kpi in enumerate(kpis[:n]):
-        cx = margin_x + i * (card_w + gap)
+        cx = MX + i * (card_w + GAP)
+        bg_c = T.bg_card if is_dark else T.bg_card
+        accent_c = T.accent_cycle[i % 4]
 
-        # Card background — two-layer depth
-        solid_rect(slide, cx, card_y, card_w, card_h, P_D2, radius=0.06)
-        solid_rect(slide, cx, card_y, card_w, card_h * 0.45, P_D3, radius=0.06)
+        # Card background
+        rect(slide, cx, card_y, card_w, card_h, bg_c, radius=T.card_border_radius)
 
-        # Top shimmer accent (Fibonacci height, cycling accent color)
-        hline(slide, cx, card_y, card_w, fib_h[i % 4], ACCENT_CYCLE[i % 4])
+        # Top accent bar (Fibonacci-scaled height)
+        hbar(slide, cx, card_y, card_w, fib_heights[i % 4], accent_c)
 
-        # Decorative circle behind number (bottom-right of card)
-        solid_oval(slide, cx + card_w + 0.05, card_y + card_h + 0.05, 0.7, 0.7, P_D4)
+        # Left colored border for light themes
+        if not is_dark:
+            vbar(slide, cx, card_y, 0.05, card_h, accent_c)
 
-        # Value — massive
+        # Value — prominent number
         val_str = str(kpi.get('value', '—'))
-        fs_val  = 44 if len(val_str) > 6 else (50 if len(val_str) > 4 else 58)
-        textbox(slide, val_str, cx + 0.14, card_y + 0.65, card_w - 0.28, 1.25,
-                fs_val, P_WH, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
+        fs_val = 40 if len(val_str) > 6 else (48 if len(val_str) > 4 else 56)
+        value_zone_h = card_h * 0.6
+        text(slide, val_str, cx + 0.15, card_y + 0.8, card_w - 0.3, value_zone_h,
+             fs_val, T.text_primary, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
 
-        # Label
-        textbox(slide, (kpi.get('label') or '').upper(),
-                cx + 0.1, card_y + card_h - 0.62, card_w - 0.2, 0.5,
-                9.5, P_MU, bold=True, align=PP_ALIGN.CENTER)
+        # Label — muted below value
+        label_txt = (kpi.get('label') or '').upper()
+        text(slide, label_txt, cx + 0.12, card_y + card_h - 0.7, card_w - 0.24, 0.5,
+             9.5, T.text_muted, bold=True, align=PP_ALIGN.CENTER)
 
         # Optional icon above value
         if kpi.get('icon'):
-            textbox(slide, kpi['icon'], cx, card_y + 0.18, card_w, 0.5,
-                    20, P_WH, align=PP_ALIGN.CENTER)
+            text(slide, kpi['icon'], cx, card_y + 0.15, card_w, 0.5,
+                 18, T.text_primary, align=PP_ALIGN.CENTER)
 
 
-def build_flowchart(slide, data: dict):
+def build_flowchart(slide, data: dict, T: Theme):
     """
-    FLOWCHART: Connected circle nodes.
-    Math: equal slot widths, node circle radius capped at min(slot_w*0.19, 0.46).
-    First node uses P_AC accent, others shift through depth shades.
-    Bottom background band uses P_D2 (same blue, lighter shade than bg).
+    FLOWCHART — Connected step nodes with description cards.
+    
+    Math: slot_w = usable_w / n, circle_r = min(slot_w * 0.16, 0.42)
+    Connector lines at node center-y, cards below nodes.
+    Step numbering inside nodes, descriptions in cards below.
     """
     title = str(data.get('title', 'Process'))
     steps = (data.get('items') or [])[:6]
     n     = max(len(steps), 1)
+    is_dark = T.name in ('sprint', 'quarterly')
 
-    # BG
-    solid_rect(slide, 0, 0, SW, SH, P_D1)
-    solid_rect(slide, 0, SH * 0.5, SW, SH * 0.5, P_D2)   # bottom-half lighter band
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary)
+    header_h = 1.9
+    rect(slide, 0, 0, SW, header_h, T.header_bg)
+    hbar(slide, 0, header_h - 0.04, SW, 0.04, T.accent_1)
 
-    # Corner geometry
-    solid_oval(slide, -0.9, -0.9, 2.6, 2.6, P_D2)
-    solid_oval(slide, SW + 0.4, SH + 0.4, 2.0, 2.0, P_D3)
+    # ── LAYER 2: Decoration ──
+    deco_corner_arcs(slide, T, 'medium')
 
-    # Title area
-    eyebrow(slide, 'Process Flow', 0.85, 0.52)
-    fs = 38 if len(title) > 28 else 44
-    textbox(slide, title, 0.85, 0.95, SW - 1.7, 1.1,
-            fs, P_WH, bold=True, font='Calibri')
+    # ── LAYER 3: Title ──
+    eyebrow_label(slide, 'Process Flow', MX, 0.42, T.accent_1)
+    fs = 36 if len(title) > 28 else 40
+    text(slide, title, MX, 0.82, SW - MX * 2, 0.9,
+         fs, T.header_text, bold=True, font='Calibri')
 
-    # Step layout
-    area_x = 0.85
-    area_w = SW - 1.7
-    area_y = 2.35
-    area_h = SH - area_y - 0.45
+    # ── LAYER 4: Flow nodes and cards ──
+    area_x = MX
+    area_w = SW - MX * 2
+    area_y = header_h + 0.35
     slot_w = area_w / n
-    circle_r = min(slot_w * 0.19, 0.46)
-    node_y   = area_y + circle_r + 0.1
-
-    node_bg  = [P_AC,  P_D5, P_D4, P_D3, P_D4, P_D5]
-    node_txt = [P_WH,  P_SL, P_MU, P_MU, P_MU, P_MU]
+    circle_r = min(slot_w * 0.16, 0.42)
+    node_cy = area_y + circle_r + 0.15
 
     for i, step in enumerate(steps[:n]):
         cx_center = area_x + slot_w * i + slot_w / 2
 
-        # Connector line before each node (except first)
+        # Connector line (before node, except first)
         if i > 0:
             prev_cx = area_x + slot_w * (i - 1) + slot_w / 2
-            line_x  = prev_cx + circle_r
-            line_w  = (cx_center - circle_r) - line_x
+            line_x = prev_cx + circle_r + 0.05
+            line_w = (cx_center - circle_r - 0.05) - line_x
             if line_w > 0:
-                hline(slide, line_x, node_y - 0.018, line_w, 0.035, P_D5)
+                hbar(slide, line_x, node_cy - 0.015, line_w, 0.03, T.divider)
+                # Arrow head (small triangle approximation)
+                hbar(slide, cx_center - circle_r - 0.15, node_cy - 0.015, 0.12, 0.03, T.accent_1)
 
         # Node circle
-        solid_oval(slide, cx_center, node_y, circle_r, circle_r, node_bg[i])
+        node_color = T.accent_1 if i == 0 else T.accent_cycle[i % 4]
+        oval(slide, cx_center, node_cy, circle_r, circle_r, node_color)
 
-        # Step number
-        num_size = max(int(circle_r * 18), 10)
-        textbox(slide, str(i + 1),
-                cx_center - circle_r, node_y - circle_r, circle_r * 2, circle_r * 2,
-                num_size, node_txt[i], bold=True, align=PP_ALIGN.CENTER)
+        # Step number inside node
+        num_fs = max(int(circle_r * 22), 12)
+        text(slide, str(i + 1),
+             cx_center - circle_r, node_cy - circle_r, circle_r * 2, circle_r * 2,
+             num_fs, RGBColor(255, 255, 255), bold=True, align=PP_ALIGN.CENTER)
 
-        # Step card below node
-        card_x  = area_x + slot_w * i + 0.1
-        card_cw = slot_w - 0.2
-        card_y2 = node_y + circle_r + 0.28
-        card_h2 = (area_y + area_h) - card_y2
-        if card_h2 > 0.3:
-            solid_rect(slide, card_x, card_y2, card_cw, card_h2, P_D3, radius=0.05)
-            if i == 0:
-                hline(slide, card_x, card_y2, card_cw, 0.04, P_AC)
-            title_text = str(step.get('title', ''))
-            textbox(slide, title_text,
-                    card_x + 0.09, card_y2 + 0.14, card_cw - 0.18, card_h2 - 0.2,
-                    11.5, P_WH, align=PP_ALIGN.CENTER, wrap=True)
+        # Description card below node
+        card_x = area_x + slot_w * i + 0.12
+        card_w = slot_w - 0.24
+        card_y = node_cy + circle_r + 0.3
+        card_h = SH - card_y - 0.4
+        if card_h > 0.4:
+            card_bg = T.bg_card if is_dark else T.bg_card
+            rect(slide, card_x, card_y, card_w, card_h, card_bg, radius=0.06)
+            # Colored top border
+            hbar(slide, card_x, card_y, card_w, 0.04, T.accent_cycle[i % 4])
+            # Step title
+            step_title = str(step.get('title', ''))
+            text(slide, step_title, card_x + 0.1, card_y + 0.18, card_w - 0.2, card_h - 0.3,
+                 11, T.text_primary if is_dark else T.text_primary, 
+                 align=PP_ALIGN.CENTER, wrap=True)
 
 
-def build_icon_columns(slide, data: dict):
+def build_icon_columns(slide, data: dict, T: Theme):
     """
-    ICON COLUMNS: 3-panel layout.
-    Math: each column = SW/n. Panels alternate shade: P_D1 ↔ P_D2 (same hue, different depth).
-    Per-column decorative circle in top-left.
-    Bottom accent bar uses golden-ratio width of column.
+    ICON COLUMNS — 2-4 panel layout with icons.
+    
+    Math: col_w = (SW - 2·MX - (n-1)·GAP) / n
+    Bottom accent bars use golden-ratio width: col_w / φ
+    Alternating card backgrounds for depth.
+    
+    NO decorative circles overlap content.
     """
     title = str(data.get('title', 'Highlights'))
-    cols  = (data.get('items') or [])[:3]
+    cols  = (data.get('items') or [])[:4]
     n     = max(len(cols), 1)
+    is_dark = T.name in ('sprint', 'quarterly')
 
-    # BG
-    solid_rect(slide, 0, 0, SW, SH, P_D1)
-    solid_rect(slide, 0, 0, SW, 2.05, P_D0)    # header zone
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary)
+    header_h = 1.85
+    rect(slide, 0, 0, SW, header_h, T.header_bg)
+    hbar(slide, 0, header_h - 0.04, SW, 0.04, T.accent_1)
 
-    bg_corner_circles(slide, 'tr')
+    # ── LAYER 2: Corner decoration ──
+    deco_corner_arcs(slide, T, 'medium')
 
-    # Header
-    eyebrow(slide, 'Highlights', 0.75, 0.55)
-    fs = 36 if len(title) > 28 else 42
-    textbox(slide, title, 0.75, 0.98, SW - 1.5, 0.95,
-            fs, P_WH, bold=True, font='Calibri')
+    # ── LAYER 3: Title ──
+    eyebrow_label(slide, 'Highlights', MX, 0.42, T.accent_1)
+    fs = 34 if len(title) > 30 else 38
+    text(slide, title, MX, 0.82, SW - MX * 2, 0.9,
+         fs, T.header_text, bold=True, font='Calibri')
 
-    # Hairline under header
-    hline(slide, 0.75, 2.1, SW - 1.5, 0.03, P_D4)
+    # ── LAYER 4: Column cards ──
+    col_w = (SW - 2 * MX - GAP * (n - 1)) / n
+    col_y = header_h + 0.35
+    col_h = SH - col_y - 0.4
 
-    col_w  = SW / n
-    col_y  = 2.2
-    col_h2 = SH - col_y
+    for i, col_data in enumerate(cols[:n]):
+        cx = MX + i * (col_w + GAP)
+        accent_c = T.accent_cycle[i % 4]
+        card_bg = T.bg_card if (i % 2 == 0) else T.bg_card_alt
 
-    # Alternating shade palette — same blue family, depth variation
-    bg_shades = [P_D1, P_D2, P_D1, P_D2]
+        # Card background
+        rect(slide, cx, col_y, col_w, col_h, card_bg, radius=T.card_border_radius)
 
-    for i, col in enumerate(cols[:n]):
-        cx = col_w * i
+        # Colored top border
+        hbar(slide, cx, col_y, col_w, 0.05, accent_c)
 
-        # Column bg
-        solid_rect(slide, cx, col_y, col_w, col_h2, bg_shades[i % 2])
+        # Column divider (thin line between cards)
+        if i < n - 1 and not is_dark:
+            vbar(slide, cx + col_w + GAP / 2 - 0.01, col_y + 0.3, 0.01, col_h - 0.6, T.divider)
 
-        # Decorative circle at top-left of column
-        solid_oval(slide, cx - 0.3, col_y - 0.3, 1.2, 1.2, P_D3)
-
-        # Column divider (except last)
-        if i < n - 1:
-            vline(slide, cx + col_w - 0.016, col_y, col_h2, 0.016, P_D4)
-
-        pad = 0.52
+        pad = 0.35
         inner_w = col_w - pad * 2
 
         # Icon
-        if col.get('icon'):
-            textbox(slide, str(col['icon']),
-                    cx + pad, col_y + 0.3, inner_w, 0.7,
-                    30, P_WH, align=PP_ALIGN.CENTER)
+        if col_data.get('icon'):
+            text(slide, str(col_data['icon']), cx + pad, col_y + 0.25, inner_w, 0.6,
+                 26, T.text_primary if is_dark else T.accent_1, align=PP_ALIGN.CENTER)
 
         # Column title
-        textbox(slide, str(col.get('title', '')),
-                cx + pad, col_y + 1.1, inner_w, 0.65,
-                17.5, P_WH, bold=True, font='Calibri')
+        text(slide, str(col_data.get('title', '')), cx + pad, col_y + 0.95, inner_w, 0.6,
+             16, T.text_primary, bold=True, font='Calibri')
 
         # Column body
-        textbox(slide, str(col.get('text', '')),
-                cx + pad, col_y + 1.85, inner_w, col_h2 - 2.2,
-                12.5, P_MU, wrap=True)
+        text(slide, str(col_data.get('text', '')), cx + pad, col_y + 1.65, inner_w, col_h - 2.2,
+             12, T.text_muted, wrap=True)
 
-        # Bottom accent bar: width = col_w / φ  (golden ratio)
+        # Bottom accent bar — golden-ratio width
         bar_w = col_w / PHI
-        hline(slide, cx + pad, SH - 0.32, bar_w, 0.04, ACCENT_CYCLE[i % 4])
+        hbar(slide, cx + pad, col_y + col_h - 0.2, bar_w, 0.04, accent_c)
 
 
-def build_split_panel(slide, data: dict):
+def build_split_panel(slide, data: dict, T: Theme):
     """
-    SPLIT PANEL (default / standard layout).
-    Math: left panel width = SW / φ² ≈ 5.09" (double golden ratio).
-    Left: title zone with left-edge P_AC vertical bar and bottom-right corner circle.
-    Right: clean bullet list with glowing dot indicators.
+    SPLIT PANEL (standard/default layout) — Title on left, content on right.
+    
+    Math: Left panel width = SW / φ² ≈ 5.09" (double golden ratio).
+    Clean vertical divider, accent bar on left edge.
+    Content bullets on right side with ample padding.
     """
     title   = str(data.get('title', 'Section'))
     content = data.get('content') or []
     if isinstance(content, str): content = [content]
+    is_dark = T.name in ('sprint', 'quarterly')
 
-    # Golden ratio double: SW / φ² = SW / 2.618 ≈ 5.09"
-    left_w  = SW / (PHI * PHI)
-    right_w = SW - left_w
+    # Golden ratio split
+    left_w = SW / (PHI * PHI)  # ≈ 5.09"
+    right_x = left_w
 
-    # BG
-    solid_rect(slide, 0,      0, SW,     SH, P_D1)
-    solid_rect(slide, 0,      0, left_w, SH, P_D2)    # left panel
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary)
+    # Left panel
+    left_bg = T.bg_secondary if is_dark else T.header_bg
+    rect(slide, 0, 0, left_w, SH, left_bg)
+    # Left edge accent
+    vbar(slide, 0, 0, 0.06, SH, T.accent_1)
 
-    # Left panel geometry
-    vline(slide, 0, 0, SH, 0.055, P_AC)               # left-edge accent
-    solid_oval(slide, left_w + 0.2, SH + 0.2, 2.2, 2.2, P_D3)  # corner circle
-    solid_oval(slide, -0.5, -0.5, 1.5, 1.5, P_D3)     # top-left corner
+    # ── LAYER 2: Decoration (safe) ──
+    # Small corner arc in bottom-left — fully in corner
+    oval(slide, -0.8, SH + 0.8, 1.2, 1.2, T.bg_card if is_dark else T.accent_1)
 
-    # Right panel geometry
-    solid_oval(slide, SW + 0.4, -0.4, 2.0, 2.0, P_D2) # top-right corner
+    # ── LAYER 3: Panel divider ──
+    vbar(slide, left_w - 0.01, 0.4, 0.02, SH - 0.8, T.divider)
 
-    # Left: eyebrow + title
-    eyebrow(slide, 'Sprint Insights', 0.75, 0.88)
-    fs = 30 if len(title) > 40 else (36 if len(title) > 28 else 42)
-    textbox(slide, title, 0.75, 1.32, left_w - 0.9, 3.5,
-            fs, P_WH, bold=True, wrap=True, font='Calibri')
+    # ── LAYER 4: Left panel content ──
+    eyebrow_label(slide, data.get('eyebrow', 'Sprint Insights'), MX, 0.75, T.accent_1)
+    fs = 28 if len(title) > 45 else (34 if len(title) > 28 else 40)
+    text(slide, title, MX, 1.2, left_w - MX - 0.4, 3.5,
+         fs, T.header_text if is_dark else RGBColor(255, 255, 255),
+         bold=True, wrap=True, font='Calibri')
 
-    # Panel divider
-    vline(slide, left_w, 0.55, SH - 0.55, 0.03, P_D4)
-
-    # Right: bullet list
-    right_x = left_w + 0.72
-    rw      = right_w - 1.0
+    # ── LAYER 5: Right panel content ──
+    right_pad = 0.6
+    rw = SW - right_x - right_pad - MX
 
     if not content:
         content = ['No content provided.']
 
-    txb = slide.shapes.add_textbox(_px(right_x), _px(1.1), _px(rw), _px(SH - 1.6))
-    tf  = txb.text_frame
+    txb = slide.shapes.add_textbox(_i(right_x + right_pad), _i(0.9), _i(rw), _i(SH - 1.4))
+    tf = txb.text_frame
     tf.word_wrap = True
     for i, bullet in enumerate(content):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.text = f'›  {bullet}'
-        p.font.size  = Pt(17)
-        p.font.color.rgb = P_WH
-        p.font.name  = 'Calibri Light'
-        p.space_after = Pt(16)
+        p.font.size = Pt(16)
+        p.font.color.rgb = T.text_primary
+        p.font.name = 'Calibri Light'
+        p.space_after = Pt(14)
 
 
-def build_big_statement(slide, data: dict):
+def build_big_statement(slide, data: dict, T: Theme):
     """
-    BIG STATEMENT: Used for quotes or key executive sentences.
-    Math: oversized quotation-mark decoration at 6× body size.
-    Right accent panel at 1/φ width from right edge.
-    Diagonal accent line at golden-ratio height from bottom.
+    BIG STATEMENT — Quote or key executive statement.
+    
+    Math: Text centered at golden-ratio vertical point.
+    Decorative quotation mark at large size in safe zone.
+    Bottom rule at φ-derived position.
     """
     title   = str(data.get('title', ''))
     content = data.get('content') or []
-    text    = content[0] if content else title
+    statement = content[0] if content else title
+    is_dark = T.name in ('sprint', 'quarterly')
 
-    # BG
-    solid_rect(slide, 0, 0, SW, SH, P_D1)
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary if is_dark else T.header_bg)
 
-    # Right accent panel: width = SW/φ from right
-    panel_x = SW - SW / PHI
-    solid_rect(slide, panel_x, 0, SW / PHI, SH, P_D2)
+    # ── LAYER 2: Accent panel (right side, safe zone) ──
+    panel_w = SW / PHI
+    panel_x = SW - panel_w
+    panel_bg = T.bg_secondary if is_dark else RGBColor(2, 35, 75)
+    rect(slide, panel_x, 0, panel_w, SH, panel_bg)
 
-    # Central decorative ring
-    solid_oval(slide, SW * 0.5, SH * 0.5, 2.8, 2.8, P_D3)
-    solid_oval(slide, SW * 0.5, SH * 0.5, 1.9, 1.9, P_D2)
+    # ── LAYER 3: Bottom accent line ──
+    band_y = SH - SH / PHI  # ≈ 2.87"
+    hbar(slide, 0, band_y, SW * 0.35, 0.04, T.accent_1)
 
-    # Golden-ratio accent line
-    band_y = SH - SH / PHI
-    hline(slide, 0, band_y, SW * 0.42, 0.045, P_AC)
-    hline(slide, 0, band_y + 0.13, SW * 0.28, 0.025, P_D5)
+    # ── LAYER 4: Decorative quotation mark (top-left, safe zone) ──
+    text(slide, '\u201C', 0.5, 0.2, 2.5, 1.8, 72, T.divider, bold=True)
 
-    # Decorative opening quotation mark
-    textbox(slide, '"', 0.55, 0.3, 3, 2.2, 82, P_D4, bold=True)
+    # ── LAYER 5: Statement text (centered, never obstructed) ──
+    fs = 26 if len(str(statement)) > 140 else (30 if len(str(statement)) > 80 else 36)
+    text(slide, str(statement), MX + 0.5, 1.8, SW - MX * 2 - 1, 3.5,
+         fs, T.text_primary if is_dark else RGBColor(255, 255, 255),
+         wrap=True, align=PP_ALIGN.CENTER, font='Calibri Light')
 
-    # Main statement
-    fs = 28 if len(str(text)) > 120 else (33 if len(str(text)) > 80 else 38)
-    textbox(slide, str(text), 1.1, 1.7, SW - 2.2, 3.6,
-            fs, P_WH, wrap=True, align=PP_ALIGN.CENTER, font='Calibri Light')
+    # Caption / attribution
+    if title and title != statement:
+        hbar(slide, (SW - 2.0) / 2, SH - 1.4, 2.0, 0.03, T.accent_1)
+        text(slide, title, 1.5, SH - 1.2, SW - 3.0, 0.6,
+             12, T.text_muted, align=PP_ALIGN.CENTER)
 
-    # Caption / title (if different from text)
-    if title and title != text:
-        hline(slide, (SW - 2.0) / 2, SH - 1.35, 2.0, 0.03, P_AC)
-        textbox(slide, title, 1.5, SH - 1.15, SW - 3.0, 0.7,
-                13, P_MU, align=PP_ALIGN.CENTER)
+
+def build_table_grid(slide, data: dict, T: Theme):
+    """
+    TABLE GRID — Data table with colored header row.
+    Used for team rosters, status tables, comparison data.
+    
+    Math: Column widths divided equally across available space.
+    Row height = (available_h - header_h) / num_rows
+    """
+    title = str(data.get('title', 'Data Overview'))
+    headers = data.get('headers') or []
+    rows = data.get('rows') or []
+    is_dark = T.name in ('sprint', 'quarterly')
+
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary)
+    header_h = 1.6
+    rect(slide, 0, 0, SW, header_h, T.header_bg)
+    hbar(slide, 0, header_h - 0.04, SW, 0.04, T.accent_1)
+
+    # ── LAYER 2: Title ──
+    text(slide, title, MX, 0.35, SW - MX * 2, 1.0,
+         36, T.header_text, bold=True, font='Calibri')
+
+    # ── LAYER 3: Table ──
+    table_x = MX
+    table_y = header_h + 0.3
+    table_w = SW - MX * 2
+    n_cols = max(len(headers), 1)
+    n_rows = min(len(rows), 8)
+    col_w = table_w / n_cols
+    row_h = min(0.55, (SH - table_y - 0.4) / max(n_rows + 1, 1))
+
+    # Header row
+    for j, hdr in enumerate(headers[:n_cols]):
+        hx = table_x + j * col_w
+        rect(slide, hx, table_y, col_w, row_h, T.accent_1)
+        text(slide, str(hdr), hx + 0.1, table_y + 0.05, col_w - 0.2, row_h - 0.1,
+             11, RGBColor(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, font='Calibri')
+
+    # Data rows
+    for i, row in enumerate(rows[:n_rows]):
+        ry = table_y + row_h * (i + 1)
+        row_bg = T.bg_card if (i % 2 == 0) else T.bg_card_alt
+        for j, cell in enumerate(row[:n_cols]):
+            cx_pos = table_x + j * col_w
+            rect(slide, cx_pos, ry, col_w, row_h, row_bg)
+            text(slide, str(cell), cx_pos + 0.1, ry + 0.05, col_w - 0.2, row_h - 0.1,
+                 10, T.text_primary, align=PP_ALIGN.CENTER)
+
+
+def build_progress_cards(slide, data: dict, T: Theme):
+    """
+    PROGRESS CARDS — Ascension-style colored border cards with progress indicators.
+    
+    Each card has a colored left border, title, key focus items, and results.
+    Math: Cards arranged in golden-ratio proportioned grid.
+    3 cards across: each width = (SW - 2·MX - 2·GAP) / 3
+    """
+    title = str(data.get('title', 'Objectives'))
+    cards = (data.get('items') or [])[:3]
+    n = max(len(cards), 1)
+    is_dark = T.name in ('sprint', 'quarterly')
+
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary)
+
+    # ── LAYER 2: Title area ──
+    text(slide, title, MX, 0.35, SW - MX * 2, 0.9,
+         38, T.text_primary, bold=True, font='Calibri')
+    hbar(slide, MX, 1.25, SW - MX * 2, 0.03, T.divider)
+
+    # ── LAYER 3: Cards ──
+    card_w = (SW - 2 * MX - GAP * (n - 1)) / n
+    card_y = 1.55
+    card_h = SH - card_y - 0.4
+
+    for i, card_data in enumerate(cards[:n]):
+        cx = MX + i * (card_w + GAP)
+        accent_c = T.accent_cycle[i % 4]
+
+        # Card background
+        card_bg = T.bg_card if is_dark else RGBColor(255, 255, 255)
+        rect(slide, cx, card_y, card_w, card_h, card_bg, radius=0.08)
+
+        # Colored top bar
+        hbar(slide, cx, card_y, card_w, 0.06, accent_c)
+
+        # Left accent bar
+        vbar(slide, cx, card_y, 0.055, card_h, accent_c)
+
+        pad = 0.35
+        inner_w = card_w - pad * 2
+
+        # Card title
+        text(slide, str(card_data.get('title', '')), cx + pad, card_y + 0.25, inner_w, 0.6,
+             15, T.text_primary, bold=True, font='Calibri')
+
+        # Card body text
+        body_text = str(card_data.get('text', ''))
+        text(slide, body_text, cx + pad, card_y + 0.85, inner_w, card_h - 1.2,
+             11, T.text_muted, wrap=True)
+
+        # Progress indicator (if present)
+        progress = card_data.get('progress')
+        if progress:
+            bar_y = card_y + card_h - 0.55
+            # Background bar
+            hbar(slide, cx + pad, bar_y, inner_w, 0.12, T.divider)
+            # Fill bar
+            fill_w = inner_w * min(float(progress) / 100, 1.0)
+            hbar(slide, cx + pad, bar_y, fill_w, 0.12, accent_c)
+            text(slide, f"{progress}%", cx + pad, bar_y - 0.25, inner_w, 0.25,
+                 9, T.text_muted, align=PP_ALIGN.RIGHT)
+
+
+def build_timeline(slide, data: dict, T: Theme):
+    """
+    TIMELINE — Horizontal timeline with milestone markers.
+    
+    Math: Milestone positions are evenly distributed along a horizontal axis.
+    The timeline axis sits at vertical golden-ratio point.
+    Node radius follows Fibonacci scaling.
+    """
+    title = str(data.get('title', 'Roadmap'))
+    milestones = (data.get('items') or [])[:5]
+    n = max(len(milestones), 1)
+    is_dark = T.name in ('sprint', 'quarterly')
+
+    # ── LAYER 1: Background ──
+    rect(slide, 0, 0, SW, SH, T.bg_primary)
+    header_h = 1.8
+    rect(slide, 0, 0, SW, header_h, T.header_bg)
+    hbar(slide, 0, header_h - 0.04, SW, 0.04, T.accent_1)
+
+    # ── LAYER 2: Title ──
+    eyebrow_label(slide, 'Strategic Roadmap', MX, 0.4, T.accent_1)
+    text(slide, title, MX, 0.78, SW - MX * 2, 0.85,
+         36, T.header_text, bold=True, font='Calibri')
+
+    # ── LAYER 3: Timeline axis ──
+    axis_y = 3.4
+    axis_x = MX + 0.5
+    axis_w = SW - MX * 2 - 1.0
+    hbar(slide, axis_x, axis_y, axis_w, 0.04, T.divider)
+
+    # ── LAYER 4: Milestone nodes ──
+    slot_w = axis_w / n
+    node_r = min(slot_w * 0.1, 0.22)
+
+    for i, ms in enumerate(milestones[:n]):
+        mx_pos = axis_x + slot_w * i + slot_w / 2
+        accent_c = T.accent_cycle[i % 4]
+
+        # Node circle on axis
+        oval(slide, mx_pos, axis_y + 0.02, node_r, node_r, accent_c)
+
+        # Phase label ABOVE axis
+        phase_label = ms.get('phase', f'Phase {i+1}')
+        text(slide, str(phase_label), mx_pos - slot_w / 2 + 0.1, axis_y - 0.9,
+             slot_w - 0.2, 0.5, 10, accent_c, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
+
+        # Description card BELOW axis
+        card_x = mx_pos - slot_w / 2 + 0.12
+        card_w = slot_w - 0.24
+        card_y_pos = axis_y + 0.5
+        card_h = SH - card_y_pos - 0.4
+
+        if card_h > 0.5:
+            card_bg = T.bg_card if is_dark else T.bg_card
+            rect(slide, card_x, card_y_pos, card_w, card_h, card_bg, radius=0.06)
+            hbar(slide, card_x, card_y_pos, card_w, 0.04, accent_c)
+
+            ms_title = str(ms.get('title', ''))
+            text(slide, ms_title, card_x + 0.1, card_y_pos + 0.15, card_w - 0.2, card_h - 0.3,
+                 10.5, T.text_primary, wrap=True, align=PP_ALIGN.CENTER)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main generator
+# Layout dispatch map
 # ─────────────────────────────────────────────────────────────────────────────
 
 LAYOUT_MAP = {
-    'hero':          build_hero,
-    'kpi_grid':      build_kpi_grid,
-    'flowchart':     build_flowchart,
-    'icon_columns':  build_icon_columns,
-    'standard':      build_split_panel,
-    'split_panel':   build_split_panel,
-    'big_statement': build_big_statement,
-    'quote':         build_big_statement,
+    'hero':           build_hero,
+    'kpi_grid':       build_kpi_grid,
+    'flowchart':      build_flowchart,
+    'icon_columns':   build_icon_columns,
+    'standard':       build_split_panel,
+    'split_panel':    build_split_panel,
+    'big_statement':  build_big_statement,
+    'quote':          build_big_statement,
+    'table':          build_table_grid,
+    'progress_cards': build_progress_cards,
+    'timeline':       build_timeline,
 }
 
-def generate_native_editable_pptx(slides_data: list) -> io.BytesIO:
-    """Generate a professionally designed .pptx from slide data."""
+
+def generate_native_editable_pptx(slides_data: list, theme_name: str = 'sprint') -> io.BytesIO:
+    """
+    Generate a professionally designed .pptx from slide data.
+    
+    Args:
+        slides_data: List of slide dicts with 'layout', 'title', etc.
+        theme_name: One of 'sprint', 'weekly', 'monthly', 'quarterly'
+    """
+    T = THEMES.get(theme_name, THEME_SPRINT)
+    
     prs = Presentation()
     prs.slide_width  = Inches(SW)
     prs.slide_height = Inches(SH)
     blank_layout = prs.slide_layouts[6]
 
     for idx, slide_data in enumerate(slides_data):
-        slide      = prs.slides.add_slide(blank_layout)
+        slide = prs.slides.add_slide(blank_layout)
         layout_key = str(slide_data.get('layout', 'standard')).lower()
-        builder    = LAYOUT_MAP.get(layout_key, build_split_panel)
+        builder = LAYOUT_MAP.get(layout_key, build_split_panel)
         try:
-            builder(slide, slide_data)
+            builder(slide, slide_data, T)
         except Exception as e:
             print(f"⚠️  Slide {idx+1} build error ({layout_key}): {e}", flush=True)
+            traceback.print_exc()
             # Graceful fallback
-            solid_rect(slide, 0, 0, SW, SH, P_D1)
-            textbox(slide, str(slide_data.get('title', 'Slide')),
-                    0.8, 2.8, SW - 1.6, 2.0, 40, P_WH, bold=True,
-                    align=PP_ALIGN.CENTER)
+            rect(slide, 0, 0, SW, SH, T.bg_primary)
+            text(slide, str(slide_data.get('title', 'Slide')),
+                 MX, 2.8, SW - MX * 2, 2.0, 38, T.text_primary, bold=True,
+                 align=PP_ALIGN.CENTER)
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -926,10 +1237,10 @@ def generate_super_deck(project_key: str, sprint_id: str = None, creds: dict = D
     backlog_res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND sprint is EMPTY', "maxResults": 4, "fields": ["summary"]})
     backlog = [i.get('fields', {}).get('summary') for i in backlog_res.json().get('issues', [])] if backlog_res is not None and backlog_res.status_code == 200 else ["Backlog Refinement", "Planning"]
     context = {"project": project_key, "current_date": datetime.now().strftime("%B %d, %Y"), "total_points": total_pts, "completed_points": done_pts, "blockers": blockers[:3], "retro": retro_data, "accomplishments": done_summaries[:4], "backlog_preview": backlog}
-    prompt = f"Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}. CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS. WRITE FULL PROFESSIONAL SENTENCES FROM THE REAL DATA. Return EXACTLY a JSON array: [ {{ 'id': 1, 'layout': 'hero', 'title': 'Sprint Review', 'subtitle': '{context['current_date']}', 'icon': '🚀' }}, {{ 'id': 2, 'layout': 'standard', 'title': 'Executive Summary', 'content': ['Real sentence 1', 'Real sentence 2'] }}, {{ 'id': 3, 'layout': 'kpi_grid', 'title': 'Sprint Metrics', 'items': [{{'label': 'Velocity Delivered', 'value': '{done_pts}', 'icon': '📈'}}, {{'label': 'Total Points', 'value': '{total_pts}', 'icon': '🎯'}}] }}, {{ 'id': 4, 'layout': 'icon_columns', 'title': 'Risks & Blockers', 'items': [{{'title': 'Blocker', 'text': 'Real blocker from data', 'icon': '🛑'}}] }}, {{ 'id': 5, 'layout': 'standard', 'title': 'Continuous Improvement', 'content': ['Real retro insights'] }}, {{ 'id': 6, 'layout': 'flowchart', 'title': 'Next Sprint Plan', 'items': [{{'title': 'Backlog item 1'}}, {{'title': 'Item 2'}}] }} ]"
+    prompt = f"Act as a McKinsey Agile Consultant. Build a 6-Slide Sprint Report based on this exact data: {json.dumps(context)}. CRITICAL INSTRUCTION: DO NOT USE PLACEHOLDERS. WRITE FULL PROFESSIONAL SENTENCES FROM THE REAL DATA. Return EXACTLY a JSON array: [ {{ \"id\": 1, \"layout\": \"hero\", \"title\": \"Sprint Review\", \"subtitle\": \"{context['current_date']}\", \"icon\": \"\" }}, {{ \"id\": 2, \"layout\": \"standard\", \"title\": \"Executive Summary\", \"content\": [\"Real sentence 1\", \"Real sentence 2\"] }}, {{ \"id\": 3, \"layout\": \"kpi_grid\", \"title\": \"Sprint Metrics\", \"items\": [{{\"label\": \"Velocity Delivered\", \"value\": \"{done_pts}\", \"icon\": \"\"}}, {{\"label\": \"Total Points\", \"value\": \"{total_pts}\", \"icon\": \"\"}}] }}, {{ \"id\": 4, \"layout\": \"icon_columns\", \"title\": \"Risks & Blockers\", \"items\": [{{\"title\": \"Blocker\", \"text\": \"Real blocker from data\", \"icon\": \"\"}}] }}, {{ \"id\": 5, \"layout\": \"standard\", \"title\": \"Continuous Improvement\", \"content\": [\"Real retro insights\"] }}, {{ \"id\": 6, \"layout\": \"flowchart\", \"title\": \"Next Sprint Plan\", \"items\": [{{\"title\": \"Backlog item 1\"}}, {{\"title\": \"Item 2\"}}] }} ]"
     try:
         raw = generate_ai_response(prompt, temperature=0.5, force_openai=True).replace('```json','').replace('```','').strip()
-        return {"status": "success", "slides": json.loads(raw)}
+        return {"status": "success", "slides": json.loads(raw), "theme": "sprint"}
     except Exception as e:
         print(f"❌ Deck Parse Error: {e}", flush=True)
         return {"status": "error", "message": "Failed to orchestrate slides."}
@@ -940,7 +1251,7 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
     days = 7 if timeframe == "weekly" else (30 if timeframe == "monthly" else 90)
     dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     safe_fields = ["summary", "status", "assignee", "priority", "customfield_10016", "customfield_10026", "customfield_10028", "customfield_10004", sp_field]
-    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND updated >= "{dt}" ORDER BY updated DESC', "maxResults": 40, "fields": safe_fields})
+    res = jira_request("POST", "search/jql", creds, {"jql": f'project="{project_key}" AND updated >= \"{dt}\" ORDER BY updated DESC', "maxResults": 40, "fields": safe_fields})
     issues = res.json().get('issues', []) if res is not None and res.status_code == 200 else []
     done_count = 0; done_pts = 0.0; accomplishments = []; blockers = []
     for i in issues:
@@ -948,15 +1259,22 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
         if (f.get('status') or {}).get('statusCategory', {}).get('key') == 'done': done_count += 1; done_pts += pts; accomplishments.append(f.get('summary', ''))
         if (f.get('priority') or {}).get('name') in ["High", "Highest", "Critical"]: blockers.append(f.get('summary', ''))
     context = {"project": project_key, "timeframe": timeframe.capitalize(), "current_date": datetime.now().strftime("%B %d, %Y"), "completed_issues": done_count, "completed_velocity": done_pts, "accomplishments": accomplishments[:5], "blockers": blockers[:3]}
+    
+    # Theme-specific slide structures for each timeframe
     agendas = {
-        "weekly": f"""[ {{ "layout": "hero", "title": "Weekly Review", "subtitle": "{context['current_date']}", "icon": "📅" }}, {{ "layout": "kpi_grid", "title": "Key Metrics", "items": [{{"label": "Issues Closed", "value": "{done_count}", "icon": "✅"}}, {{"label": "Pts Delivered", "value": "{done_pts}", "icon": "📈"}}] }}, {{ "layout": "standard", "title": "Accomplishments", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "icon_columns", "title": "Risks & Blockers", "items": [{{"title": "Blocker", "text": "Real description", "icon": "🛑"}}] }}, {{ "layout": "flowchart", "title": "Next Steps", "items": [{{"title": "Review Backlog"}}, {{"title": "Sprint Planning"}}] }} ]""",
-        "monthly": f"""[ {{ "layout": "hero", "title": "Monthly Review", "subtitle": "{context['current_date']}", "icon": "📅" }}, {{ "layout": "standard", "title": "Executive Summary", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "kpi_grid", "title": "KPIs", "items": [{{"label": "Velocity", "value": "{done_pts}", "icon": "📈"}}] }}, {{ "layout": "icon_columns", "title": "Operational Wins", "items": [{{"title": "Win 1", "text": "Details", "icon": "⭐"}}] }}, {{ "layout": "standard", "title": "Risks & Mitigation", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "flowchart", "title": "Strategic Initiatives", "items": [{{"title": "Goal 1"}}] }} ]""",
-        "quarterly": f"""[ {{ "layout": "hero", "title": "Quarterly Review", "subtitle": "{context['current_date']}", "icon": "📅" }}, {{ "layout": "standard", "title": "Quarterly Reflection", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "icon_columns", "title": "Business Impact", "items": [{{"title": "Impact 1", "text": "Details", "icon": "💡"}}] }}, {{ "layout": "kpi_grid", "title": "Quarterly Metrics", "items": [{{"label": "Total Velocity", "value": "{done_pts}", "icon": "📈"}}] }}, {{ "layout": "flowchart", "title": "Future Roadmap", "items": [{{"title": "Milestone 1"}}] }} ]"""
+        "weekly": f"""[ {{ "layout": "hero", "title": "Weekly Status Report", "subtitle": "{context['current_date']}" }}, {{ "layout": "kpi_grid", "title": "Weekly Metrics", "items": [{{"label": "Issues Closed", "value": "{done_count}"}}, {{"label": "Points Delivered", "value": "{done_pts}"}}] }}, {{ "layout": "standard", "title": "Key Accomplishments", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "icon_columns", "title": "Risks & Action Items", "items": [{{"title": "Risk", "text": "Real description"}}] }}, {{ "layout": "flowchart", "title": "Next Week Priorities", "items": [{{"title": "Priority 1"}}, {{"title": "Priority 2"}}] }} ]""",
+        "monthly": f"""[ {{ "layout": "hero", "title": "Monthly Business Review", "subtitle": "{context['current_date']}" }}, {{ "layout": "standard", "title": "Executive Summary", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "kpi_grid", "title": "Key Performance Indicators", "items": [{{"label": "Velocity", "value": "{done_pts}"}}, {{"label": "Completion Rate", "value": "{done_count}"}}] }}, {{ "layout": "icon_columns", "title": "Strategic Wins", "items": [{{"title": "Win 1", "text": "Details"}}] }}, {{ "layout": "standard", "title": "Risks & Mitigation", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "flowchart", "title": "Next Month Initiatives", "items": [{{"title": "Goal 1"}}] }} ]""",
+        "quarterly": f"""[ {{ "layout": "hero", "title": "Quarterly Business Review", "subtitle": "{context['current_date']}" }}, {{ "layout": "standard", "title": "Quarter in Review", "content": ["Real bullet 1", "Real bullet 2"] }}, {{ "layout": "icon_columns", "title": "Business Impact", "items": [{{"title": "Impact 1", "text": "Details"}}] }}, {{ "layout": "kpi_grid", "title": "Quarterly Metrics", "items": [{{"label": "Total Velocity", "value": "{done_pts}"}}, {{"label": "Issues Resolved", "value": "{done_count}"}}] }}, {{ "layout": "flowchart", "title": "Strategic Roadmap", "items": [{{"title": "Milestone 1"}}] }} ]"""
     }
-    prompt = f"Act as an Elite Enterprise Designer. Create a {timeframe.capitalize()} Business Review Deck for project {project_key} based ONLY on this data: {json.dumps(context)}. CRITICAL: WRITE REAL TEXT. DO NOT OUTPUT PLACEHOLDERS. Return EXACTLY a JSON array: {agendas.get(timeframe, agendas['weekly'])}"
+    
+    # Map timeframe to theme
+    theme_map = {"weekly": "weekly", "monthly": "monthly", "quarterly": "quarterly"}
+    theme_name = theme_map.get(timeframe, "sprint")
+    
+    prompt = f"Act as an Elite Enterprise Designer. Create a {timeframe.capitalize()} Business Review Deck for project {project_key} based ONLY on this data: {json.dumps(context)}. CRITICAL: WRITE REAL TEXT FROM THE DATA. DO NOT OUTPUT PLACEHOLDERS. Return EXACTLY a JSON array: {agendas.get(timeframe, agendas['weekly'])}"
     try:
         raw = generate_ai_response(prompt, temperature=0.5, force_openai=True).replace('```json','').replace('```','').strip()
-        return {"status": "success", "slides": json.loads(raw)}
+        return {"status": "success", "slides": json.loads(raw), "theme": theme_name}
     except Exception as e:
         print(f"❌ Deck Parse Error: {e}", flush=True)
         return {"status": "error", "message": f"Failed to orchestrate {timeframe} slides."}
@@ -964,7 +1282,8 @@ def generate_report_deck(project_key: str, timeframe: str, creds: dict = Depends
 @app.post("/generate_ppt")
 async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     slides_data = payload.get("slides", [])
-    ppt_buffer  = generate_native_editable_pptx(slides_data)
+    theme_name  = payload.get("theme", "sprint")
+    ppt_buffer  = generate_native_editable_pptx(slides_data, theme_name)
     return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project","Project")}_Premium_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 @app.get("/roadmap/{project_key}")
@@ -1161,9 +1480,9 @@ def add_guest_retro(token: str, payload: dict, db: Session = Depends(get_db)):
     if link.sprint_id not in db_data:
         db_data[link.sprint_id] = {"well": [], "improve": [], "kudos": [], "actions": []}
     col = payload.get("column")
-    text = payload.get("text")
-    if col in ['well', 'improve', 'kudos'] and text:
-        db_data[link.sprint_id][col].append({"id": int(time.time()*1000), "text": text})
+    text_val = payload.get("text")
+    if col in ['well', 'improve', 'kudos'] and text_val:
+        db_data[link.sprint_id][col].append({"id": int(time.time()*1000), "text": text_val})
         jira_request("PUT", f"project/{link.project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "success", "board": db_data[link.sprint_id]}
 
