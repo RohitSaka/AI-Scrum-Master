@@ -696,22 +696,25 @@ Return STRICT JSON: {{"subject": "Clear subject line", "body": "Professional ema
 
 @app.post("/team/send_email")
 def send_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """Send email directly via SMTP from within the application."""
+    """Send email directly via SMTP. Credentials come from server environment variables — customers never see them."""
     import smtplib
     from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
     
-    smtp_host = payload.get("smtp_host", "smtp.gmail.com")
-    smtp_port = int(payload.get("smtp_port", 587))
-    smtp_email = payload.get("smtp_email", "")
-    smtp_password = payload.get("smtp_password", "")
-    sender_name = payload.get("sender_name", smtp_email)
+    # SMTP credentials from environment (admin-configured, not customer-facing)
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_email = os.getenv("SMTP_EMAIL", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    sender_name = os.getenv("SMTP_SENDER_NAME", "IG Agile Scrum")
+    
     recipients = payload.get("recipients", [])
     subject = payload.get("subject", "")
     body = payload.get("body", "")
+    project = payload.get("project", "")
     
     if not smtp_email or not smtp_password:
-        return {"status": "error", "message": "SMTP credentials not configured. Please set up your email and app password."}
+        return {"status": "error", "message": "Email service not configured. Please ask your administrator to set SMTP_EMAIL and SMTP_PASSWORD environment variables."}
     if not recipients:
         return {"status": "error", "message": "No recipients specified."}
     if not subject and not body:
@@ -719,9 +722,10 @@ def send_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
     
     try:
         msg = MIMEMultipart('alternative')
-        msg['From'] = f"{sender_name} <{smtp_email}>" if sender_name and sender_name != smtp_email else smtp_email
+        msg['From'] = f"{sender_name} <{smtp_email}>"
         msg['To'] = ', '.join(recipients)
         msg['Subject'] = subject
+        msg['Reply-To'] = smtp_email
         
         # Plain text version
         msg.attach(MIMEText(body, 'plain'))
@@ -753,13 +757,13 @@ def send_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
     
     except smtplib.SMTPAuthenticationError as e:
         print(f"[EMAIL] ❌ Auth failed: {e}", flush=True)
-        return {"status": "error", "message": "Authentication failed. Check your email and app password. For Gmail, use an App Password (not your regular password)."}
+        return {"status": "error", "message": "Email authentication failed. Please contact your administrator to verify SMTP credentials."}
     except smtplib.SMTPRecipientsRefused as e:
         print(f"[EMAIL] ❌ Recipients refused: {e}", flush=True)
-        return {"status": "error", "message": "One or more recipient addresses were rejected by the server."}
+        return {"status": "error", "message": "One or more recipient addresses were rejected by the mail server."}
     except smtplib.SMTPException as e:
         print(f"[EMAIL] ❌ SMTP Error: {e}", flush=True)
-        return {"status": "error", "message": f"SMTP Error: {str(e)}"}
+        return {"status": "error", "message": f"Mail server error: {str(e)}"}
     except Exception as e:
         print(f"[EMAIL] ❌ General Error: {e}", flush=True)
         return {"status": "error", "message": f"Failed to send: {str(e)}"}
