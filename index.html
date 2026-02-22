@@ -1010,6 +1010,7 @@
            ═══════════════════════════════════════ */
         function SmartDeckView({ project, endpoint, isFullScreenLayout, onClose }) {
             const [slides, setSlides] = useState([]);
+            const [deckTheme, setDeckTheme] = useState('sprint');
             const [loading, setLoading] = useState(true);
             const [activeIdx, setActiveIdx] = useState(0);
             const [isExporting, setIsExporting] = useState(false);
@@ -1021,7 +1022,7 @@
             useEffect(() => {
                 setLoading(true); setAiError(null); setActiveIdx(0);
                 secureFetch(endpoint).then(r => r?.json()).then(data => {
-                    if (data && data.status === 'success' && data.slides) { setSlides(data.slides); }
+                    if (data && data.status === 'success' && data.slides) { setSlides(data.slides); setDeckTheme(data.theme || 'sprint'); }
                     else { setAiError(data?.message || "Failed to generate deck data."); }
                     setLoading(false);
                 }).catch(() => { setAiError("Network connection to AI failed."); setLoading(false); });
@@ -1049,10 +1050,10 @@
             const handleExportPPTX = async () => {
                 setIsExporting(true);
                 try {
-                    const res = await secureFetch('/generate_ppt', { method: 'POST', body: JSON.stringify({ project: project, slides: slides }) });
+                    const res = await secureFetch('/generate_ppt', { method: 'POST', body: JSON.stringify({ project: project, slides: slides, theme: deckTheme }) });
                     if (res && res.ok) {
                         const blob = await res.blob(); const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a'); a.href = url; a.download = `${project}_Premium_Deck.pptx`;
+                        const a = document.createElement('a'); a.href = url; a.download = `${project}_${deckTheme.charAt(0).toUpperCase() + deckTheme.slice(1)}_Deck.pptx`;
                         document.body.appendChild(a); a.click(); a.remove();
                     } else { alert("Failed to compile native Presentation."); }
                 } catch (e) { console.error(e); }
@@ -1095,7 +1096,7 @@
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: 'var(--primary-dim)', border: '1px solid var(--slide-border)', borderRadius: '100px', padding: '4px 12px' }}>
                                 <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--slide-accent)', boxShadow: '0 0 8px var(--slide-glow)', flexShrink: 0 }} />
-                                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--slide-accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>AI Sprint Deck</span>
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--slide-accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{{'sprint': 'AI Sprint Deck', 'weekly': 'Weekly Report', 'monthly': 'Monthly Review', 'quarterly': 'Quarterly QBR'}[deckTheme] || 'AI Deck'}</span>
                             </div>
                             <span style={{ fontSize: '12px', color: 'var(--slide-text-dim)', fontWeight: 500 }}>
                                 <span style={{ color: 'var(--slide-text)', fontWeight: 700 }}>{activeIdx + 1}</span> / {slides.length}
