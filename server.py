@@ -27,8 +27,8 @@ app.add_middleware(
 )
 
 print("\n" + "="*60)
-print("\U0001f680 APP STARTING: V47 \u2014 PPTX ENGINE v5")
-print("   4 DISTINCT Themes | Genspark Quality | Revenue-Grade")
+print("\U0001f680 APP STARTING: V48 \u2014 PPTX ENGINE v5 + Roles & Team")
+print("   4 DISTINCT Themes | Roles Tab | Email Compose | Artifacts Tab")
 print("   Sprint=DarkTeal | Weekly=LightCorp | Monthly=Executive | Quarterly=PremiumDark")
 print("="*60 + "\n")
 
@@ -274,7 +274,7 @@ def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data
 @app.get("/")
 def home():
     if os.path.exists("index.html"): return FileResponse("index.html")
-    return {"status": "Backend running — V47 PPTX Engine v5 (4 Distinct Themes)"}
+    return {"status": "Backend running — V48 PPTX Engine v5 + Roles & Team"}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -550,38 +550,6 @@ def get_report(project_key: str, timeframe: str, creds: dict = Depends(get_jira_
         ai_dossier = {"ai_verdict": "Error analyzing data.", "sprint_vibe": "Error", "key_accomplishments": [], "hidden_friction": "", "top_contributor": ""}
     return {"completed_count": done_count, "completed_points": done_pts, "total_active_in_period": len(context_data), "dossier": ai_dossier}
 
-# --- LIVE TYPING INDICATOR STATE ---
-TYPING_STATE = {} # Format: { "project_sprint": { "GuestName": timestamp } }
-
-@app.post("/retro/typing")
-def update_typing_status(payload: dict):
-    key = f"{payload.get('project')}_{payload.get('sprint')}"
-    name = payload.get("name", "Anonymous").strip() or "Anonymous"
-    
-    if key not in TYPING_STATE:
-        TYPING_STATE[key] = {}
-        
-    if payload.get("is_typing"):
-        TYPING_STATE[key][name] = time.time()
-    else:
-        TYPING_STATE[key].pop(name, None)
-    return {"status": "ok"}
-
-@app.get("/retro/typing/{project}/{sprint}")
-def get_typing_status(project: str, sprint: str):
-    key = f"{project}_{sprint}"
-    active_typers = []
-    
-    if key in TYPING_STATE:
-        now = time.time()
-        for name, ts in list(TYPING_STATE[key].items()):
-            if now - ts < 3.0:
-                active_typers.append(name)
-            else:
-                del TYPING_STATE[key][name]
-                
-    return {"typing": active_typers}
-
 @app.get("/retro/{project_key}")
 def get_retro(project_key: str, sprint_id: str, creds: dict = Depends(get_jira_creds)):
     res = jira_request("GET", f"project/{project_key}/properties/ig_agile_retro", creds)
@@ -647,6 +615,84 @@ def add_guest_retro(token: str, payload: dict, db: Session = Depends(get_db)):
         db_data[link.sprint_id][col].append({"id": int(time.time()*1000), "text": text_val})
         jira_request("PUT", f"project/{link.project_key}/properties/ig_agile_retro", creds, db_data)
     return {"status": "success", "board": db_data[link.sprint_id]}
+
+# ================= TEAM & ROLES MANAGEMENT =================
+
+@app.get("/team/{project_key}")
+def get_team(project_key: str, creds: dict = Depends(get_jira_creds)):
+    """Get saved team roles from Jira project properties."""
+    res = jira_request("GET", f"project/{project_key}/properties/ig_agile_team", creds)
+    team_data = res.json().get('value', {}) if res is not None and res.status_code == 200 else {}
+    team = team_data.get('members', [])
+    
+    # Also get assignable users for quick-add
+    jira_users = []
+    try:
+        user_res = jira_request("GET", f"user/assignable/search?project={project_key}&maxResults=50", creds)
+        if user_res is not None and user_res.status_code == 200:
+            for u in user_res.json():
+                if u.get('displayName') and u.get('accountType') == 'atlassian':
+                    jira_users.append({
+                        "displayName": u.get('displayName', ''),
+                        "accountId": u.get('accountId', ''),
+                        "email": u.get('emailAddress', ''),
+                        "avatar": u.get('avatarUrls', {}).get('48x48', '')
+                    })
+    except Exception as e:
+        print(f"Error fetching Jira users: {e}", flush=True)
+    
+    return {"team": team, "jira_users": jira_users}
+
+@app.get("/team/{project_key}/fetch_jira")
+def fetch_jira_team(project_key: str, creds: dict = Depends(get_jira_creds)):
+    """Fetch assignable users from Jira for team building."""
+    jira_users = []
+    try:
+        user_res = jira_request("GET", f"user/assignable/search?project={project_key}&maxResults=50", creds)
+        if user_res is not None and user_res.status_code == 200:
+            for u in user_res.json():
+                if u.get('displayName') and u.get('accountType') == 'atlassian':
+                    jira_users.append({
+                        "displayName": u.get('displayName', ''),
+                        "accountId": u.get('accountId', ''),
+                        "email": u.get('emailAddress', ''),
+                        "avatar": u.get('avatarUrls', {}).get('48x48', '')
+                    })
+    except Exception as e:
+        print(f"Error fetching Jira users: {e}", flush=True)
+    
+    return {"jira_users": jira_users}
+
+@app.post("/team/{project_key}/save")
+def save_team(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Save team roles to Jira project properties for persistence."""
+    team_members = payload.get("team", [])
+    team_data = {"members": team_members, "updated_at": datetime.utcnow().isoformat()}
+    
+    jira_request("PUT", f"project/{project_key.upper()}/properties/ig_agile_team", creds, team_data)
+    return {"status": "saved", "count": len(team_members)}
+
+@app.post("/team/generate_email")
+def generate_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
+    """AI-generate a professional email draft for team communication."""
+    project = payload.get("project", "")
+    recipients = payload.get("recipients", "")
+    context = payload.get("context", "")
+    
+    prompt = f"""You are a professional Scrum Master composing a concise email. 
+Project: {project}. Recipients: {recipients}. Context: {context}.
+Write a professional, friendly sprint update email. Keep it concise (under 200 words).
+Return STRICT JSON: {{"subject": "Clear subject line", "body": "Professional email body with greeting and sign-off"}}"""
+    
+    try:
+        raw = generate_ai_response(prompt, temperature=0.5, force_openai=True)
+        if raw:
+            parsed = json.loads(raw.replace('```json','').replace('```','').strip())
+            return {"subject": parsed.get("subject", ""), "body": parsed.get("body", "")}
+    except Exception as e:
+        print(f"Email generation error: {e}", flush=True)
+    
+    return {"subject": f"Sprint Update — {project}", "body": f"Hi Team,\n\nHere is a brief update on project {project}.\n\n[Add your update here]\n\nBest regards"}
 
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:

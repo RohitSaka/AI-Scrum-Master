@@ -307,7 +307,13 @@
                 Hash: <><line x1="4" y1="9" x2="20" y2="9"></line><line x1="4" y1="15" x2="20" y2="15"></line><line x1="10" y1="3" x2="8" y2="21"></line><line x1="16" y1="3" x2="14" y2="21"></line></>,
                 Crosshair: <><circle cx="12" cy="12" r="10"></circle><line x1="22" y1="12" x2="18" y2="12"></line><line x1="6" y1="12" x2="2" y2="12"></line><line x1="12" y1="6" x2="12" y2="2"></line><line x1="12" y1="22" x2="12" y2="18"></line></>,
                 Box: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></>,
-                Globe: <><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></>
+                Globe: <><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></>,
+                Mail: <><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></>,
+                Send: <><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></>,
+                UserPlus: <><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></>,
+                Briefcase: <><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></>,
+                Phone: <><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></>,
+                Edit3: <><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></>
             };
             return <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{icons[name] || null}</svg>;
         };
@@ -339,8 +345,6 @@
             const [board, setBoard] = useState(null);
             const [info, setInfo] = useState({ project: '', sprint: '' });
             const [input, setInput] = useState("");
-            const [guestName, setGuestName] = useState(""); // Added name state
-            const [typingUsers, setTypingUsers] = useState([]); // Added typing state
             const [col, setCol] = useState("well");
             const [error, setError] = useState(null);
 
@@ -353,57 +357,11 @@
 
             useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 3000); return () => clearInterval(interval); }, [token]);
 
-            
-            useEffect(() => {
-                if (!info.project || !info.sprint) return;
-                const checkTyping = async () => {
-                    try {
-                        const r = await fetch(`${API_BASE}/retro/typing/${info.project}/${info.sprint}`);
-                        const d = await r.json();
-                        
-                        setTypingUsers(d.typing.filter(n => n !== (guestName || "Anonymous")));
-                    } catch (e) {}
-                };
-                const interval = setInterval(checkTyping, 1500);
-                return () => clearInterval(interval);
-            }, [info.project, info.sprint, guestName]);
-
-            
-            const handleTyping = (e) => {
-                setInput(e.target.value);
-                if (info.project && info.sprint) {
-                    fetch(`${API_BASE}/retro/typing`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ project: info.project, sprint: info.sprint, name: guestName, is_typing: e.target.value.length > 0 })
-                    }).catch(err => console.error(err));
-                }
-            };
-
             const add = async () => {
                 if (!input.trim()) return;
-                
-                
-                const displayName = guestName.trim() ? guestName.trim() : "Anonymous";
-                const formattedText = `${displayName} : ${input}`;
-
-                const r = await fetch(`${API_BASE}/guest/retro/${token}/add`, { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ column: col, text: formattedText }) 
-                });
+                const r = await fetch(`${API_BASE}/guest/retro/${token}/add`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ column: col, text: input }) });
                 const res = await r.json();
-                if (res.status === 'success') { 
-                    setBoard(res.board); 
-                    setInput(""); 
-                    
-                    
-                    fetch(`${API_BASE}/retro/typing`, { 
-                        method: 'POST', 
-                        headers: { 'Content-Type': 'application/json' }, 
-                        body: JSON.stringify({ project: info.project, sprint: info.sprint, name: guestName, is_typing: false }) 
-                    }).catch(err => console.error(err));
-                }
+                if (res.status === 'success') { setBoard(res.board); setInput(""); }
             };
 
             if (error) return <div className="h-screen flex items-center justify-center text-danger font-bold text-xl">{error}</div>;
@@ -415,32 +373,16 @@
                     <header className="mb-10 text-center">
                         <div className="w-16 h-16 rounded-xl flex items-center justify-center text-white font-black text-2xl mx-auto mb-4 shadow-xl" style={{ background: 'var(--accent-gradient)' }}>IG</div>
                         <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Retrospective</h2>
-                        <p className="text-lg font-medium mt-2 text-text-muted">Sprint {info.sprint} &middot; Team Member Access</p>
+                        <p className="text-lg font-medium mt-2 text-text-muted">Sprint {info.sprint} &middot; Anonymous Guest Mode</p>
                     </header>
                     <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col">
-                        
-                        
-                        <div className="flex gap-4 mb-4 bg-bg-card p-4 rounded-2xl border border-border shadow-2xl">
+                        <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-2xl">
                             <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">
                                 {['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={() => setCol(c)} className={`px-8 py-4 rounded-lg text-sm font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}
                             </div>
-                            
-                            
-                            <input value={guestName} onChange={e => setGuestName(e.target.value)} placeholder="Your Name" className="w-40 bg-bg-body border border-border rounded-xl px-4 text-text-main font-bold outline-none focus:border-primary transition-all" />
-                            
-                            
-                            <input value={input} onChange={handleTyping} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Type your feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-xl outline-none" />
+                            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Drop an anonymous note here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-xl outline-none" />
                             <button onClick={add} className="bg-primary px-12 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all text-lg">Post</button>
                         </div>
-
-                        
-                        {typingUsers.length > 0 && (
-                            <div className="text-primary font-bold text-sm italic mb-6 ml-2 animate-pulse flex items-center gap-2">
-                                <span className="loader w-3 h-3 border-2"></span>
-                                {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
-                            </div>
-                        )}
-
                         <div className="grid grid-cols-3 gap-10 flex-1 pb-10">
                             {['well', 'improve', 'kudos'].map(c => (
                                 <div key={c} className="retro-col shadow-2xl border-t-4" style={{ borderTopColor: c === 'well' ? 'var(--success)' : c === 'improve' ? 'var(--danger)' : 'var(--primary)' }}>
@@ -532,7 +474,7 @@
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="timeline" icon="Zap" label="Sprint Dynamics & Build" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="roadmap" icon="Map" label="Strategic Roadmap" active={view} set={setView} disabled={isGlobalLoading} />
-                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="reports" icon="FileText" label="Reports & Reviews" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /></>}
+                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="reports" icon="FileText" label="Artifacts" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="roles" icon="Users" label="Roles & Team" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
                         </div>
                         <div className="p-6 border-t border-border space-y-6">
@@ -551,6 +493,7 @@
                                 {view === 'timeline' && <TimelineView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'standup' && <StandupView project={activeProject} />}
                                 {view === 'retro' && <RetroView project={activeProject} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
+                                {view === 'roles' && <RolesView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'reports' && <ReportsView project={activeProject} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                             </div>
                         ) : <LoadingScreen msg="Authenticating with Atlassian..." />}
@@ -1569,69 +1512,18 @@
            RETRO VIEW
            ================================================================ */
         function RetroView({ project, setIsLoading, isGlobalLoading }) {
-            const [sprints, setSprints] = useState([]); 
-            const [activeSprint, setActiveSprint] = useState(null); 
-            const [board, setBoard] = useState(null); 
-            const [input, setInput] = useState(""); 
-            const [col, setCol] = useState("well");
+            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well");
             const [toast, setToast] = useState(null);
             const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: "Hi! I am your AI Agile Coach. What would you like to know about this sprint's retrospective?" }]);
-            const [chatInput, setChatInput] = useState(""); 
-            const [isChatting, setIsChatting] = useState(false); 
-            const chatEndRef = useRef(null);
-            
-            // --- NEW: Typing Indicator State ---
-            const [typingUsers, setTypingUsers] = useState([]);
+            const [chatInput, setChatInput] = useState(""); const [isChatting, setIsChatting] = useState(false); const chatEndRef = useRef(null);
 
             useEffect(() => { secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { setSprints(d); if (d && d.length) setActiveSprint(d[0].id); }); }, [project]);
             const fetchBoard = () => { if (activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r => r?.json()).then(setBoard); } };
             useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
             useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory, isChatting]);
 
-            // --- NEW: Poll for guests typing ---
-            useEffect(() => {
-                if (!project || !activeSprint) return;
-                const checkTyping = async () => {
-                    try {
-                        const r = await fetch(`${API_BASE}/retro/typing/${project}/${activeSprint}`);
-                        const d = await r.json();
-                        setTypingUsers(d.typing.filter(n => n !== "Scrum Master"));
-                    } catch (e) {}
-                };
-                const interval = setInterval(checkTyping, 1500);
-                return () => clearInterval(interval);
-            }, [project, activeSprint]);
-
             const save = (b) => { setBoard(b); secureFetch(`/retro/update`, { method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, board: b }) }); };
-            
-            // --- NEW: Handle Scrum Master typing & broadcasting ---
-            const handleTyping = (e) => {
-                setInput(e.target.value);
-                if (project && activeSprint) {
-                    fetch(`${API_BASE}/retro/typing`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ project: project, sprint: activeSprint, name: "Scrum Master", is_typing: e.target.value.length > 0 })
-                    }).catch(() => {});
-                }
-            };
-
-            // --- UPDATED: Clear typing state after posting ---
-            const add = () => { 
-                if (!input.trim()) return; 
-                const n = board[col] ? [...board[col]] : []; 
-                n.push({ id: Date.now(), text: `Scrum Master : ${input}` }); 
-                save({ ...board, [col]: n }); 
-                setInput(""); 
-                
-                // Clear typing status
-                fetch(`${API_BASE}/retro/typing`, { 
-                    method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
-                    body: JSON.stringify({ project: project, sprint: activeSprint, name: "Scrum Master", is_typing: false }) 
-                }).catch(() => {});
-            };
-
+            const add = () => { if (!input.trim()) return; const n = board[col] ? [...board[col]] : []; n.push({ id: Date.now(), text: input }); save({ ...board, [col]: n }); setInput(""); };
             const remove = (columnName, itemId) => { const updatedCol = board[columnName].filter(item => item.id !== itemId); save({ ...board, [columnName]: updatedCol }); };
 
             const sendChat = async () => {
@@ -1662,24 +1554,11 @@
                         <select value={activeSprint || ""} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm">{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
                     </header>
                     <AnimatePresence>{toast && (<motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="absolute top-0 right-4 z-50 bg-success text-white px-6 py-3 rounded-lg font-bold shadow-lg flex items-center gap-3"><Icon name="CheckCircle" size={18} /> {toast}</motion.div>)}</AnimatePresence>
-                    
-                    
-                    <div className="flex gap-4 mb-4 bg-bg-card p-4 rounded-2xl border border-border shadow-lg">
+                    <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-lg">
                         <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">{['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={() => setCol(c)} className={`px-6 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}</div>
-                        
-                        <input value={input} onChange={handleTyping} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" />
-                        
+                        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" />
                         <button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button>
                     </div>
-
-                    
-                    {typingUsers.length > 0 && (
-                        <div className="text-primary font-bold text-sm italic mb-6 ml-2 animate-pulse flex items-center gap-2">
-                            <span className="loader w-3 h-3 border-2"></span>
-                            {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
-                        </div>
-                    )}
-
                     <div className="grid grid-cols-4 gap-8 flex-1 pb-6 min-h-0">
                         {['well', 'improve', 'kudos'].map(c => (
                             <div key={c} className="retro-col shadow-xl">
@@ -1710,6 +1589,471 @@
                 </div>
             );
         }
+
+        /* ================================================================
+           ROLES & TEAM VIEW — Scrum Team Management + Email
+           ================================================================ */
+        function RolesView({ project, setIsLoading }) {
+            const SCRUM_ROLES = [
+                { key: 'product_owner', label: 'Product Owner', icon: 'Award', color: 'var(--slide-accent)', desc: 'Maximizes product value, owns backlog' },
+                { key: 'scrum_master', label: 'Scrum Master', icon: 'Shield', color: 'var(--slide-accent-2)', desc: 'Facilitates process, removes impediments' },
+                { key: 'dev_team', label: 'Development Team', icon: 'GitBranch', color: 'var(--slide-accent-3)', desc: 'Cross-functional builders who deliver increments' },
+                { key: 'qa_team', label: 'QA Team', icon: 'Crosshair', color: 'var(--warning)', desc: 'Quality assurance & test automation' },
+                { key: 'product_manager', label: 'Product Manager', icon: 'Target', color: '#F43F5E', desc: 'Strategic alignment, roadmap ownership' },
+                { key: 'stakeholder', label: 'Stakeholders', icon: 'Briefcase', color: '#8B5CF6', desc: 'Sponsors, directors & business leaders' },
+            ];
+
+            const [team, setTeam] = useState([]);
+            const [jiraUsers, setJiraUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [fetchingJira, setFetchingJira] = useState(false);
+            const [showAddForm, setShowAddForm] = useState(false);
+            const [editingMember, setEditingMember] = useState(null);
+            const [toast, setToast] = useState(null);
+
+            // Add form state
+            const [formRole, setFormRole] = useState('dev_team');
+            const [formName, setFormName] = useState('');
+            const [formEmail, setFormEmail] = useState('');
+
+            // Email compose state
+            const [showEmailCompose, setShowEmailCompose] = useState(false);
+            const [selectedRecipients, setSelectedRecipients] = useState([]);
+            const [emailSubject, setEmailSubject] = useState('');
+            const [emailBody, setEmailBody] = useState('');
+            const [isGeneratingEmail, setIsGeneratingEmail] = useState(false);
+
+            // Load team on mount
+            useEffect(() => {
+                loadTeam();
+            }, [project]);
+
+            const loadTeam = async () => {
+                setLoading(true);
+                try {
+                    const r = await secureFetch(`/team/${project}`);
+                    if (r && r.ok) {
+                        const data = await r.json();
+                        setTeam(data.team || []);
+                        setJiraUsers(data.jira_users || []);
+                    }
+                } catch (e) { console.error(e); }
+                setLoading(false);
+            };
+
+            const fetchFromJira = async () => {
+                setFetchingJira(true);
+                try {
+                    const r = await secureFetch(`/team/${project}/fetch_jira`);
+                    if (r && r.ok) {
+                        const data = await r.json();
+                        setJiraUsers(data.jira_users || []);
+                        if (data.jira_users?.length > 0) {
+                            showToast(`Found ${data.jira_users.length} team members from Jira!`, 'success');
+                        } else {
+                            showToast('No assignable users found in Jira. Add your team manually below.', 'warning');
+                        }
+                    }
+                } catch (e) { showToast('Failed to fetch from Jira.', 'error'); }
+                setFetchingJira(false);
+            };
+
+            const saveTeam = async (updatedTeam) => {
+                setTeam(updatedTeam);
+                try {
+                    await secureFetch(`/team/${project}/save`, {
+                        method: 'POST',
+                        body: JSON.stringify({ team: updatedTeam })
+                    });
+                } catch (e) { console.error(e); }
+            };
+
+            const addMember = () => {
+                if (!formName.trim()) return;
+                const newMember = {
+                    id: Date.now(),
+                    name: formName.trim(),
+                    email: formEmail.trim(),
+                    role: formRole,
+                    added_at: new Date().toISOString()
+                };
+                const updated = [...team, newMember];
+                saveTeam(updated);
+                setFormName(''); setFormEmail(''); setShowAddForm(false);
+                showToast(`${formName} added as ${SCRUM_ROLES.find(r => r.key === formRole)?.label}`, 'success');
+            };
+
+            const addJiraUser = (jiraUser) => {
+                // Check if already added
+                if (team.some(m => m.name === jiraUser.displayName)) {
+                    showToast(`${jiraUser.displayName} is already in the team.`, 'warning');
+                    return;
+                }
+                setFormName(jiraUser.displayName);
+                setFormEmail(jiraUser.email || '');
+                setShowAddForm(true);
+            };
+
+            const removeMember = (id) => {
+                const updated = team.filter(m => m.id !== id);
+                saveTeam(updated);
+                showToast('Member removed.', 'success');
+            };
+
+            const updateMember = (id, field, value) => {
+                const updated = team.map(m => m.id === id ? { ...m, [field]: value } : m);
+                saveTeam(updated);
+            };
+
+            const showToast = (text, type = 'success') => {
+                setToast({ text, type });
+                setTimeout(() => setToast(null), 3500);
+            };
+
+            // Email functions
+            const toggleRecipient = (member) => {
+                setSelectedRecipients(prev => {
+                    const exists = prev.find(r => r.id === member.id);
+                    return exists ? prev.filter(r => r.id !== member.id) : [...prev, member];
+                });
+            };
+
+            const selectRoleGroup = (roleKey) => {
+                const roleMembers = team.filter(m => m.role === roleKey && m.email);
+                const allSelected = roleMembers.every(rm => selectedRecipients.find(sr => sr.id === rm.id));
+                if (allSelected) {
+                    setSelectedRecipients(prev => prev.filter(p => !roleMembers.find(rm => rm.id === p.id)));
+                } else {
+                    const newRecipients = [...selectedRecipients];
+                    roleMembers.forEach(rm => {
+                        if (!newRecipients.find(nr => nr.id === rm.id)) newRecipients.push(rm);
+                    });
+                    setSelectedRecipients(newRecipients);
+                }
+            };
+
+            const generateEmailDraft = async () => {
+                setIsGeneratingEmail(true);
+                try {
+                    const recipientRoles = [...new Set(selectedRecipients.map(r => SCRUM_ROLES.find(sr => sr.key === r.role)?.label || r.role))].join(', ');
+                    const r = await secureFetch('/team/generate_email', {
+                        method: 'POST',
+                        body: JSON.stringify({ project, recipients: recipientRoles, context: `Sprint update email for project ${project}` })
+                    });
+                    if (r && r.ok) {
+                        const data = await r.json();
+                        setEmailSubject(data.subject || '');
+                        setEmailBody(data.body || '');
+                    }
+                } catch (e) { console.error(e); }
+                setIsGeneratingEmail(false);
+            };
+
+            const sendEmail = () => {
+                const toEmails = selectedRecipients.filter(r => r.email).map(r => r.email).join(',');
+                if (!toEmails) { showToast('No email addresses found for selected recipients.', 'error'); return; }
+                const mailtoLink = `mailto:${toEmails}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+                window.open(mailtoLink, '_blank');
+                showToast('Email client opened with your draft!', 'success');
+            };
+
+            const copyEmailAddresses = () => {
+                const emails = selectedRecipients.filter(r => r.email).map(r => r.email).join('; ');
+                navigator.clipboard.writeText(emails);
+                showToast('Email addresses copied to clipboard!', 'success');
+            };
+
+            if (loading) return <LoadingScreen msg="Loading Team & Roles..." />;
+
+            const getMembersByRole = (roleKey) => team.filter(m => m.role === roleKey);
+            const membersWithEmail = team.filter(m => m.email);
+
+            return (
+                <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4 space-y-10 relative">
+                    {/* Toast */}
+                    <AnimatePresence>
+                        {toast && (
+                            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className={`fixed top-4 right-8 z-50 px-6 py-3 rounded-xl font-bold shadow-2xl flex items-center gap-3 text-sm border ${toast.type === 'success' ? 'bg-success/15 text-success border-success/30' : toast.type === 'error' ? 'bg-danger/15 text-danger border-danger/30' : 'bg-warning/15 text-warning border-warning/30'}`}>
+                                <Icon name={toast.type === 'success' ? 'CheckCircle' : toast.type === 'error' ? 'AlertTriangle' : 'AlertTriangle'} size={18} /> {toast.text}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Header */}
+                    <header className="flex justify-between items-end pb-6 border-b border-border">
+                        <div>
+                            <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Roles & Team</h2>
+                            <p className="text-base font-medium mt-2 text-text-muted">Scrum Team Management &middot; Project <span className="text-primary font-black">{project}</span></p>
+                        </div>
+                        <div className="flex gap-3">
+                            <button onClick={fetchFromJira} disabled={fetchingJira} className="px-5 py-3 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-primary hover:border-primary transition-all flex items-center gap-2 text-sm disabled:opacity-50">
+                                {fetchingJira ? <span className="loader w-4 h-4 border-2"></span> : <Icon name="RefreshCcw" size={16} />}
+                                Fetch from Jira
+                            </button>
+                            <button onClick={() => { setShowAddForm(true); setEditingMember(null); setFormName(''); setFormEmail(''); }} className="px-5 py-3 text-white rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all" style={{ background: 'var(--accent-gradient)' }}>
+                                <Icon name="UserPlus" size={16} /> Add Team Member
+                            </button>
+                            {membersWithEmail.length > 0 && (
+                                <button onClick={() => { setShowEmailCompose(true); setSelectedRecipients([]); setEmailSubject(''); setEmailBody(''); }} className="px-5 py-3 rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all text-white" style={{ background: 'linear-gradient(135deg, #F59E0B, #F43F5E)' }}>
+                                    <Icon name="Mail" size={16} /> Compose Email
+                                </button>
+                            )}
+                        </div>
+                    </header>
+
+                    {/* Jira Users Discovery */}
+                    <AnimatePresence>
+                        {jiraUsers.length > 0 && (
+                            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="glass-card p-6 border-t-4 border-primary overflow-hidden">
+                                <h3 className="text-sm font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2"><Icon name="Globe" size={16} /> Jira Team Members Discovered</h3>
+                                <p className="text-xs text-text-muted mb-4 font-medium">Click a member to add them to your Scrum team with a role assignment.</p>
+                                <div className="flex flex-wrap gap-3">
+                                    {jiraUsers.map((u, i) => {
+                                        const alreadyAdded = team.some(m => m.name === u.displayName);
+                                        return (
+                                            <motion.button key={i} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.03 }}
+                                                onClick={() => !alreadyAdded && addJiraUser(u)}
+                                                disabled={alreadyAdded}
+                                                className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-bold transition-all ${alreadyAdded ? 'opacity-40 cursor-not-allowed bg-bg-body border-border' : 'bg-bg-card border-border hover:border-primary hover:shadow-md cursor-pointer hover:scale-[1.02]'}`}>
+                                                {u.avatar ? <img src={u.avatar} className="w-8 h-8 rounded-full border-2 border-primary" /> : <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs" style={{ background: 'var(--accent-gradient)' }}>{u.displayName?.charAt(0)}</div>}
+                                                <div className="text-left">
+                                                    <div className="text-text-main">{u.displayName}</div>
+                                                    {u.email && <div className="text-xs text-text-muted font-normal">{u.email}</div>}
+                                                </div>
+                                                {alreadyAdded && <Icon name="CheckCircle" size={16} className="text-success ml-2" />}
+                                                {!alreadyAdded && <Icon name="Plus" size={16} className="text-primary ml-2" />}
+                                            </motion.button>
+                                        );
+                                    })}
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Add Member Form */}
+                    <AnimatePresence>
+                        {showAddForm && (
+                            <motion.div initial={{ opacity: 0, y: -20, height: 0 }} animate={{ opacity: 1, y: 0, height: 'auto' }} exit={{ opacity: 0, y: -20, height: 0 }} className="glass-card p-8 border-l-4 border-primary overflow-hidden relative">
+                                <div className="absolute top-0 right-0 w-48 h-48 rounded-full blur-3xl -mr-12 -mt-12 pointer-events-none opacity-40" style={{ background: 'var(--glow-primary)' }}></div>
+                                <div className="flex justify-between items-center mb-6 relative z-10">
+                                    <h3 className="text-lg font-extrabold text-text-main flex items-center gap-3"><Icon name="UserPlus" size={20} className="text-primary" /> Add Team Member</h3>
+                                    <button onClick={() => setShowAddForm(false)} className="p-2 hover:bg-bg-hover rounded-lg transition"><Icon name="X" size={18} className="text-text-muted" /></button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-6 relative z-10">
+                                    <div>
+                                        <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Scrum Role</label>
+                                        <select value={formRole} onChange={e => setFormRole(e.target.value)} className="w-full p-3 rounded-xl text-sm input-field font-bold shadow-sm">
+                                            {SCRUM_ROLES.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Full Name</label>
+                                        <input value={formName} onChange={e => setFormName(e.target.value)} placeholder="e.g. Jane Smith" className="w-full p-3 rounded-xl text-sm input-field font-semibold shadow-sm" onKeyDown={e => e.key === 'Enter' && addMember()} />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Email Address</label>
+                                        <div className="flex gap-3">
+                                            <input value={formEmail} onChange={e => setFormEmail(e.target.value)} placeholder="jane@company.com" className="flex-1 p-3 rounded-xl text-sm input-field font-semibold shadow-sm" onKeyDown={e => e.key === 'Enter' && addMember()} />
+                                            <button onClick={addMember} disabled={!formName.trim()} className="px-6 py-3 text-white rounded-xl font-extrabold text-sm shadow-md hover:shadow-lg hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-2" style={{ background: 'var(--accent-gradient)' }}>
+                                                <Icon name="Plus" size={16} /> Add
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Role Cards Grid */}
+                    <div className="grid grid-cols-3 gap-6">
+                        {SCRUM_ROLES.map((role, ri) => {
+                            const members = getMembersByRole(role.key);
+                            return (
+                                <motion.div key={role.key} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: ri * 0.06 }} className="glass-card overflow-hidden hover:shadow-xl transition-shadow group">
+                                    {/* Role Header */}
+                                    <div className="p-5 border-b border-border relative overflow-hidden" style={{ background: `${role.color}08` }}>
+                                        <div className="absolute top-0 left-0 right-0 h-1" style={{ background: `linear-gradient(90deg, ${role.color}, transparent)` }} />
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${role.color}15`, color: role.color, border: `1px solid ${role.color}25` }}>
+                                                <Icon name={role.icon} size={22} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-extrabold text-text-main text-sm tracking-tight">{role.label}</h4>
+                                                <p className="text-xs text-text-muted font-medium mt-0.5 truncate">{role.desc}</p>
+                                            </div>
+                                            <span className="text-xs font-black px-2.5 py-1 rounded-full" style={{ background: `${role.color}15`, color: role.color }}>{members.length}</span>
+                                        </div>
+                                    </div>
+                                    {/* Members List */}
+                                    <div className="p-4 min-h-[120px] flex flex-col gap-2">
+                                        {members.length === 0 ? (
+                                            <div className="flex-1 flex flex-col items-center justify-center py-6 opacity-40">
+                                                <Icon name={role.icon} size={28} className="text-text-muted mb-2" />
+                                                <span className="text-xs font-bold text-text-muted">No members assigned</span>
+                                            </div>
+                                        ) : members.map(member => (
+                                            <motion.div key={member.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 p-3 bg-bg-body rounded-xl border border-border hover:border-primary transition-all group/member relative">
+                                                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-md" style={{ background: `linear-gradient(135deg, ${role.color}, ${role.color}CC)` }}>
+                                                    {member.name?.charAt(0)?.toUpperCase()}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-bold text-text-main text-sm truncate">{member.name}</div>
+                                                    {member.email && <div className="text-xs text-text-muted truncate flex items-center gap-1"><Icon name="Mail" size={10} /> {member.email}</div>}
+                                                </div>
+                                                <div className="flex gap-1 opacity-0 group-hover/member:opacity-100 transition-opacity">
+                                                    <button onClick={() => removeMember(member.id)} className="p-1.5 hover:bg-danger/10 rounded-lg transition" title="Remove"><Icon name="Trash" size={14} className="text-danger" /></button>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                        <button onClick={() => { setFormRole(role.key); setFormName(''); setFormEmail(''); setShowAddForm(true); }} className="mt-1 p-2 border border-dashed border-border rounded-xl text-xs font-bold text-text-muted hover:text-primary hover:border-primary transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                                            <Icon name="Plus" size={14} /> Add {role.label}
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Team Summary Stats */}
+                    {team.length > 0 && (
+                        <div className="glass-card p-8">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2"><Icon name="BarChart" size={16} /> Team Summary</h3>
+                            <div className="grid grid-cols-6 gap-4">
+                                {SCRUM_ROLES.map(role => {
+                                    const count = getMembersByRole(role.key).length;
+                                    return (
+                                        <div key={role.key} className="text-center p-4 bg-bg-body rounded-xl border border-border">
+                                            <div className="text-3xl font-black text-text-main mb-1">{count}</div>
+                                            <div className="text-xs font-bold text-text-muted truncate">{role.label}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Email Compose Panel */}
+                    <AnimatePresence>
+                        {showEmailCompose && (
+                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} className="glass-card overflow-hidden border-t-4 shadow-2xl relative" style={{ borderTopColor: '#F59E0B' }}>
+                                <div className="absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl -mr-24 -mt-24 pointer-events-none" style={{ background: 'rgba(245, 158, 11, 0.08)' }}></div>
+
+                                {/* Email Header */}
+                                <div className="p-8 border-b border-border relative z-10">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="text-2xl font-extrabold text-text-main flex items-center gap-3"><Icon name="Send" size={24} className="text-warning" /> Compose Team Email</h3>
+                                            <p className="text-sm text-text-muted font-medium mt-2">Select recipients by name or role group, then compose and send.</p>
+                                        </div>
+                                        <button onClick={() => setShowEmailCompose(false)} className="p-2 hover:bg-bg-hover rounded-lg transition"><Icon name="X" size={20} className="text-text-muted" /></button>
+                                    </div>
+                                </div>
+
+                                {/* Recipient Selection */}
+                                <div className="p-8 bg-bg-body border-b border-border relative z-10">
+                                    <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-4 block">Select Recipients</label>
+
+                                    {/* Quick Role Selectors */}
+                                    <div className="flex flex-wrap gap-2 mb-4">
+                                        {SCRUM_ROLES.map(role => {
+                                            const roleMembers = team.filter(m => m.role === role.key && m.email);
+                                            if (roleMembers.length === 0) return null;
+                                            const allSelected = roleMembers.every(rm => selectedRecipients.find(sr => sr.id === rm.id));
+                                            return (
+                                                <button key={role.key} onClick={() => selectRoleGroup(role.key)}
+                                                    className={`px-4 py-2 rounded-full text-xs font-bold border transition-all flex items-center gap-2 ${allSelected ? 'text-white shadow-md' : 'bg-bg-card border-border text-text-muted hover:border-primary hover:text-primary'}`}
+                                                    style={allSelected ? { background: role.color, borderColor: role.color } : {}}>
+                                                    <Icon name={role.icon} size={14} /> All {role.label}s
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Individual Members */}
+                                    <div className="flex flex-wrap gap-2">
+                                        {team.filter(m => m.email).map(member => {
+                                            const isSelected = selectedRecipients.find(r => r.id === member.id);
+                                            const role = SCRUM_ROLES.find(r => r.key === member.role);
+                                            return (
+                                                <button key={member.id} onClick={() => toggleRecipient(member)}
+                                                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${isSelected ? 'border-primary bg-primary-dim text-primary shadow-sm' : 'bg-bg-card border-border text-text-muted hover:border-primary'}`}>
+                                                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0" style={{ background: role?.color || 'var(--primary)' }}>
+                                                        {member.name?.charAt(0)?.toUpperCase()}
+                                                    </div>
+                                                    {member.name}
+                                                    {isSelected && <Icon name="CheckCircle" size={14} className="text-primary" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {selectedRecipients.length > 0 && (
+                                        <div className="mt-4 flex items-center gap-2 text-xs font-bold text-primary">
+                                            <Icon name="Mail" size={14} />
+                                            {selectedRecipients.length} recipient{selectedRecipients.length !== 1 ? 's' : ''} selected
+                                            <button onClick={copyEmailAddresses} className="ml-2 px-3 py-1 bg-primary-dim rounded-lg hover:bg-primary hover:text-white transition-all flex items-center gap-1">
+                                                <Icon name="Copy" size={12} /> Copy Emails
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Email Compose */}
+                                {selectedRecipients.length > 0 && (
+                                    <div className="p-8 relative z-10">
+                                        <div className="flex gap-4 mb-4">
+                                            <div className="flex-1">
+                                                <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Subject</label>
+                                                <input value={emailSubject} onChange={e => setEmailSubject(e.target.value)} placeholder="e.g. Sprint Review Update — Project ABC" className="w-full p-3 rounded-xl text-sm input-field font-semibold shadow-sm" />
+                                            </div>
+                                            <button onClick={generateEmailDraft} disabled={isGeneratingEmail} className="self-end px-5 py-3 rounded-xl font-bold text-sm flex items-center gap-2 shadow-md hover:shadow-lg hover:scale-[1.02] transition-all text-white disabled:opacity-50" style={{ background: 'var(--accent-gradient)' }}>
+                                                {isGeneratingEmail ? <span className="loader w-4 h-4 border-2"></span> : <Icon name="Sparkles" size={16} />}
+                                                AI Draft
+                                            </button>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-black text-text-muted uppercase tracking-widest mb-2 block">Message Body</label>
+                                            <textarea value={emailBody} onChange={e => setEmailBody(e.target.value)} rows={8} placeholder="Write your message here, or click AI Draft to auto-generate..." className="w-full p-4 rounded-xl text-sm input-field font-medium shadow-sm resize-y leading-relaxed" />
+                                        </div>
+                                        <div className="flex justify-end gap-3 mt-6">
+                                            <button onClick={copyEmailAddresses} className="px-5 py-3 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-text-main transition-all flex items-center gap-2 text-sm">
+                                                <Icon name="Copy" size={16} /> Copy Addresses
+                                            </button>
+                                            <button onClick={sendEmail} disabled={!emailSubject && !emailBody} className="px-8 py-3 text-white rounded-xl font-extrabold text-sm shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all disabled:opacity-50 disabled:hover:scale-100 flex items-center gap-3" style={{ background: 'linear-gradient(135deg, #F59E0B, #F43F5E)' }}>
+                                                <Icon name="Send" size={16} /> Open in Email Client
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* Empty State */}
+                    {team.length === 0 && jiraUsers.length === 0 && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card p-16 flex flex-col items-center justify-center text-center">
+                            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 mx-auto" style={{ background: 'var(--primary-dim)', color: 'var(--primary)' }}>
+                                <Icon name="Users" size={36} />
+                            </div>
+                            <h3 className="text-2xl font-extrabold text-text-main mb-3">Build Your Scrum Team</h3>
+                            <p className="text-text-muted font-medium max-w-lg mb-8">
+                                As defined in Essential Scrum by Kenneth S. Rubin, every Scrum project needs clearly defined roles. Start by fetching your team from Jira, or add members manually.
+                            </p>
+                            <div className="flex gap-4">
+                                <button onClick={fetchFromJira} disabled={fetchingJira} className="px-6 py-3 bg-bg-card border border-border rounded-xl font-bold text-text-muted hover:text-primary hover:border-primary transition-all flex items-center gap-2 text-sm">
+                                    {fetchingJira ? <span className="loader w-4 h-4 border-2"></span> : <Icon name="Globe" size={16} />}
+                                    Fetch from Jira
+                                </button>
+                                <button onClick={() => setShowAddForm(true)} className="px-6 py-3 text-white rounded-xl font-bold flex items-center gap-2 text-sm shadow-lg" style={{ background: 'var(--accent-gradient)' }}>
+                                    <Icon name="UserPlus" size={16} /> Add Manually
+                                </button>
+                            </div>
+                        </motion.div>
+                    )}
+                </div>
+            );
+        }
+
         function StandupView() { return <div className="h-full flex items-center justify-center text-2xl font-black text-text-muted uppercase tracking-widest">Standup Bot Coming Soon</div>; }
         function LoadingScreen({ msg = "Loading..." }) { return (<div className="h-full w-full flex flex-col items-center justify-center animate-pulse"><div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mb-6 text-primary" style={{ borderColor: 'var(--border)', borderTopColor: 'var(--primary)' }}></div><div className="text-base font-bold tracking-wider text-primary uppercase">{msg}</div></div>); }
 
