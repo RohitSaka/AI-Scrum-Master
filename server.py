@@ -19,16 +19,23 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 load_dotenv()
 app = FastAPI()
 
+# ═══ SECURITY: Admin secret for license management ═══
+ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
+
+# ═══ RATE LIMITING: In-memory AI call tracker ═══
+AI_CALL_TRACKER = {}  # {license_key: {"count": N, "reset_at": timestamp}}
+AI_CALLS_PER_HOUR = int(os.getenv("AI_CALLS_PER_HOUR", "60"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 print("\n" + "="*60)
-print("\U0001f680 APP STARTING: V48 \u2014 PPTX ENGINE v5 + Roles & Team")
-print("   4 DISTINCT Themes | Roles Tab | Email Compose | Artifacts Tab")
+print("\U0001f680 APP STARTING: V49 \u2014 SECURITY + REVENUE FOUNDATION")
+print("   PPTX v5 | Rate Limiting | License Tiers | Usage Tracking")
 print("   Sprint=DarkTeal | Weekly=LightCorp | Monthly=Executive | Quarterly=PremiumDark")
 print("="*60 + "\n")
 
@@ -46,6 +53,12 @@ class License(Base):
     key = Column(String, primary_key=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # ═══ REVENUE FIELDS ═══
+    plan = Column(String, default="trial")           # trial | starter | pro | enterprise
+    expires_at = Column(DateTime, nullable=True)      # NULL = never expires (enterprise)
+    ai_calls_used = Column(Integer, default=0)        # lifetime AI call counter
+    ai_calls_limit = Column(Integer, default=100)     # per-month limit (trial=100, starter=500, pro=2000, enterprise=unlimited)
+    company_name = Column(String, default="")
 
 class UserAuth(Base):
     __tablename__ = "user_auth"
@@ -77,17 +90,46 @@ CLIENT_SECRET = os.getenv("ATLASSIAN_CLIENT_SECRET", "").strip()
 APP_URL = os.getenv("APP_URL", "http://localhost:8000").strip()
 REDIRECT_URI = f"{APP_URL}/auth/callback"
 
+PLAN_LIMITS = {"trial": 100, "starter": 500, "pro": 2000, "enterprise": 999999}
+PLAN_EXPIRY_DAYS = {"trial": 14, "starter": 365, "pro": 365, "enterprise": None}
+
+@app.get("/health")
+def health_check():
+    """Health check for monitoring and uptime services."""
+    return {"status": "healthy", "version": "V49", "timestamp": datetime.utcnow().isoformat()}
+
 @app.post("/admin/generate_license")
-def generate_license(db: Session = Depends(get_db)):
-    new_key = f"IG-ENT-{str(uuid.uuid4())[:8].upper()}"
-    db.add(License(key=new_key))
+def generate_license(payload: dict = {}, db: Session = Depends(get_db)):
+    """Generate a new license key. REQUIRES ADMIN_SECRET."""
+    # ═══ SECURITY: Require admin secret ═══
+    admin_key = payload.get("admin_secret", "")
+    if not ADMIN_SECRET or admin_key != ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Unauthorized. Valid admin_secret required.")
+    
+    plan = payload.get("plan", "trial")
+    if plan not in PLAN_LIMITS:
+        raise HTTPException(status_code=400, detail=f"Invalid plan. Options: {list(PLAN_LIMITS.keys())}")
+    
+    new_key = f"IG-{plan.upper()[:3]}-{str(uuid.uuid4())[:8].upper()}"
+    expiry_days = PLAN_EXPIRY_DAYS.get(plan)
+    expires_at = datetime.utcnow() + timedelta(days=expiry_days) if expiry_days else None
+    
+    db.add(License(
+        key=new_key, plan=plan,
+        ai_calls_limit=PLAN_LIMITS[plan],
+        expires_at=expires_at,
+        company_name=payload.get("company", "")
+    ))
     db.commit()
-    return {"license_key": new_key, "status": "active"}
+    return {"license_key": new_key, "plan": plan, "expires_at": str(expires_at) if expires_at else "never", "ai_calls_limit": PLAN_LIMITS[plan]}
 
 @app.get("/auth/login")
 def login(license_key: str, db: Session = Depends(get_db)):
     lic = db.query(License).filter(License.key == license_key).first()
     if not lic or not lic.is_active: raise HTTPException(status_code=403, detail="Invalid License Key")
+    # ═══ REVENUE: Check license expiry ═══
+    if lic.expires_at and datetime.utcnow() > lic.expires_at:
+        raise HTTPException(status_code=403, detail=f"License expired on {lic.expires_at.strftime('%Y-%m-%d')}. Please renew your {lic.plan} plan.")
     params = {"audience": "api.atlassian.com", "client_id": CLIENT_ID, "scope": "read:jira-work manage:jira-project manage:jira-configuration write:jira-work offline_access", "redirect_uri": REDIRECT_URI, "state": license_key, "response_type": "code", "prompt": "consent"}
     return RedirectResponse(f"https://auth.atlassian.com/authorize?{urllib.parse.urlencode(params, quote_via=urllib.parse.quote)}")
 
@@ -122,7 +164,7 @@ async def get_jira_creds(x_jira_domain: str = Header(None), x_jira_email: str = 
     if x_license_key:
         user = get_valid_oauth_session(db=db, license_key=x_license_key)
         if not user: raise HTTPException(status_code=401, detail="Invalid License")
-        return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
+        return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token, "license_key": x_license_key}
     if x_jira_domain and x_jira_email and x_jira_token:
         return {"auth_type": "basic", "domain": x_jira_domain.replace("https://", "").replace("http://", "").strip("/"), "email": x_jira_email, "token": x_jira_token}
     raise HTTPException(status_code=401, detail="Missing Auth")
@@ -269,12 +311,60 @@ def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data
     if force_openai or image_data: return call_openai(prompt, temperature, image_data, json_mode)
     return call_gemini(prompt, temperature, image_data, json_mode)
 
+def check_ai_rate_limit(license_key, db):
+    """Check if license has remaining AI calls. Returns (allowed, message)."""
+    if not license_key:
+        return True, ""  # Basic auth users (legacy) — no limit for now
+    
+    lic = db.query(License).filter(License.key == license_key).first()
+    if not lic:
+        return False, "Invalid license"
+    
+    # Check expiry
+    if lic.expires_at and datetime.utcnow() > lic.expires_at:
+        return False, f"License expired. Please renew your {lic.plan} plan."
+    
+    # In-memory hourly rate limit
+    now = time.time()
+    tracker = AI_CALL_TRACKER.get(license_key, {"count": 0, "reset_at": now + 3600})
+    if now > tracker["reset_at"]:
+        tracker = {"count": 0, "reset_at": now + 3600}
+    
+    if tracker["count"] >= AI_CALLS_PER_HOUR:
+        return False, f"Hourly rate limit reached ({AI_CALLS_PER_HOUR}/hr). Please wait."
+    
+    tracker["count"] += 1
+    AI_CALL_TRACKER[license_key] = tracker
+    
+    # Increment lifetime counter
+    lic.ai_calls_used = (lic.ai_calls_used or 0) + 1
+    db.commit()
+    
+    return True, ""
+
+@app.get("/license/usage")
+def get_license_usage(creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
+    """Return current license usage stats (for frontend dashboard)."""
+    license_key = creds.get("license_key") if creds.get("auth_type") == "oauth" else None
+    if not license_key:
+        return {"plan": "basic", "ai_calls_used": 0, "ai_calls_limit": 999999}
+    lic = db.query(License).filter(License.key == license_key).first()
+    if not lic:
+        return {"plan": "unknown", "ai_calls_used": 0, "ai_calls_limit": 0}
+    return {
+        "plan": lic.plan or "trial",
+        "ai_calls_used": lic.ai_calls_used or 0,
+        "ai_calls_limit": lic.ai_calls_limit or 100,
+        "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
+        "company": lic.company_name or ""
+    }
+
 
 # ================= APP ENDPOINTS =================
 @app.get("/")
 def home():
     if os.path.exists("index.html"): return FileResponse("index.html")
-    return {"status": "Backend running — V48 PPTX Engine v5 + Roles & Team"}
+    return {"status": "Backend running — V49 Security + Revenue Foundation"}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -590,6 +680,9 @@ def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db
 def get_guest_retro(token: str, db: Session = Depends(get_db)):
     link = db.query(GuestLink).filter(GuestLink.token == token).first()
     if not link: raise HTTPException(status_code=404, detail="Invalid or expired link")
+    # ═══ SECURITY: Guest links expire after 24 hours ═══
+    if link.created_at and (datetime.utcnow() - link.created_at).total_seconds() > 86400:
+        raise HTTPException(status_code=410, detail="This invite link has expired (24hr limit). Please ask the Scrum Master to generate a new one.")
     user = get_valid_oauth_session(db=db, license_key=link.license_key)
     if not user: raise HTTPException(status_code=401, detail="Host session expired. Please ask the Scrum Master to generate a new link.")
     creds = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
@@ -696,77 +789,115 @@ Return STRICT JSON: {{"subject": "Clear subject line", "body": "Professional ema
 
 @app.post("/team/send_email")
 def send_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """Send email directly via SMTP. Credentials come from server environment variables — customers never see them."""
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-    
-    # SMTP credentials from environment (admin-configured, not customer-facing)
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_email = os.getenv("SMTP_EMAIL", "")
-    smtp_password = os.getenv("SMTP_PASSWORD", "")
-    sender_name = os.getenv("SMTP_SENDER_NAME", "IG Agile Scrum")
+    """Send email via best available provider. Auto-detects: Resend API → SendGrid API → SMTP fallback."""
     
     recipients = payload.get("recipients", [])
     subject = payload.get("subject", "")
     body = payload.get("body", "")
     project = payload.get("project", "")
     
-    if not smtp_email or not smtp_password:
-        return {"status": "error", "message": "Email service not configured. Please ask your administrator to set SMTP_EMAIL and SMTP_PASSWORD environment variables."}
     if not recipients:
         return {"status": "error", "message": "No recipients specified."}
     if not subject and not body:
         return {"status": "error", "message": "Email subject and body are both empty."}
     
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['From'] = f"{sender_name} <{smtp_email}>"
-        msg['To'] = ', '.join(recipients)
-        msg['Subject'] = subject
-        msg['Reply-To'] = smtp_email
-        
-        # Plain text version
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # HTML version with professional formatting
-        html_body = f"""
-        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;">
-            <div style="border-bottom: 3px solid #3B82F6; padding-bottom: 16px; margin-bottom: 24px;">
-                <strong style="color: #3B82F6; font-size: 13px; letter-spacing: 1px;">IG AGILE SCRUM</strong>
-            </div>
-            {''.join(f'<p style="margin: 0 0 12px 0; line-height: 1.7; font-size: 15px;">{line}</p>' for line in body.split(chr(10)) if line.strip())}
-            <div style="border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 16px;">
-                <small style="color: #6b7280; font-size: 11px;">Sent via IG Agile Scrum — Enterprise Agile Intelligence Platform</small>
-            </div>
-        </div>"""
-        msg.attach(MIMEText(html_body, 'html'))
-        
-        # Connect and send
-        print(f"[EMAIL] Connecting to {smtp_host}:{smtp_port}...", flush=True)
-        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(smtp_email, smtp_password)
-            server.sendmail(smtp_email, recipients, msg.as_string())
-        
-        print(f"[EMAIL] ✅ Sent to {len(recipients)} recipients: {', '.join(recipients)}", flush=True)
-        return {"status": "sent", "recipients_count": len(recipients)}
+    # Build branded HTML email
+    html_body = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;">
+        <div style="border-bottom: 3px solid #3B82F6; padding-bottom: 16px; margin-bottom: 24px;">
+            <strong style="color: #3B82F6; font-size: 13px; letter-spacing: 1px;">IG AGILE SCRUM</strong>
+        </div>
+        {''.join(f'<p style="margin: 0 0 12px 0; line-height: 1.7; font-size: 15px;">{line}</p>' for line in body.split(chr(10)) if line.strip())}
+        <div style="border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 16px;">
+            <small style="color: #6b7280; font-size: 11px;">Sent via IG Agile Scrum — Enterprise Agile Intelligence Platform</small>
+        </div>
+    </div>"""
     
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"[EMAIL] ❌ Auth failed: {e}", flush=True)
-        return {"status": "error", "message": "Email authentication failed. Please contact your administrator to verify SMTP credentials."}
-    except smtplib.SMTPRecipientsRefused as e:
-        print(f"[EMAIL] ❌ Recipients refused: {e}", flush=True)
-        return {"status": "error", "message": "One or more recipient addresses were rejected by the mail server."}
-    except smtplib.SMTPException as e:
-        print(f"[EMAIL] ❌ SMTP Error: {e}", flush=True)
-        return {"status": "error", "message": f"Mail server error: {str(e)}"}
-    except Exception as e:
-        print(f"[EMAIL] ❌ General Error: {e}", flush=True)
-        return {"status": "error", "message": f"Failed to send: {str(e)}"}
+    sender_name = os.getenv("SMTP_SENDER_NAME", "IG Agile Scrum")
+    
+    # ── STRATEGY 1: Resend API (HTTPS, works on all cloud platforms) ──
+    resend_key = os.getenv("RESEND_API_KEY", "")
+    resend_from = os.getenv("RESEND_FROM_EMAIL", "")
+    if resend_key:
+        try:
+            from_addr = resend_from or "IG Agile Scrum <onboarding@resend.dev>"
+            print(f"[EMAIL] Sending via Resend API to {len(recipients)} recipients...", flush=True)
+            resp = requests.post("https://api.resend.com/emails", 
+                headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
+                json={"from": from_addr, "to": recipients, "subject": subject, "text": body, "html": html_body},
+                timeout=15
+            )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                print(f"[EMAIL] ✅ Resend sent! ID: {data.get('id', 'N/A')}", flush=True)
+                return {"status": "sent", "recipients_count": len(recipients), "provider": "resend"}
+            else:
+                err = resp.json().get("message", resp.text)
+                print(f"[EMAIL] ❌ Resend error ({resp.status_code}): {err}", flush=True)
+                return {"status": "error", "message": f"Resend: {err}"}
+        except Exception as e:
+            print(f"[EMAIL] ❌ Resend exception: {e}", flush=True)
+            return {"status": "error", "message": f"Resend error: {str(e)}"}
+    
+    # ── STRATEGY 2: SendGrid API (HTTPS, works on all cloud platforms) ──
+    sendgrid_key = os.getenv("SENDGRID_API_KEY", "")
+    sendgrid_from = os.getenv("SENDGRID_FROM_EMAIL", "")
+    if sendgrid_key and sendgrid_from:
+        try:
+            print(f"[EMAIL] Sending via SendGrid API to {len(recipients)} recipients...", flush=True)
+            resp = requests.post("https://api.sendgrid.com/v3/mail/send",
+                headers={"Authorization": f"Bearer {sendgrid_key}", "Content-Type": "application/json"},
+                json={
+                    "personalizations": [{"to": [{"email": r} for r in recipients]}],
+                    "from": {"email": sendgrid_from, "name": sender_name},
+                    "subject": subject,
+                    "content": [{"type": "text/plain", "value": body}, {"type": "text/html", "value": html_body}]
+                },
+                timeout=15
+            )
+            if resp.status_code in (200, 201, 202):
+                print(f"[EMAIL] ✅ SendGrid sent!", flush=True)
+                return {"status": "sent", "recipients_count": len(recipients), "provider": "sendgrid"}
+            else:
+                err = resp.text
+                print(f"[EMAIL] ❌ SendGrid error ({resp.status_code}): {err}", flush=True)
+                return {"status": "error", "message": f"SendGrid error: {err}"}
+        except Exception as e:
+            print(f"[EMAIL] ❌ SendGrid exception: {e}", flush=True)
+            return {"status": "error", "message": f"SendGrid error: {str(e)}"}
+    
+    # ── STRATEGY 3: SMTP fallback (works locally or on platforms allowing port 587) ──
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_email = os.getenv("SMTP_EMAIL", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    if smtp_email and smtp_password:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+            
+            msg = MIMEMultipart('alternative')
+            msg['From'] = f"{sender_name} <{smtp_email}>"
+            msg['To'] = ', '.join(recipients)
+            msg['Subject'] = subject
+            msg['Reply-To'] = smtp_email
+            msg.attach(MIMEText(body, 'plain'))
+            msg.attach(MIMEText(html_body, 'html'))
+            
+            print(f"[EMAIL] Sending via SMTP {smtp_host}:{smtp_port}...", flush=True)
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+                server.ehlo(); server.starttls(); server.ehlo()
+                server.login(smtp_email, smtp_password)
+                server.sendmail(smtp_email, recipients, msg.as_string())
+            
+            print(f"[EMAIL] ✅ SMTP sent to {len(recipients)} recipients!", flush=True)
+            return {"status": "sent", "recipients_count": len(recipients), "provider": "smtp"}
+        except Exception as e:
+            print(f"[EMAIL] ❌ SMTP error: {e}", flush=True)
+            return {"status": "error", "message": f"SMTP failed: {str(e)}. Note: Most cloud platforms block SMTP ports. Use Resend or SendGrid instead (set RESEND_API_KEY env var)."}
+    
+    # ── No provider configured ──
+    return {"status": "error", "message": "No email provider configured. Set one of: RESEND_API_KEY, SENDGRID_API_KEY, or SMTP_EMAIL + SMTP_PASSWORD as environment variables."}
 
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:
