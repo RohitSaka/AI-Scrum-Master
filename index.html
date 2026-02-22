@@ -335,125 +335,61 @@
             return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
         }
 
-        function RetroView({ project, setIsLoading, isGlobalLoading }) {
-            const [sprints, setSprints] = useState([]); const [activeSprint, setActiveSprint] = useState(null); const [board, setBoard] = useState(null); const [input, setInput] = useState(""); const [col, setCol] = useState("well");
-            const [toast, setToast] = useState(null);
+        function GuestRetroView({ token, theme, setTheme }) {
+            const [board, setBoard] = useState(null);
+            const [info, setInfo] = useState({ project: '', sprint: '' });
+            const [input, setInput] = useState("");
+            const [col, setCol] = useState("well");
+            const [error, setError] = useState(null);
 
-            const [chatHistory, setChatHistory] = useState([{ role: 'ai', text: "Hi! I am your AI Agile Coach. What would you like to know about this sprint's retrospective?" }]);
-            const [chatInput, setChatInput] = useState("");
-            const [isChatting, setIsChatting] = useState(false);
-            const chatEndRef = useRef(null);
-
-            useEffect(() => { secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { setSprints(d); if (d && d.length) setActiveSprint(d[0].id); }); }, [project]);
-
-            const fetchBoard = () => { if (activeSprint) { secureFetch(`/retro/${project}?sprint_id=${activeSprint}`).then(r => r?.json()).then(setBoard); } };
-            useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 5000); return () => clearInterval(interval); }, [project, activeSprint]);
-
-            useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory, isChatting]);
-
-            const save = (b) => { setBoard(b); secureFetch(`/retro/update`, { method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, board: b }) }); };
-            
-            // ✨ ADDED: author: "Scrum Master" to host posts
-            const add = () => { if (!input.trim()) return; const n = board[col] ? [...board[col]] : []; n.push({ id: Date.now(), text: input, author: "Scrum Master" }); save({ ...board, [col]: n }); setInput(""); };
-            const remove = (columnName, itemId) => { const updatedCol = board[columnName].filter(item => item.id !== itemId); save({ ...board, [columnName]: updatedCol }); };
-
-            const sendChat = async () => {
-                if (!chatInput.trim()) return;
-                const newHistory = [...chatHistory, { role: 'user', text: chatInput }];
-                setChatHistory(newHistory); setChatInput(""); setIsChatting(true);
-
-                try {
-                    const r = await secureFetch(`/retro/chat`, { method: 'POST', body: JSON.stringify({ board, question: chatInput }) });
-                    const d = await r.json();
-                    setChatHistory([...newHistory, { role: 'ai', text: d.reply || "Sorry, I couldn't generate a response." }]);
-                } catch (e) {
-                    setChatHistory([...newHistory, { role: 'ai', text: "⚠️ Network error connecting to the Agile Coach." }]);
-                }
-                setIsChatting(false);
+            const fetchBoard = () => {
+                fetch(`${API_BASE}/guest/retro/${token}`)
+                    .then(r => { if (!r.ok) throw new Error("Invalid Link"); return r.json(); })
+                    .then(d => { setBoard(d.board); setInfo({ project: d.project, sprint: d.sprint }); setError(null); })
+                    .catch(e => setError("This invite link has expired or is invalid."));
             };
 
-            const generateInviteLink = async () => {
-                const config = JSON.parse(localStorage.getItem('ig_config') || '{}');
-                const r = await secureFetch(`/guest/retro/generate_link`, { method: 'POST', body: JSON.stringify({ project, sprint: activeSprint, license_key: config.license_key }) });
-                const d = await r.json();
-                if (d.token) {
-                    const link = `${window.location.origin}${window.location.pathname}?guest_token=${d.token}`;
-                    navigator.clipboard.writeText(link); setToast("Guest Link copied to clipboard!"); setTimeout(() => setToast(null), 3000);
-                }
+            useEffect(() => { fetchBoard(); const interval = setInterval(fetchBoard, 3000); return () => clearInterval(interval); }, [token]);
+
+            const add = async () => {
+                if (!input.trim()) return;
+                const r = await fetch(`${API_BASE}/guest/retro/${token}/add`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ column: col, text: input }) });
+                const res = await r.json();
+                if (res.status === 'success') { setBoard(res.board); setInput(""); }
             };
 
-            if (!board) return <LoadingScreen msg="Fetching Retrospective..." />;
+            if (error) return <div className="h-screen flex items-center justify-center text-danger font-bold text-xl">{error}</div>;
+            if (!board) return <LoadingScreen msg="Joining Team Retro..." />;
+
             return (
-                <div className="h-full flex flex-col animate-fade-in pr-4 relative">
-                    <header className="flex justify-between items-center mb-8">
-                        <div>
-                            <h2 className="text-4xl font-extrabold text-text-main flex items-center gap-4">
-                                Retrospective
-                                <button onClick={generateInviteLink} className="text-sm px-4 py-2 bg-primary-dim text-primary rounded-lg font-bold flex items-center gap-2 hover:bg-primary hover:text-white transition-colors border border-primary-dim shadow-sm">
-                                    <Icon name="Link" size={16} /> Invite Team
-                                </button>
-                            </h2>
-                        </div>
-                        <select value={activeSprint || ""} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm">{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+                <div className="h-screen flex flex-col relative transition-colors duration-500 bg-bg-body p-8">
+                    <div className="absolute top-4 right-4 z-50"><ThemeToggle theme={theme} setTheme={setTheme} /></div>
+                    <header className="mb-10 text-center">
+                        <div className="w-16 h-16 rounded-xl flex items-center justify-center text-white font-black text-2xl mx-auto mb-4 shadow-xl" style={{ background: 'var(--accent-gradient)' }}>IG</div>
+                        <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Team Retrospective</h2>
+                        <p className="text-lg font-medium mt-2 text-text-muted">Sprint {info.sprint} &middot; Anonymous Guest Mode</p>
                     </header>
-
-                    <AnimatePresence>
-                        {toast && (
-                            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="absolute top-0 right-4 z-50 bg-success text-white px-6 py-3 rounded-lg font-bold shadow-lg flex items-center gap-3">
-                                <Icon name="CheckCircle" size={18} /> {toast}
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-
-                    <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-lg">
-                        <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">{['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={() => setCol(c)} className={`px-6 py-3 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}</div>
-                        <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Type feedback here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-lg outline-none" />
-                        <button onClick={add} className="bg-primary px-10 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all">Post</button>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-8 flex-1 pb-6 min-h-0">
-                        {['well', 'improve', 'kudos'].map(c => (
-                            <div key={c} className="retro-col shadow-xl">
-                                <div className="retro-col-header bg-bg-card/50"><span>{c}</span><Icon name={c === 'well' ? 'CheckCircle' : c === 'improve' ? 'TrendingDown' : 'Star'} size={18} /></div>
-                                <div className="retro-col-body bg-bg-body/50">
-                                    {board[c]?.map(i => (
-                                        <div key={i.id} className="retro-card font-medium relative group flex flex-col gap-1">
-                                            <div className="flex justify-between items-start">
-                                                {/* ✨ NEW: Renders the author badge next to trash can */}
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-primary bg-primary-dim px-2 py-0.5 rounded-md">{i.author || 'Anonymous'}</span>
-                                                <button onClick={() => remove(c, i.id)} className="p-1 bg-danger/10 text-danger rounded-md opacity-0 group-hover:opacity-100 transition-all hover:bg-danger hover:text-white">
-                                                    <Icon name="Trash" size={14} />
-                                                </button>
-                                            </div>
-                                            <span className="block text-sm text-text-main mt-1 leading-relaxed">{i.text}</span>
-                                        </div>
-                                    ))}
-                                </div>
+                    <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col">
+                        <div className="flex gap-4 mb-10 bg-bg-card p-4 rounded-2xl border border-border shadow-2xl">
+                            <div className="flex bg-bg-body rounded-xl p-1.5 border border-border">
+                                {['well', 'improve', 'kudos'].map(c => (<button key={c} onClick={() => setCol(c)} className={`px-8 py-4 rounded-lg text-sm font-black uppercase tracking-wider transition-all ${col === c ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>{c}</button>))}
                             </div>
-                        ))}
-
-                        <div className="retro-col border-primary/30 shadow-xl flex flex-col h-full" style={{ background: 'var(--primary-dim)' }}>
-                            <div className="retro-col-header bg-primary/10 text-primary shrink-0">
-                                <span className="flex items-center gap-2"><Icon name="Sparkles" size={16} /> Ask your Agile Coach</span>
-                            </div>
-
-                            <div className="retro-col-body bg-primary/5 flex flex-col p-4 gap-4 overflow-y-auto hide-scroll flex-1">
-                                {chatHistory.map((msg, idx) => (
-                                    <div key={idx} className={`p-4 rounded-2xl max-w-[90%] text-sm shadow-sm ${msg.role === 'user' ? 'bg-primary text-white self-end rounded-br-none' : 'bg-bg-card text-text-main border border-border self-start rounded-bl-none prose prose-sm dark:prose-invert'}`}
-                                        dangerouslySetInnerHTML={msg.role === 'ai' ? { __html: marked.parse(msg.text) } : undefined}>
-                                        {msg.role === 'user' ? msg.text : null}
+                            <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} placeholder="Drop an anonymous note here..." className="flex-1 bg-transparent text-text-main px-6 font-medium text-xl outline-none" />
+                            <button onClick={add} className="bg-primary px-12 text-white font-extrabold rounded-xl hover:shadow-lg hover:scale-105 transition-all text-lg">Post</button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-10 flex-1 pb-10">
+                            {['well', 'improve', 'kudos'].map(c => (
+                                <div key={c} className="retro-col shadow-2xl border-t-4" style={{ borderTopColor: c === 'well' ? 'var(--success)' : c === 'improve' ? 'var(--danger)' : 'var(--primary)' }}>
+                                    <div className="retro-col-header bg-bg-card/50 text-sm"><span>{c}</span><Icon name={c === 'well' ? 'CheckCircle' : c === 'improve' ? 'TrendingDown' : 'Star'} size={20} /></div>
+                                    <div className="retro-col-body bg-bg-body/50 p-4">
+                                        <AnimatePresence>
+                                            {board[c]?.map(i => (
+                                                <motion.div key={i.id} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="retro-card font-medium text-base p-5 border-l-4" style={{ borderLeftColor: 'var(--primary)' }}>{i.text}</motion.div>
+                                            ))}
+                                        </AnimatePresence>
                                     </div>
-                                ))}
-                                {isChatting && <div className="self-start text-primary p-3"><span className="loader w-5 h-5 border-2"></span></div>}
-                                <div ref={chatEndRef} />
-                            </div>
-
-                            <div className="p-3 bg-bg-card border-t border-border flex gap-3 shrink-0">
-                                <input value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && sendChat()} placeholder="Ask for insights or action items..." className="flex-1 bg-bg-body text-text-main text-sm font-medium px-4 py-3 rounded-xl outline-none border border-border focus:border-primary transition-colors" />
-                                <button onClick={sendChat} disabled={isChatting || !chatInput.trim()} className="bg-primary text-white px-4 rounded-xl hover:scale-105 transition disabled:opacity-50 disabled:hover:scale-100 shadow-md">
-                                    <Icon name="Zap" size={18} />
-                                </button>
-                            </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>

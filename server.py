@@ -609,16 +609,11 @@ def add_guest_retro(token: str, payload: dict, db: Session = Depends(get_db)):
     db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
     if link.sprint_id not in db_data:
         db_data[link.sprint_id] = {"well": [], "improve": [], "kudos": [], "actions": []}
-        
     col = payload.get("column")
-    text = payload.get("text")
-    author = payload.get("author", "Guest") # ✨ Extracts the author's name
-    
-    if col in ['well', 'improve', 'kudos'] and text:
-        # ✨ Saves the author alongside the text
-        db_data[link.sprint_id][col].append({"id": int(time.time()*1000), "text": text, "author": author})
+    text_val = payload.get("text")
+    if col in ['well', 'improve', 'kudos'] and text_val:
+        db_data[link.sprint_id][col].append({"id": int(time.time()*1000), "text": text_val})
         jira_request("PUT", f"project/{link.project_key}/properties/ig_agile_retro", creds, db_data)
-        
     return {"status": "success", "board": db_data[link.sprint_id]}
 
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
