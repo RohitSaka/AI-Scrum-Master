@@ -1,1105 +1,483 @@
 """
-Sprint Deck Engine — Pixel-perfect replication of Bi-weekly Status Report.
-Generates 7 slides: Hero, Agenda, Sprint Overview, KPIs, Accomplishments,
-Risks & Blockers, Next Steps.
-
-Data contract: generate_sprint_deck(data) where data is dict from Jira.
+PPTX ENGINE v6 — Sprint Deck Generator
+Pixel-perfect replication of Bi-weekly Status Report reference.
+7 slides: Hero, Agenda, Sprint Overview, KPIs, Accomplishments, Risks, Next Steps
+3-POD column system with blue/green/purple header bars.
 """
+import io, traceback, math
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 from pptx.enum.shapes import MSO_SHAPE
-from pptx.dml.color import RGBColor
-from pptx.oxml.ns import qn
-from io import BytesIO
-import copy
 
-# ════════════════════════════════════════════
-#  CONSTANTS — exact from reference analysis
-# ════════════════════════════════════════════
-SW = 13.333  # slide width inches
-SH = 7.500   # slide height inches
-_i = lambda v: Inches(v)
+SW, SH = 13.333, 7.5
+MX = 0.55
 
-# Colors
-C_NAVY     = RGBColor(0x1E, 0x3A, 0x8A)  # header bars
-C_BLUE     = RGBColor(0x3B, 0x82, 0xF6)  # accents
-C_BLUE_D   = RGBColor(0x25, 0x63, 0xEB)  # POD blue
-C_BLUE_HI  = RGBColor(0x1D, 0x4E, 0xD8)  # "Sprint Review" text
-C_GREEN    = RGBColor(0x10, 0xB9, 0x81)  # POD green
-C_PURPLE   = RGBColor(0x8B, 0x5C, 0xF6)  # POD purple
-C_RED      = RGBColor(0xDC, 0x26, 0x26)  # risks red
-C_RED_MIT  = RGBColor(0x05, 0x96, 0x69)  # mitigated green
+# ═════════════════════════════════════════
+#  PALETTE — sampled from reference
+# ═════════════════════════════════════════
+BG      = RGBColor(242, 244, 248)
+CARD    = RGBColor(255, 255, 255)
+HDR     = RGBColor(30, 55, 108)
+W       = RGBColor(255, 255, 255)
+D       = RGBColor(22, 35, 72)
+M       = RGBColor(100, 116, 139)
+L       = RGBColor(168, 178, 195)
+ACC     = RGBColor(55, 100, 200)
+DIV     = RGBColor(225, 230, 240)
+# POD
+PB = RGBColor(62, 88, 162)
+PG = RGBColor(38, 195, 110)
+PP = RGBColor(155, 110, 200)
+PC = [PB, PG, PP]
+# Status table
+S_GREEN  = RGBColor(38, 160, 80)
+S_ORANGE = RGBColor(230, 140, 20)
+S_PURPLE = RGBColor(160, 80, 200)
+# Risk
+R_BG   = RGBColor(255, 240, 240)
+R_BAR  = RGBColor(220, 60, 60)
+G_BG   = RGBColor(238, 252, 242)
+G_BAR  = RGBColor(38, 195, 110)
+CHECK  = RGBColor(130, 210, 175)
 
-C_BG       = RGBColor(0xF4, 0xF6, 0xF8)  # slide bg
-C_CONTENT  = RGBColor(0xF9, 0xFA, 0xFB)  # content area
-C_CARD     = RGBColor(0xFF, 0xFF, 0xFF)  # white cards
-C_BORDER   = RGBColor(0xE5, 0xE7, 0xEB)  # card borders
-C_GRAY_F3  = RGBColor(0xF3, 0xF4, 0xF6)  # stats bar bg
+# ═════════════════════════════════════════
+#  PRIMITIVES
+# ═════════════════════════════════════════
+def _i(n): return Inches(n)
 
-C_TXT_DARK = RGBColor(0x1F, 0x29, 0x37)  # primary text
-C_TXT_BLK  = RGBColor(0x11, 0x18, 0x27)  # title text
-C_TXT_MID  = RGBColor(0x4B, 0x55, 0x63)  # secondary text
-C_TXT_GRAY = RGBColor(0x6B, 0x72, 0x80)  # muted text
-C_TXT_LT   = RGBColor(0x9C, 0xA3, 0xAF)  # footer text
-C_GHOST    = RGBColor(0xE5, 0xE7, 0xEB)  # ghost numbers
-C_WHITE    = RGBColor(0xFF, 0xFF, 0xFF)
-
-# POD accent backgrounds
-C_BLUE_BG  = RGBColor(0xDB, 0xEA, 0xFE)  # blue light bg
-C_BLUE_BG2 = RGBColor(0xEF, 0xF6, 0xFF)  # blue pill bg
-C_GREEN_BG = RGBColor(0xD1, 0xFA, 0xE5)  # green light bg
-C_PURP_BG  = RGBColor(0xED, 0xE9, 0xFE)  # purple light bg
-C_RED_BG   = RGBColor(0xFE, 0xCA, 0xCA)  # risk red bg
-C_GREEN_MIT= RGBColor(0xA7, 0xF3, 0xD0)  # mitigated green bg
-
-C_BLUE_TXT = RGBColor(0x1E, 0x40, 0xAF)  # POD badge text
-C_PURP_TXT = RGBColor(0x7C, 0x3A, 0xED)  # purple badge text
-C_TXT_374  = RGBColor(0x37, 0x41, 0x51)  # bullet text
-
-# Layout
-HEADER_H   = 0.833   # navy header bar height
-FOOTER_H   = 0.510   # footer height
-FOOTER_Y   = SH - FOOTER_H  # 6.990
-MX         = 0.625   # horizontal margin
-COL_W      = 4.031   # POD column width
-COL_GAP    = 0.236   # gap between columns
-COL_X      = [0.417, 4.653, 8.889]  # column left positions
-CARD_Y     = 1.146   # card top
-CARD_H     = 5.531   # card height (overview/accomplishments/next)
-CARD_H2    = 6.229   # card height (KPI slide - extends further)
-
-# Fonts
-F_HEAD = 'Montserrat'
-F_BODY = 'Roboto'
-
-
-# ════════════════════════════════════════════
-#  HELPERS
-# ════════════════════════════════════════════
-def _rect(s, x, y, w, h, fill=None, border=None, border_w=1, radius=0):
-    """Add rectangle shape."""
-    sh = s.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE if radius else MSO_SHAPE.RECTANGLE,
-                            _i(x), _i(y), _i(w), _i(h))
-    if fill:
-        sh.fill.solid(); sh.fill.fore_color.rgb = fill
-    else:
-        sh.fill.background()
-    if border:
-        sh.line.color.rgb = border; sh.line.width = Pt(border_w)
-    else:
-        sh.line.fill.background()
-    if radius:
-        try:
-            sh._element.attrib['{http://schemas.microsoft.com/office/drawing/2010/main}' + 'adj'] = str(radius)
-        except:
-            pass
+def R(s,x,y,w,h,c,rad=0):
+    sid = MSO_SHAPE.ROUNDED_RECTANGLE if rad else MSO_SHAPE.RECTANGLE
+    sh = s.shapes.add_shape(sid,_i(x),_i(y),_i(w),_i(h))
+    sh.fill.solid(); sh.fill.fore_color.rgb = c; sh.line.fill.background()
+    if rad:
+        try: sh.adjustments[0] = min(rad,0.5)
+        except: pass
     return sh
 
-def _txt(s, text, x, y, w, h, sz, color, bold=False, font=F_BODY,
-         align=PP_ALIGN.LEFT, v_anchor=None, wrap=True):
-    """Add text box."""
-    if not text:
-        return None
-    tb = s.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
-    tf = tb.text_frame
-    tf.word_wrap = wrap
-    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
-    if v_anchor:
-        try:
-            tf.vertical_anchor = v_anchor
-        except:
-            pass
-    p = tf.paragraphs[0]
-    p.text = str(text)
-    p.font.size = Pt(sz)
-    p.font.color.rgb = color
-    p.font.bold = bold
-    p.font.name = font
-    p.alignment = align
-    return tb
-
-def _txt_multi(s, text, x, y, w, h, sz, color, bold=False, font=F_BODY, align=PP_ALIGN.LEFT):
-    """Add text box with auto line wrapping."""
-    tb = s.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
-    tf = tb.text_frame
-    tf.word_wrap = True
-    tf.margin_left = Emu(0); tf.margin_right = Emu(0)
-    tf.margin_top = Emu(0); tf.margin_bottom = Emu(0)
-    p = tf.paragraphs[0]
-    p.text = str(text)
-    p.font.size = Pt(sz)
-    p.font.color.rgb = color
-    p.font.bold = bold
-    p.font.name = font
-    p.alignment = align
-    return tb
-
-def _line_h(s, x, y, w, h, color):
-    """Horizontal divider line."""
-    return _rect(s, x, y, w, max(h, 0.01), fill=color, border=color)
-
-def _line_v(s, x, y, w, h, color):
-    """Vertical accent bar."""
-    return _rect(s, x, y, max(w, 0.02), h, fill=color, border=color)
-
-def _labeled_shape(s, x, y, w, h, fill, text, sz, text_color, font=F_HEAD, bold=True):
-    """Rectangle with centered text (for badges, buttons, headers)."""
-    sh = _rect(s, x, y, w, h, fill=fill)
-    sh.line.fill.background()
-    tb = _txt(s, text, x, y, w, h, sz, text_color, bold=bold, font=font,
-              align=PP_ALIGN.CENTER, v_anchor=MSO_ANCHOR.MIDDLE)
+def O(s,cx,cy,r,c):
+    sh = s.shapes.add_shape(MSO_SHAPE.OVAL,_i(cx-r),_i(cy-r),_i(r*2),_i(r*2))
+    sh.fill.solid(); sh.fill.fore_color.rgb = c; sh.line.fill.background()
     return sh
 
-def _add_table(s, x, y, w, rows_data, col_widths_pct, header_color=C_BLUE_D):
-    """Add a formatted table. rows_data = list of lists. First row = header."""
-    n_rows = len(rows_data)
-    n_cols = len(rows_data[0]) if rows_data else 3
-    row_h = Inches(0.28)
+def HB(s,x,y,w,h,c): return R(s,x,y,w,max(h,0.012),c)
+def VB(s,x,y,w,h,c): return R(s,x,y,max(w,0.012),h,c)
 
-    tbl_shape = s.shapes.add_table(n_rows, n_cols, _i(x), _i(y),
-                                    _i(w), row_h * n_rows)
-    tbl = tbl_shape.table
+def T(s,t,x,y,w,h,sz,c,bold=0,it=0,al=PP_ALIGN.LEFT,wrap=1,fn='Calibri',anc=None):
+    if not t: return None
+    tb = s.shapes.add_textbox(_i(x),_i(y),_i(w),_i(h))
+    tf = tb.text_frame; tf.word_wrap = wrap
+    tf.margin_left=tf.margin_right=tf.margin_top=tf.margin_bottom=Emu(0)
+    if anc:
+        try: tf.vertical_anchor = anc
+        except: pass
+    p = tf.paragraphs[0]; p.text = str(t)
+    p.font.size=Pt(sz); p.font.color.rgb=c; p.font.bold=bold
+    p.font.italic=it; p.font.name=fn; p.alignment=al
+    return tb
 
-    # Set column widths
-    total_w = w
-    for ci in range(n_cols):
-        tbl.columns[ci].width = _i(total_w * col_widths_pct[ci])
+def IC(s,cx,cy,r,bg,fg,sym,fsz=14):
+    """Icon in circle with vertical centering."""
+    O(s,cx,cy,r,bg)
+    T(s,sym,cx-r,cy-r,r*2,r*2,fsz,fg,bold=1,al=PP_ALIGN.CENTER,fn='Segoe UI Symbol',anc=MSO_ANCHOR.MIDDLE)
 
-    for ri, row_data in enumerate(rows_data):
-        for ci, cell_text in enumerate(row_data):
-            cell = tbl.cell(ri, ci)
-            cell.text = str(cell_text)
+def _est_lines(text, width_inches, chars_per_inch=7.0):
+    """Estimate how many wrapped lines text will take."""
+    cpl = max(8, int(width_inches * chars_per_inch))
+    return max(1, math.ceil(len(str(text)) / cpl))
 
-            # Style
-            for p in cell.text_frame.paragraphs:
-                p.font.size = Pt(9)
-                p.font.name = F_BODY
-                if ri == 0:
-                    p.font.bold = True
-                    p.font.color.rgb = C_WHITE
-                    p.alignment = PP_ALIGN.CENTER if ci > 0 else PP_ALIGN.LEFT
-                else:
-                    p.font.bold = ci == 0
-                    p.font.color.rgb = C_TXT_DARK if ci == 0 else C_TXT_MID
-                    p.alignment = PP_ALIGN.CENTER if ci > 0 else PP_ALIGN.LEFT
+# ═════════════════════════════════════════
+#  FOOTER — slides 2-7
+# ═════════════════════════════════════════
+def footer(s, dr):
+    HB(s, MX, SH-0.52, SW-MX*2, 0.01, DIV)
+    T(s, 'Weekly Project Status Report', MX, SH-0.42, 4, 0.3, 9, L)
+    T(s, str(dr), SW-MX-3.5, SH-0.42, 3.5, 0.3, 9, L, al=PP_ALIGN.RIGHT)
 
-            # Cell fill
-            cf = cell.fill
-            if ri == 0:
-                cf.solid(); cf.fore_color.rgb = header_color
-            elif ri % 2 == 0:
-                cf.solid(); cf.fore_color.rgb = RGBColor(0xF9, 0xFA, 0xFB)
-            else:
-                cf.solid(); cf.fore_color.rgb = C_WHITE
+# ═════════════════════════════════════════
+#  HEADER BAND — navy bar with title + icon
+# ═════════════════════════════════════════
+def hdr_band(s, title, icon_sym='\u2630'):
+    bh = 0.82
+    R(s, 0, 0, SW, bh, HDR)
+    T(s, str(title), MX+0.15, 0.14, 8, 0.55, 26, W, bold=1)
+    T(s, icon_sym, SW-1.2, 0.14, 0.8, 0.55, 28, RGBColor(175,195,235),
+      al=PP_ALIGN.CENTER, fn='Segoe UI Symbol')
 
-            cell.margin_left = Emu(45720)
-            cell.margin_right = Emu(45720)
-            cell.margin_top = Emu(18288)
-            cell.margin_bottom = Emu(18288)
+# ═════════════════════════════════════════
+#  POD HEADER — colored rounded rect
+# ═════════════════════════════════════════
+def pod_hdr(s, x, y, w, h, label, color):
+    R(s, x, y, w, h, color, rad=0.08)
+    T(s, str(label), x, y+0.05, w, h-0.1, 14, W, bold=1,
+      al=PP_ALIGN.CENTER, anc=MSO_ANCHOR.MIDDLE)
 
-    # Remove table borders for clean look
-    tbl_xml = tbl._tbl
-    for tc in tbl_xml.iter(qn('a:tc')):
-        tcPr = tc.find(qn('a:tcPr'))
-        if tcPr is None:
-            tcPr = tc.makeelement(qn('a:tcPr'), {})
-            tc.insert(0, tcPr)
-        for border_name in ['lnL', 'lnR', 'lnT', 'lnB']:
-            ln = tcPr.find(qn(f'a:{border_name}'))
-            if ln is None:
-                ln = tcPr.makeelement(qn(f'a:{border_name}'), {'w': '6350'})
-                tcPr.append(ln)
-            else:
-                ln.set('w', '6350')
-            sf = ln.find(qn('a:solidFill'))
-            if sf is None:
-                sf = ln.makeelement(qn('a:solidFill'), {})
-                ln.append(sf)
-            srgb = sf.find(qn('a:srgbClr'))
-            if srgb is None:
-                srgb = sf.makeelement(qn('a:srgbClr'), {'val': 'E5E7EB'})
-                sf.append(srgb)
-            else:
-                srgb.set('val', 'E5E7EB')
+# ═════════════════════════════════════════
+#  SLIDE 1: HERO
+# ═════════════════════════════════════════
+def build_hero(s, d, dr, pods):
+    R(s, 0, 0, SW, SH, RGBColor(248,250,255))
+    # Right geometric
+    rx = 7.2
+    R(s, rx, 0, SW-rx+0.1, SH, RGBColor(30,55,115))
+    R(s, rx-0.8, SH*0.52, 2.8, SH*0.48+0.1, RGBColor(50,80,160), rad=0.03)
+    R(s, rx-0.2, SH*0.65, 2.0, SH*0.35+0.1, RGBColor(80,120,200), rad=0.03)
+    # Top arc
+    sh = s.shapes.add_shape(MSO_SHAPE.OVAL,_i(-1),_i(-1),_i(3),_i(3))
+    sh.fill.solid(); sh.fill.fore_color.rgb=RGBColor(230,236,248); sh.line.fill.background()
 
-    return tbl_shape
+    lx = 0.9
+    T(s, 'Sprint Review', lx, 1.15, 3, 0.3, 12, ACC, bold=1)
+    T(s, 'BI-Weekly Project', lx, 1.6, 5.8, 0.9, 48, D, bold=1)
+    T(s, 'Status Report', lx, 2.45, 5.8, 0.9, 48, D, bold=1)
 
+    VB(s, lx, 3.5, 0.04, 1.0, ACC)
+    sub = d.get('subtitle', 'Comprehensive overview of sprint progress, metrics, and upcoming priorities across key development teams.')
+    T(s, str(sub), lx+0.2, 3.5, 5.5, 1.0, 14, M, wrap=1)
 
-# ════════════════════════════════════════════
-#  COMMON SLIDE ELEMENTS
-# ════════════════════════════════════════════
-def _slide_bg(s):
-    """Full slide background #F4F6F8."""
-    _rect(s, 0, 0, SW, SH, fill=C_BG, border=C_WHITE)
+    per = d.get('period', dr)
+    T(s, '\u25A1', lx, 4.75, 0.2, 0.2, 11, RGBColor(200,50,50), fn='Segoe UI Symbol')
+    T(s, f'Reporting Period: {per}', lx+0.3, 4.72, 5, 0.35, 11, D)
 
-def _header_bar(s, title):
-    """Navy header bar with white title."""
-    _rect(s, 0, 0, SW, HEADER_H, fill=C_NAVY, border=C_WHITE)
-    _txt(s, title, MX, 0.167, 6, 0.5, 24, C_WHITE, bold=True, font=F_HEAD)
+    # POD tags
+    ty = 5.6; tw = 2.0; tg = 0.15
+    for i, pn in enumerate(pods[:3]):
+        tx = lx + i*(tw+tg)
+        R(s, tx, ty, tw, 0.45, RGBColor(235,238,245), rad=0.06)
+        T(s, str(pn), tx, ty+0.05, tw, 0.35, 9, ACC, bold=1,
+          al=PP_ALIGN.CENTER, anc=MSO_ANCHOR.MIDDLE)
+    T(s, 'GENSPARK CONSULTING', lx, SH-0.5, 3, 0.3, 8, L, bold=1)
 
-def _content_bg(s, h=None):
-    """Light content background below header."""
-    ch = h or (FOOTER_Y - HEADER_H)
-    _rect(s, 0, HEADER_H, SW, ch, fill=C_CONTENT, border=C_WHITE)
-
-def _footer(s, report_name, date_range):
-    """Footer with report name left, date right."""
-    _rect(s, 0, FOOTER_Y, SW, FOOTER_H, fill=C_WHITE)
-    _line_h(s, 0, FOOTER_Y, SW, 0.01, C_BORDER)
-    _txt(s, report_name, MX, FOOTER_Y + 0.166, 3, 0.188, 9, C_TXT_LT, font=F_BODY)
-    _txt(s, date_range, 11.234, FOOTER_Y + 0.166, 1.761, 0.188, 9, C_TXT_LT, font=F_BODY)
-
-def _pod_card(s, col_idx, card_h=CARD_H):
-    """White card for a POD column."""
-    x = COL_X[col_idx]
-    _rect(s, x, CARD_Y, COL_W, card_h, fill=C_CARD, border=C_BORDER)
-
-def _pod_header(s, col_idx, text, color, h=0.625):
-    """Colored POD header band at top of card."""
-    x = COL_X[col_idx] + 0.01
-    _labeled_shape(s, x, CARD_Y + 0.01, COL_W - 0.02, h, color, text, 13, C_WHITE, font=F_HEAD)
-
-def _section_label(s, x, y, text):
-    """Gray section label (e.g. 'Team Roles', 'Sprint Focus')."""
-    sh = _rect(s, x, y, 3.719, 0.188, fill=C_WHITE)
-    sh.line.fill.background()
-    _txt(s, text, x, y, 3.719, 0.188, 9, C_TXT_LT, bold=True, font=F_HEAD)
-
-def _section_divider(s, x, y, w=3.594):
-    """Thin gray horizontal divider."""
-    _line_h(s, x, y, w, 0.01, C_BORDER)
-
-
-# ════════════════════════════════════════════
-#  POD DATA HELPERS
-# ════════════════════════════════════════════
-POD_COLORS = [C_BLUE_D, C_GREEN, C_PURPLE]
-POD_BG_COLORS = [C_BLUE_BG, C_GREEN_BG, C_PURP_BG]
-POD_TXT_COLORS = [C_BLUE_D, C_GREEN, C_PURP_TXT]
-
-def _get_pods(data):
-    """Get pods list, pad to 3 if needed."""
-    pods = data.get('pods', [])
-    while len(pods) < 3:
-        pods.append({'name': f'POD {len(pods)+1}', 'short_name': f'POD {len(pods)+1}',
-                     'sprint_focus': [], 'accomplishments': [], 'risks': [], 'next_steps': [],
-                     'total_issues': 0, 'story_points': 0, 'issue_breakdown': [], 'story_points_alloc': []})
-    return pods[:3]
-
-
-# ════════════════════════════════════════════
-#  SLIDE 1: HERO / COVER
-# ════════════════════════════════════════════
-def build_hero(s, data):
-    """Cover slide — split layout with diagonal blue shapes."""
-    _slide_bg(s)
-
-    # Right diagonal shape 1 — lighter blue (#3B82F6)
-    # Freeform diagonal from reference: starts at ~6.93" from left
-    _rect(s, 6.93, 0, 6.5, SH, fill=C_BLUE)
-
-    # Right diagonal shape 2 — dark navy (#1E3A8A)
-    _rect(s, 7.33, 0, 6.1, SH, fill=C_NAVY)
-
-    # "Sprint Review" eyebrow label
-    eyebrow = data.get('eyebrow', 'Sprint Review')
-    _txt(s, eyebrow, 0.833, 1.220, 7.292, 0.3, 10, C_BLUE_HI, bold=True, font=F_BODY)
-
-    # Main title — two lines
-    line1 = data.get('title_line1', 'BI-Weekly Project')
-    line2 = data.get('title_line2', 'Status Report')
-    _txt(s, line1, 0.833, 1.595, 7.355, 0.7, 48, C_TXT_BLK, bold=True, font=F_HEAD)
-    _txt(s, line2, 0.833, 2.3, 7.355, 0.7, 48, C_TXT_BLK, bold=True, font=F_HEAD)
-
-    # Left vertical accent bar
-    _line_v(s, 0.833, 3.312, 0.063, 1.313, C_NAVY)
-
-    # Description text
-    desc = data.get('subtitle', 'Comprehensive overview of sprint progress, metrics')
-    _txt_multi(s, desc, 1.104, 3.312, 5.5, 1.313, 21, C_TXT_MID, font=F_HEAD)
-
-    # Calendar icon + date
-    _labeled_shape(s, 0.833, 5.140, 0.250, 0.250, C_BORDER, '\U0001F4C5', 9, C_NAVY, font=F_BODY)
-    sprint = data.get('sprint_name', 'FY26.PI3.S2')
-    date_range = data.get('date_range', '02/05/2026 – 02/18/2026')
-    # Two-part date text: bold period + regular dates
-    tb = s.shapes.add_textbox(_i(1.208), _i(5.124), _i(4.993), _i(0.282))
-    tf = tb.text_frame; tf.word_wrap = False
-    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
-    p = tf.paragraphs[0]
-    run1 = p.add_run()
-    run1.text = f'Reporting Period: {sprint}'
-    run1.font.size = Pt(13); run1.font.color.rgb = C_TXT_GRAY
-    run1.font.bold = True; run1.font.name = F_BODY
-    run2 = p.add_run()
-    run2.text = f'  [{date_range}]'
-    run2.font.size = Pt(13); run2.font.color.rgb = C_TXT_GRAY
-    run2.font.bold = False; run2.font.name = F_BODY
-
-    # POD badges at bottom
-    pods = _get_pods(data)
-    badge_y = 5.843
-    badge_h = 0.438
-    badge_x = 0.833
-    for i, pod in enumerate(pods):
-        name = pod.get('name', f'POD {i+1}')
-        bw = max(len(name) * 0.12 + 0.4, 1.0)
-        sh = _rect(s, badge_x, badge_y, bw, badge_h, fill=C_BLUE_BG2, border=C_BLUE_BG)
-        _txt(s, name, badge_x, badge_y, bw, badge_h, 12, C_BLUE_TXT, bold=True,
-             font=F_BODY, align=PP_ALIGN.CENTER, v_anchor=MSO_ANCHOR.MIDDLE)
-        badge_x += bw + 0.12
-
-    # Company name bottom-right
-    company = data.get('company', 'GENSPARK CONSULTING')
-    _txt(s, company, 10.554, 6.729, 2.243, 0.25, 12, C_NAVY, bold=True, font=F_HEAD)
-
-    # Bottom accent line
-    _line_h(s, 0, SH - 0.04, SW, 0.04, C_BLUE)
-
-
-# ════════════════════════════════════════════
+# ═════════════════════════════════════════
 #  SLIDE 2: AGENDA
-# ════════════════════════════════════════════
-AGENDA_ITEMS = [
-    ('Sprint Overview', 'Team structure and current focus areas'),
-    ('KPIs & Story Count', 'Issue breakdown and velocity metrics'),
-    ('Accomplishments', 'Key achievements and delivered value'),
-    ('Risks & Blockers', 'Current challenges and mitigation plans'),
-    ('Next Steps', 'Upcoming priorities for the next sprint'),
+# ═════════════════════════════════════════
+AGENDA = [
+    ('01','Sprint Overview','Team structure and current focus areas'),
+    ('02','KPIs & Story Count','Issue breakdown and velocity metrics'),
+    ('03','Accomplishments','Key achievements and delivered value'),
+    ('04','Risks & Blockers','Current challenges and mitigation plans'),
+    ('05','Next Steps','Upcoming priorities for the next sprint'),
 ]
 
-def build_agenda(s, data):
-    """Agenda slide — numbered cards in 2-column grid."""
-    _slide_bg(s)
+def build_agenda(s, d, dr, pods):
+    R(s, 0, 0, SW, SH, BG)
+    hdr_band(s, 'Agenda', '\u2630')
+    # Decorative corner
+    R(s, SW-3.5, SH-2.8, 3.5, 2.8, RGBColor(225,235,250), rad=0.15)
 
-    # Navy header
-    _rect(s, 0, 0, SW, 1.042, fill=C_NAVY, border=C_WHITE)
-    _txt(s, 'Agenda', MX, 0.240, 2, 0.563, 27, C_WHITE, bold=True, font=F_HEAD)
+    cols, gx, gy = 2, 0.3, 0.15
+    cw = (SW-MX*2-gx)/cols; ch = 0.95; sy = 1.35
+    for i,(num,title,desc) in enumerate(AGENDA):
+        col, row = i%cols, i//cols
+        cx = MX + col*(cw+gx); cy = sy + row*(ch+gy)
+        R(s, cx, cy, cw, ch, CARD, rad=0.06)
+        VB(s, cx+0.08, cy+0.12, 0.04, ch-0.24, ACC)
+        T(s, num, cx+0.2, cy+0.08, 0.8, 0.75, 42, RGBColor(218,225,238), bold=1)
+        T(s, title, cx+0.95, cy+0.12, cw-1.2, 0.4, 16, D, bold=1)
+        T(s, desc, cx+0.95, cy+0.52, cw-1.2, 0.35, 10.5, M)
+    footer(s, dr)
 
-    # Footer
-    report_name = data.get('report_name', 'Weekly Project Status Report')
-    date_range = data.get('date_range', '02/05/2026 – 02/18/2026')
-    _footer(s, report_name, date_range)
+# ═════════════════════════════════════════
+#  3-POD CARD SCAFFOLD — reused by slides 3,4,5,7
+# ═════════════════════════════════════════
+def _pod_scaffold(s, dr, pods, n=3):
+    """Draw bg + 3 white cards with colored pod headers. Returns (pw, coords) list."""
+    R(s, 0, 0, SW, SH, BG)
+    gap = 0.25
+    pw = (SW - MX*2 - gap*(n-1)) / n
+    py = 1.15
+    coords = []
+    for i in range(n):
+        px = MX + i*(pw+gap)
+        ch = SH - py - 0.65
+        R(s, px, py, pw, ch, CARD, rad=0.08)
+        pn = pods[i] if i < len(pods) else f'POD {i+1}'
+        pod_hdr(s, px+0.12, py+0.12, pw-0.24, 0.5, pn, PC[i%3])
+        coords.append((px, py, pw, ch))
+    footer(s, dr)
+    return pw, coords
 
-    # Agenda cards — 2 columns, 3 rows (5 items)
-    items = data.get('agenda_items', AGENDA_ITEMS)
-    card_w = 5.781
-    card_h = 1.083
-    gap_x = 6.302  # col2 start - col1 start
-    gap_y = 1.344   # vertical gap between rows
-    start_x = MX
-    start_y = 2.130
-
-    for i, (title, desc) in enumerate(items):
-        row = i // 2
-        col = i % 2
-        cx = start_x + col * gap_x
-        cy = start_y + row * (card_h + gap_y - card_h + 0.229)  # row spacing
-
-        # Card background
-        _rect(s, cx, cy, card_w, card_h, fill=C_WHITE)
-
-        # Left blue accent bar
-        _rect(s, cx, cy, 0.052, card_h, fill=C_BLUE, border=C_BLUE)
-
-        # Ghost number (right-aligned within left zone)
-        num = f'{i+1:02d}'
-        _txt(s, num, cx + 0.177, cy + 0.267, 0.719, 0.5, 36, C_GHOST,
-             bold=True, font=F_HEAD, align=PP_ALIGN.RIGHT)
-
-        # Title
-        _txt(s, title, cx + 1.094, cy + 0.209, 3.5, 0.375, 18, C_TXT_DARK,
-             bold=True, font=F_HEAD)
-
-        # Description
-        _txt(s, desc, cx + 1.094, cy + 0.625, 3.5, 0.25, 12, C_TXT_GRAY, font=F_BODY)
-
-
-# ════════════════════════════════════════════
+# ═════════════════════════════════════════
 #  SLIDE 3: SPRINT OVERVIEW
-# ════════════════════════════════════════════
-def build_sprint_overview(s, data):
-    """Sprint Overview — 3 POD columns with team roles + sprint focus."""
-    _slide_bg(s)
-    _header_bar(s, 'Sprint Overview')
-    _content_bg(s)
+# ═════════════════════════════════════════
+def build_sprint_overview(s, d, dr, pods):
+    hdr_band(s, 'Sprint Overview', '\u2637')
+    pw, coords = _pod_scaffold(s, dr, pods)
+    pod_data = d.get('pods') or [{},{},{}]
 
-    report_name = data.get('report_name', 'Weekly Project Status Report')
-    date_range = data.get('date_range', '02/05/2026 – 02/18/2026')
-    _footer(s, report_name, date_range)
+    for i,(px,py,pw,ch) in enumerate(coords):
+        pd = pod_data[i] if i<len(pod_data) else {}
+        # Team Roles
+        ry = py + 0.82
+        T(s, 'Team Roles', px+0.2, ry, pw-0.4, 0.22, 10, L, bold=1)
+        HB(s, px+0.2, ry+0.25, pw-0.4, 0.008, DIV)
 
-    pods = _get_pods(data)
-    for ci, pod in enumerate(pods):
-        x = COL_X[ci]
-        color = POD_COLORS[ci]
-        inner_x = x + 0.218  # inner content margin
+        roles = pd.get('roles') or {}
+        r_y = ry + 0.35
+        for lbl, name in [('Scrum Mgr:', roles.get('scrum_mgr','')),
+                          ('SEM:', roles.get('sem','')),
+                          ('Product Mgr:', roles.get('product_mgr',''))]:
+            if name:
+                T(s, '\u263B', px+0.2, r_y, 0.2, 0.18, 8, PC[i%3], fn='Segoe UI Symbol')
+                T(s, lbl, px+0.45, r_y, 1.0, 0.18, 9.5, D, bold=1)
+                T(s, str(name), px+1.55, r_y, pw-1.8, 0.18, 9.5, M)
+                r_y += 0.24
 
-        # Card + colored header
-        _pod_card(s, ci)
-        _pod_header(s, ci, pod.get('name', f'POD {ci+1}'), color)
+        # Sprint Focus
+        fy = r_y + 0.2
+        T(s, 'Sprint Focus', px+0.2, fy, pw-0.4, 0.22, 10, L, bold=1)
+        HB(s, px+0.2, fy+0.25, pw-0.4, 0.008, DIV)
 
-        # TEAM ROLES section
-        _section_label(s, inner_x, 1.990, 'Team Roles')
-        _section_divider(s, inner_x, 2.230)
+        focus = pd.get('focus') or []
+        f_y = fy + 0.38
+        for item in focus:
+            O(s, px+0.35, f_y+0.07, 0.055, PC[i%3])
+            nl = _est_lines(item, pw-0.75)
+            T(s, str(item), px+0.5, f_y-0.02, pw-0.75, nl*0.17, 9.5, D, wrap=1)
+            f_y += nl*0.17 + 0.08
 
-        roles = [
-            ('Scrum Mgr:', pod.get('scrum_mgr', '—')),
-            ('SEM:', pod.get('sem', '—')),
-            ('Product Mgr:', pod.get('product_mgr', '—')),
-        ]
-        role_y = 2.344
-        for label, value in roles:
-            # Role icon placeholder (small bullet)
-            _txt(s, '●', inner_x, role_y, 0.15, 0.209, 7, C_TXT_MID, font=F_BODY)
-            _txt(s, label, inner_x + 0.22, role_y, 1.23, 0.209, 9, C_TXT_MID, bold=True, font=F_BODY)
-            _txt(s, value, inner_x + 1.47, role_y, 1.5, 0.209, 9, C_TXT_DARK, font=F_BODY)
-            role_y += 0.286
-
-        # SPRINT FOCUS section
-        _section_label(s, inner_x, 3.411, 'Sprint Focus')
-        _section_divider(s, inner_x, 3.651)
-
-        focus_items = pod.get('sprint_focus', [])
-        fy = 3.766
-        for item in focus_items[:6]:
-            item_text = item if isinstance(item, str) else str(item.get('title', item))
-            _txt(s, '●', inner_x, fy + 0.04, 0.1, 0.15, 6, C_BLUE_D, font=F_BODY)
-            _txt(s, item_text, inner_x + 0.19, fy, 3.4, 0.209, 10, C_TXT_374, font=F_BODY)
-            fy += 0.32
-
-
-# ════════════════════════════════════════════
+# ═════════════════════════════════════════
 #  SLIDE 4: KPIs & STORY COUNT
-# ════════════════════════════════════════════
-def build_kpis(s, data):
-    """KPIs & Story Count — 3 POD columns with metrics + tables."""
-    _slide_bg(s)
-    _header_bar(s, 'KPIs & Story Count')
-    _content_bg(s, h=SH - HEADER_H)
+# ═════════════════════════════════════════
+def build_kpis(s, d, dr, pods):
+    hdr_band(s, 'KPIs & Story Count', '\u2261')
+    pw, coords = _pod_scaffold(s, dr, pods)
+    pod_data = d.get('pods') or [{},{},{}]
 
-    report_name = data.get('report_name', 'Weekly Project Status Report')
-    date_range = data.get('date_range', '02/05/2026 – 02/18/2026')
-    # Footer at bottom (extended slide)
-    _rect(s, 0, SH - 0.04, SW, 0.04, fill=C_BLUE)
+    for i,(px,py,pw,ch) in enumerate(coords):
+        pd = pod_data[i] if i<len(pod_data) else {}
+        issues = pd.get('total_issues', 0)
+        points = pd.get('story_points', 0)
 
-    pods = _get_pods(data)
-    for ci, pod in enumerate(pods):
-        x = COL_X[ci]
-        color = POD_COLORS[ci]
-        inner_x = x + 0.166
+        # Big number boxes
+        ky = py + 0.78; kw = (pw-0.4)/2
+        R(s, px+0.15, ky, kw, 0.7, RGBColor(245,247,252), rad=0.05)
+        T(s, str(issues), px+0.15, ky+0.05, kw, 0.38, 30, D, bold=1, al=PP_ALIGN.CENTER)
+        T(s, 'Total Issues', px+0.15, ky+0.45, kw, 0.2, 8, L, al=PP_ALIGN.CENTER)
+        R(s, px+0.2+kw, ky, kw, 0.7, RGBColor(245,247,252), rad=0.05)
+        T(s, str(points), px+0.2+kw, ky+0.05, kw, 0.38, 30, D, bold=1, al=PP_ALIGN.CENTER)
+        T(s, 'Story Points', px+0.2+kw, ky+0.45, kw, 0.2, 8, L, al=PP_ALIGN.CENTER)
 
-        # Card + header (shorter header for KPIs)
-        _rect(s, x, 1.094, COL_W, CARD_H2, fill=C_CARD, border=C_BORDER)
-        short_name = pod.get('short_name', pod.get('name', f'POD {ci+1}'))
-        _labeled_shape(s, x + 0.01, 1.104, COL_W - 0.02, 0.469,
-                       color, short_name, 12, C_WHITE, font=F_HEAD)
+        # Issue Breakdown
+        ty = ky + 0.85
+        T(s, '\u2630', px+0.2, ty, 0.18, 0.18, 9, D, fn='Segoe UI Symbol')
+        T(s, 'Issue Breakdown', px+0.42, ty, 2, 0.18, 10, D, bold=1)
+        # Header row
+        th = ty + 0.26
+        HB(s, px+0.15, th, pw-0.3, 0.24, RGBColor(245,247,252))
+        T(s, 'STATUS', px+0.2, th+0.03, 1.8, 0.18, 8, L, bold=1)
+        T(s, 'COUNT', px+pw-0.9, th+0.03, 0.6, 0.18, 8, L, bold=1, al=PP_ALIGN.RIGHT)
+        # Rows
+        statuses = pd.get('issue_breakdown') or [
+            {'status':'Completed','count':0},{'status':'BR / UAT Testing','count':0},
+            {'status':'In Code Review','count':0},{'status':'In Progress','count':0}]
+        scm = {'Completed':S_GREEN,'BR / UAT Testing':S_ORANGE,'In Code Review':S_PURPLE}
+        ry = th + 0.26
+        for st in statuses:
+            sn, sc_num = st.get('status',''), st.get('count',0)
+            sc = scm.get(sn, M)
+            HB(s, px+0.15, ry+0.19, pw-0.3, 0.005, DIV)
+            T(s, sn, px+0.2, ry, 2.0, 0.18, 9, sc)
+            T(s, str(sc_num), px+pw-0.9, ry, 0.6, 0.18, 9, D, bold=1, al=PP_ALIGN.RIGHT)
+            ry += 0.22
 
-        # Stats bar (gray bg with Total Issues + Story Points)
-        stats_y = 1.729
-        _rect(s, inner_x, stats_y, 3.698, 0.656, fill=C_GRAY_F3, border=C_WHITE)
+        # Story Points Allocation
+        sy = ry + 0.12
+        T(s, '\u263B', px+0.2, sy, 0.18, 0.18, 9, D, fn='Segoe UI Symbol')
+        T(s, 'Story Points Allocation', px+0.42, sy, 2, 0.18, 10, D, bold=1)
+        sh = sy + 0.26
+        HB(s, px+0.15, sh, pw-0.3, 0.24, RGBColor(245,247,252))
+        T(s, 'TEAM MEMBER', px+0.2, sh+0.03, 2, 0.18, 8, L, bold=1)
+        T(s, 'POINTS', px+pw-0.9, sh+0.03, 0.6, 0.18, 8, L, bold=1, al=PP_ALIGN.RIGHT)
+        members = pd.get('story_points_allocation') or []
+        my = sh + 0.26
+        for m in members[:8]:
+            mn = m.get('member',''); mp = m.get('points','')
+            HB(s, px+0.15, my+0.19, pw-0.3, 0.005, DIV)
+            T(s, str(mn), px+0.2, my, 2.2, 0.18, 9, D)
+            T(s, str(mp), px+pw-0.9, my, 0.6, 0.18, 9, D, al=PP_ALIGN.RIGHT)
+            my += 0.22
 
-        total_issues = pod.get('total_issues', 0)
-        story_points = pod.get('story_points', 0)
-
-        # Total Issues (left half)
-        _txt(s, str(total_issues), inner_x + 0.584, stats_y + 0.104, 0.771, 0.25, 18,
-             color, bold=True, font=F_HEAD, align=PP_ALIGN.CENTER)
-        _txt(s, 'Total Issues', inner_x + 0.580, stats_y + 0.396, 0.778, 0.157, 8,
-             C_TXT_GRAY, font=F_BODY, align=PP_ALIGN.CENTER)
-
-        # Story Points (right half)
-        _txt(s, str(story_points), inner_x + 2.11, stats_y + 0.104, 0.803, 0.25, 18,
-             color, bold=True, font=F_HEAD, align=PP_ALIGN.CENTER)
-        _txt(s, 'Story Points', inner_x + 2.11, stats_y + 0.396, 0.803, 0.157, 8,
-             C_TXT_GRAY, font=F_BODY, align=PP_ALIGN.CENTER)
-
-        # Issue Breakdown section
-        _txt(s, '■', inner_x, 2.635, 0.15, 0.15, 7, color, font=F_BODY)
-        _txt(s, ' Issue Breakdown ', inner_x + 0.18, 2.594, 3.5, 0.188, 9,
-             C_TXT_374, bold=True, font=F_HEAD)
-
-        # Issue breakdown table
-        breakdown = pod.get('issue_breakdown', [])
-        if breakdown:
-            rows = [['Type', 'To Do', 'In Progress', 'Done', 'Total']]
-            for item in breakdown:
-                rows.append([
-                    item.get('type', ''),
-                    str(item.get('todo', 0)),
-                    str(item.get('progress', 0)),
-                    str(item.get('done', 0)),
-                    str(item.get('total', 0))
-                ])
-            _add_table(s, inner_x, 2.865, 3.694, rows, [0.35, 0.16, 0.19, 0.14, 0.16],
-                       header_color=color)
-
-        # Story Points Allocation section
-        _txt(s, '■', inner_x, 4.693, 0.15, 0.15, 7, color, font=F_BODY)
-        _txt(s, ' Story Points Allocation ', inner_x + 0.18, 4.651, 3.5, 0.188, 9,
-             C_TXT_374, bold=True, font=F_HEAD)
-
-        sp_alloc = pod.get('story_points_alloc', [])
-        if sp_alloc:
-            rows2 = [['Epic / Feature', 'Points', 'Status']]
-            for item in sp_alloc:
-                rows2.append([
-                    item.get('epic', ''),
-                    str(item.get('points', 0)),
-                    item.get('status', '—')
-                ])
-            _add_table(s, inner_x, 4.922, 3.695, rows2, [0.50, 0.22, 0.28],
-                       header_color=color)
-
-
-# ════════════════════════════════════════════
+# ═════════════════════════════════════════
 #  SLIDE 5: ACCOMPLISHMENTS
-# ════════════════════════════════════════════
-def build_accomplishments(s, data):
-    """Accomplishments — 3 POD columns with achievement items."""
-    _slide_bg(s)
-    _header_bar(s, 'Accomplishments')
-    _content_bg(s)
+# ═════════════════════════════════════════
+def build_accomplishments(s, d, dr, pods):
+    hdr_band(s, 'Accomplishments', '\u265B')
+    pw, coords = _pod_scaffold(s, dr, pods)
+    pod_data = d.get('pods') or [{},{},{}]
 
-    report_name = data.get('report_name', 'Weekly Project Status Report')
-    date_range = data.get('date_range', '02/05/2026 – 02/18/2026')
-    _footer(s, report_name, date_range)
+    for i,(px,py,pw,ch) in enumerate(coords):
+        pd = pod_data[i] if i<len(pod_data) else {}
+        items = pd.get('items') or pd.get('accomplishments') or []
+        n_items = min(len(items), 7)
+        if not n_items: continue
+        # Available vertical space in card
+        avail = ch - 0.78 - 0.15  # below header, above bottom pad
+        # Pre-compute all line counts
+        tw = pw - 0.85
+        line_counts = []
+        for item in items[:n_items]:
+            t = item if isinstance(item, str) else item.get('text','')
+            line_counts.append(_est_lines(t, tw, 7.5))
+        total_text_h = sum(lc * 0.14 + 0.04 for lc in line_counts)
+        # Compute gap to distribute remaining space
+        gap = max(0.02, (avail - total_text_h) / max(n_items, 1))
+        gap = min(gap, 0.12)  # cap
+        fsz = 9 if n_items >= 5 else 9.5
+        iy = py + 0.78
+        for j, item in enumerate(items[:n_items]):
+            txt_val = item if isinstance(item, str) else item.get('text','')
+            if not txt_val: continue
+            IC(s, px+0.35, iy+0.1, 0.13, RGBColor(230,248,240), CHECK, '\u2713', 9)
+            nl = line_counts[j]
+            lh = nl * 0.14 + 0.04
+            T(s, str(txt_val), px+0.58, iy, tw, lh, fsz, D, wrap=1)
+            iy += lh + gap
 
-    pods = _get_pods(data)
-    for ci, pod in enumerate(pods):
-        x = COL_X[ci]
-        color = POD_COLORS[ci]
-        bg_color = POD_BG_COLORS[ci]
-        inner_x = x + 0.218
-
-        # Card + header
-        _pod_card(s, ci)
-        short_name = pod.get('short_name', pod.get('name', f'POD {ci+1}'))
-        _pod_header(s, ci, short_name, color)
-
-        # Accomplishment items
-        items = pod.get('accomplishments', [])
-        iy = 2.063
-        for j, item in enumerate(items[:6]):
-            text = item if isinstance(item, str) else str(item.get('text', item))
-
-            # Colored icon badge
-            _rect(s, inner_x, iy, 0.25, 0.25, fill=bg_color, border=C_WHITE)
-            _txt(s, '✓', inner_x + 0.05, iy + 0.02, 0.15, 0.21, 9, color,
-                 bold=True, font=F_BODY, align=PP_ALIGN.CENTER)
-
-            # Text
-            _txt_multi(s, text, inner_x + 0.4, iy - 0.03, 3.271, 0.65, 10, C_TXT_374, font=F_BODY)
-
-            # Spacing depends on text length
-            lines_est = max(1, len(text) // 45 + 1)
-            iy += 0.25 + lines_est * 0.22 + 0.15
-
-
-# ════════════════════════════════════════════
+# ═════════════════════════════════════════
 #  SLIDE 6: RISKS & BLOCKERS
-# ════════════════════════════════════════════
-def build_risks(s, data):
-    """Risks & Blockers — split: Active (red, left) + Mitigated (green, right)."""
-    _slide_bg(s)
-    _header_bar(s, 'Risks & Blockers')
-    _content_bg(s)
+# ═════════════════════════════════════════
+def build_risks(s, d, dr, pods):
+    R(s, 0, 0, SW, SH, BG)
+    hdr_band(s, 'Risks & Blockers', '\u26A0')
+    cw = (SW - MX*2 - 0.3)/2
+    lx = MX; rx = MX + cw + 0.3
 
-    report_name = data.get('report_name', 'Weekly Project Status Report')
-    date_range = data.get('date_range', '02/05/2026 – 02/18/2026')
-    _footer(s, report_name, date_range)
+    # Column headers
+    T(s, '\u2604', lx, 1.15, 0.3, 0.3, 16, R_BAR, fn='Segoe UI Symbol')
+    T(s, 'Active Attention Items', lx+0.35, 1.15, 4, 0.3, 16, R_BAR, bold=1)
+    HB(s, lx, 1.5, cw, 0.025, R_BAR)
+    T(s, '\u25C7', rx, 1.15, 0.3, 0.3, 16, G_BAR, fn='Segoe UI Symbol')
+    T(s, 'Mitigated & Watchlist', rx+0.35, 1.15, 4, 0.3, 16, G_BAR, bold=1)
+    HB(s, rx, 1.5, cw, 0.025, G_BAR)
 
-    half_w = 5.833
-    left_x = MX
-    right_x = 6.875
+    def _risk_card(x, y, w, risk, is_active):
+        bg_c = R_BG if is_active else G_BG
+        bar_c = R_BAR if is_active else G_BAR
+        pod_name = risk.get('pod','POD')
+        title = risk.get('title','')
+        desc = risk.get('description','')
+        nl = _est_lines(desc, w-0.6, 6)
+        ch = 0.85 + nl*0.16
+        R(s, x, y, w, ch, bg_c, rad=0.06)
+        VB(s, x, y, 0.05, ch, bar_c)
+        # Pod tag
+        tw = min(len(pod_name)*0.08+0.4, 2.5)
+        tag_bg = RGBColor(255,228,228) if is_active else RGBColor(218,248,228)
+        R(s, x+0.2, y+0.12, tw, 0.24, tag_bg, rad=0.04)
+        T(s, str(pod_name), x+0.2, y+0.13, tw, 0.2, 8, bar_c, bold=1, al=PP_ALIGN.CENTER)
+        T(s, str(title), x+0.2, y+0.42, w-0.4, 0.25, 12, D, bold=1)
+        T(s, str(desc), x+0.2, y+0.7, w-0.4, nl*0.16, 9.5, M, wrap=1)
+        # Badge
+        by = y + ch - 0.3
+        badge_label = 'Status: Active Risk' if is_active else 'Status: Mitigated'
+        badge_icon = '\u26A0' if is_active else '\u2713'
+        badge_bg = RGBColor(255,235,235) if is_active else RGBColor(225,250,235)
+        T(s, badge_icon, x+0.2, by, 0.2, 0.2, 10, bar_c, fn='Segoe UI Symbol')
+        R(s, x+0.42, by, 1.1, 0.24, badge_bg, rad=0.04)
+        T(s, badge_label, x+0.45, by+0.02, 1.0, 0.2, 7.5, bar_c, bold=1)
+        return ch
 
-    # ── LEFT: Active Attention Items ──
-    _txt(s, '⚠', left_x, 1.198, 0.2, 0.208, 10, C_RED, font=F_BODY)
-    _txt(s, 'Active Attention Items', left_x + 0.313, 1.146, 3.5, 0.49, 15,
-         C_RED, bold=True, font=F_HEAD)
-    _line_h(s, left_x, 1.615, half_w, 0.021, C_RED_BG)
+    # Active
+    ay = 1.75
+    for risk in (d.get('active') or [])[:3]:
+        h = _risk_card(lx, ay, cw, risk, True)
+        ay += h + 0.15
+    # Mitigated
+    my = 1.75
+    for risk in (d.get('mitigated') or [])[:3]:
+        h = _risk_card(rx, my, cw, risk, False)
+        my += h + 0.15
+    footer(s, dr)
 
-    # ── RIGHT: Mitigated & Watchlist ──
-    _txt(s, '✓', right_x, 1.198, 0.2, 0.208, 10, C_RED_MIT, font=F_BODY)
-    _txt(s, 'Mitigated & Watchlist', right_x + 0.333, 1.146, 3.5, 0.49, 15,
-         C_RED_MIT, bold=True, font=F_HEAD)
-    _line_h(s, right_x, 1.615, half_w, 0.021, C_GREEN_MIT)
-
-    # Collect risks by status
-    pods = _get_pods(data)
-    active_risks = []
-    mitigated_risks = []
-
-    for ci, pod in enumerate(pods):
-        color = POD_COLORS[ci]
-        bg_color = POD_BG_COLORS[ci]
-        txt_color = POD_TXT_COLORS[ci]
-        pod_name = pod.get('name', f'POD {ci+1}')
-        for risk in pod.get('risks', []):
-            entry = {**risk, 'pod_name': pod_name, 'pod_color': color,
-                     'pod_bg': bg_color, 'pod_txt': txt_color}
-            status = risk.get('status', 'Active Risk').lower()
-            if 'mitigat' in status or 'watch' in status or 'resolved' in status:
-                mitigated_risks.append(entry)
-            else:
-                active_risks.append(entry)
-
-    def _draw_risk_card(s, risk, base_x, y, half_w):
-        """Draw a single risk card."""
-        card_x = base_x + 0.260
-        # White card background
-        _rect(s, base_x, y, half_w, 1.85, fill=C_CARD, border=C_BORDER, border_w=0.5)
-
-        # POD badge
-        pod_name = risk['pod_name']
-        bw = max(len(pod_name) * 0.09 + 0.3, 0.688)
-        _labeled_shape(s, card_x, y + 0.208, bw, 0.260,
-                       risk['pod_bg'], pod_name, 8, risk['pod_txt'], font=F_BODY)
-
-        # Title
-        _txt(s, risk.get('title', ''), card_x, y + 0.641, half_w - 0.6, 0.24, 12,
-             C_TXT_DARK, bold=True, font=F_HEAD)
-
-        # Description
-        _txt_multi(s, risk.get('description', ''), card_x, y + 0.999, half_w - 0.6, 0.5,
-                   10, C_TXT_MID, font=F_BODY)
-
-        # Status badge
-        status = risk.get('status', 'Active Risk')
-        is_active = 'active' in status.lower() or 'block' in status.lower()
-        badge_color = C_RED if is_active else C_RED_MIT
-        badge_border = C_RED_BG if is_active else C_GREEN_MIT
-
-        badge_w = max(len(status) * 0.07 + 0.3, 1.1)
-        _rect(s, card_x + 0.29, y + 1.56, badge_w, 0.21, fill=C_WHITE, border=badge_border)
-        _txt(s, f' {status} ', card_x + 0.29, y + 1.56, badge_w, 0.21, 9,
-             badge_color, bold=True, font=F_BODY, align=PP_ALIGN.CENTER, v_anchor=MSO_ANCHOR.MIDDLE)
-
-    # Draw active risks
-    ry = 1.948
-    for risk in active_risks[:3]:
-        _draw_risk_card(s, risk, left_x, ry, half_w)
-        ry += 2.05
-
-    # Draw mitigated risks
-    ry = 1.948
-    for risk in mitigated_risks[:3]:
-        _draw_risk_card(s, risk, right_x, ry, half_w)
-        ry += 2.05
-
-
-# ════════════════════════════════════════════
+# ═════════════════════════════════════════
 #  SLIDE 7: NEXT STEPS
-# ════════════════════════════════════════════
-def build_next_steps(s, data):
-    """Next Steps — 3 POD columns with task items."""
-    _slide_bg(s)
-    _header_bar(s, 'Next Steps')
-    _content_bg(s)
+# ═════════════════════════════════════════
+def build_next_steps(s, d, dr, pods):
+    hdr_band(s, 'Next Steps', '\u279C')
+    pw, coords = _pod_scaffold(s, dr, pods)
+    pod_data = d.get('pods') or [{},{},{}]
+    ik_cycle = ['\u2039/\u203A','\u2315','\u2318','\u2630','\u2709','\u2699','\u29BF','\u2713']
 
-    report_name = data.get('report_name', 'Weekly Project Status Report')
-    date_range = data.get('date_range', '02/05/2026 – 02/18/2026')
-    _footer(s, report_name, date_range)
-
-    pods = _get_pods(data)
-    for ci, pod in enumerate(pods):
-        x = COL_X[ci]
-        color = POD_COLORS[ci]
-        inner_x = x + 0.218
-
-        # Card + header
-        _pod_card(s, ci)
-        short_name = pod.get('short_name', pod.get('name', f'POD {ci+1}'))
-        _pod_header(s, ci, short_name, color, h=0.573)
-
-        # Task items
-        items = pod.get('next_steps', [])
-        iy = 1.990
-        for j, item in enumerate(items[:4]):
-            if isinstance(item, str):
-                title = item
-                desc = ''
-            else:
-                title = str(item.get('title', ''))
-                desc = str(item.get('description', ''))
-
-            # Colored circle icon
-            _rect(s, inner_x, iy, 0.333, 0.333, fill=color, border=None, radius=50)
-            _txt(s, '→', inner_x + 0.08, iy + 0.05, 0.17, 0.23, 12, C_WHITE,
-                 bold=True, font=F_BODY, align=PP_ALIGN.CENTER)
-
-            # Vertical accent line
-            _line_v(s, inner_x + 0.167, iy + 0.365, 0.021, 0.292, color)
-
-            # Title
-            _txt(s, title, inner_x + 0.5, iy + 0.04, 3.196, 0.219, 10,
-                 C_TXT_DARK, bold=True, font=F_HEAD)
-
-            # Description
+    for i,(px,py,pw,ch) in enumerate(coords):
+        pd = pod_data[i] if i<len(pod_data) else {}
+        items = pd.get('items') or pd.get('next_steps') or []
+        iy = py + 0.82
+        for j, item in enumerate(items[:5]):
+            title = item.get('title','') if isinstance(item,dict) else str(item)
+            desc = item.get('description','') if isinstance(item,dict) else ''
+            # Icon circle
+            ac = PC[i%3]
+            pas = RGBColor(min(255,228+ac[0]//20),min(255,228+ac[1]//20),min(255,232+ac[2]//20))
+            sym = ik_cycle[(i*3+j) % len(ik_cycle)]
+            IC(s, px+0.35, iy+0.12, 0.18, pas, ac, sym, 10)
+            # Connector line
+            VB(s, px+0.35, iy+0.32, 0.015, 0.35, DIV)
+            T(s, str(title), px+0.65, iy-0.02, pw-0.9, 0.22, 10.5, D, bold=1)
             if desc:
-                _txt_multi(s, desc, inner_x + 0.5, iy + 0.292, 3.157, 0.407, 9,
-                           C_TXT_MID, font=F_BODY)
+                T(s, str(desc), px+0.65, iy+0.22, pw-0.9, 0.42, 9, M, wrap=1)
+            iy += 0.78
 
-            iy += 0.95
-
-
-# ════════════════════════════════════════════
-#  MAIN GENERATOR
-# ════════════════════════════════════════════
-SLIDE_BUILDERS = [
-    build_hero,
-    build_agenda,
-    build_sprint_overview,
-    build_kpis,
-    build_accomplishments,
-    build_risks,
-    build_next_steps,
-]
-
-def generate_sprint_deck(data):
-    """
-    Generate a complete Sprint Review deck from Jira data.
-
-    Args:
-        data: dict with keys:
-            sprint_name, date_range, company, title_line1, title_line2, subtitle,
-            report_name, eyebrow,
-            pods: list of pod dicts with:
-                name, short_name, color,
-                scrum_mgr, sem, product_mgr,
-                sprint_focus: list of str,
-                total_issues: int, story_points: int,
-                issue_breakdown: list of {type, todo, progress, done, total},
-                story_points_alloc: list of {epic, points, status},
-                accomplishments: list of str or {text},
-                risks: list of {title, description, status},
-                next_steps: list of {title, description}
-
-    Returns:
-        BytesIO buffer with .pptx content
-    """
-    prs = Presentation()
-    prs.slide_width = _i(SW)
-    prs.slide_height = _i(SH)
-
-    blank_layout = prs.slide_layouts[6]  # blank
-
-    for builder in SLIDE_BUILDERS:
-        slide = prs.slides.add_slide(blank_layout)
-        builder(slide, data)
-
-    buf = BytesIO()
-    prs.save(buf)
-    buf.seek(0)
-    return buf
+        # Decorative arrow at bottom
+        T(s, '\u279C', px+pw/2-0.2, SH-1.5, 0.4, 0.4, 24,
+          RGBColor(200,210,230), al=PP_ALIGN.CENTER, fn='Segoe UI Symbol')
 
 
-# ════════════════════════════════════════════
-#  THEMES & NATIVE EDITABLE PPTX (used by server.py)
-# ════════════════════════════════════════════
-
-THEMES = {
-    "sprint": {
-        "name": "Sprint (Dark Teal)",
-        "bg": RGBColor(0x0F, 0x17, 0x2A),
-        "accent": RGBColor(0x14, 0xB8, 0xA6),
-        "text": RGBColor(0xFF, 0xFF, 0xFF),
-        "card_bg": RGBColor(0x1E, 0x29, 0x3B),
-        "subtitle": RGBColor(0x94, 0xA3, 0xB8),
-    },
-    "weekly": {
-        "name": "Weekly (Light Corp)",
-        "bg": RGBColor(0xFF, 0xFF, 0xFF),
-        "accent": RGBColor(0x3B, 0x82, 0xF6),
-        "text": RGBColor(0x1E, 0x3A, 0x8A),
-        "card_bg": RGBColor(0xF1, 0xF5, 0xF9),
-        "subtitle": RGBColor(0x64, 0x74, 0x8B),
-    },
-    "monthly": {
-        "name": "Monthly (Executive)",
-        "bg": RGBColor(0x1E, 0x1B, 0x4B),
-        "accent": RGBColor(0xA7, 0x8B, 0xFA),
-        "text": RGBColor(0xFF, 0xFF, 0xFF),
-        "card_bg": RGBColor(0x2E, 0x28, 0x5E),
-        "subtitle": RGBColor(0xC4, 0xB5, 0xFD),
-    },
-    "quarterly": {
-        "name": "Quarterly (Premium Dark)",
-        "bg": RGBColor(0x0C, 0x0A, 0x09),
-        "accent": RGBColor(0xF5, 0x9E, 0x0B),
-        "text": RGBColor(0xFF, 0xFF, 0xFF),
-        "card_bg": RGBColor(0x1C, 0x1A, 0x17),
-        "subtitle": RGBColor(0xA8, 0xA2, 0x9E),
-    },
+# ═════════════════════════════════════════
+#  BUILDER REGISTRY
+# ═════════════════════════════════════════
+SPRINT_BUILDERS = {
+    'hero': build_hero,
+    'agenda': build_agenda,
+    'sprint_overview': build_sprint_overview,
+    'kpis': build_kpis,
+    'kpi_grid': build_kpis,
+    'accomplishments': build_accomplishments,
+    'risks': build_risks,
+    'risks_blockers': build_risks,
+    'next_steps': build_next_steps,
 }
 
-
-def generate_native_editable_pptx(slides_data, theme_name="sprint"):
-    """
-    Generate a native editable PPTX from AI-generated slide dicts.
-
-    Args:
-        slides_data: list of slide dicts with keys like layout, title, subtitle, content, items
-        theme_name: one of 'sprint', 'weekly', 'monthly', 'quarterly'
-
-    Returns:
-        BytesIO buffer with .pptx content
-    """
-    theme = THEMES.get(theme_name, THEMES["sprint"])
-    bg_color = theme["bg"]
-    accent = theme["accent"]
-    txt_color = theme["text"]
-    card_bg = theme["card_bg"]
-    sub_color = theme["subtitle"]
-
-    prs = Presentation()
-    prs.slide_width = _i(SW)
-    prs.slide_height = _i(SH)
-    blank_layout = prs.slide_layouts[6]
-
-    for slide_data in slides_data:
-        s = prs.slides.add_slide(blank_layout)
-        layout = slide_data.get("layout", "standard")
-
-        # Background
-        _rect(s, 0, 0, SW, SH, fill=bg_color)
-
-        if layout == "hero":
-            # Accent bar at bottom
-            _rect(s, 0, SH - 0.15, SW, 0.15, fill=accent)
-            # Title
-            title = slide_data.get("title", "")
-            _txt(s, title, 1.0, 2.2, 11, 1.2, 44, txt_color, bold=True, font=F_HEAD,
-                 align=PP_ALIGN.LEFT)
-            # Subtitle
-            sub = slide_data.get("subtitle", "")
-            _txt(s, sub, 1.0, 3.6, 8, 0.6, 20, sub_color, font=F_BODY)
-            # Accent line
-            _rect(s, 1.0, 3.3, 2.0, 0.06, fill=accent)
-
-        elif layout == "kpi_grid":
-            # Header
-            _rect(s, 0, 0, SW, 1.1, fill=accent)
-            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
-                 bold=True, font=F_HEAD)
-            # KPI cards
-            items = slide_data.get("items", [])
-            n = len(items) if items else 1
-            card_w = min(3.5, (SW - 1.6 - 0.3 * (n - 1)) / n)
-            start_x = (SW - (card_w * n + 0.3 * (n - 1))) / 2
-            for idx, item in enumerate(items):
-                cx = start_x + idx * (card_w + 0.3)
-                _rect(s, cx, 1.8, card_w, 2.8, fill=card_bg, border=accent, border_w=1)
-                _txt(s, str(item.get("value", "")), cx, 2.2, card_w, 1.0, 42, accent,
-                     bold=True, font=F_HEAD, align=PP_ALIGN.CENTER)
-                _txt(s, str(item.get("label", "")), cx, 3.4, card_w, 0.6, 14, sub_color,
-                     font=F_BODY, align=PP_ALIGN.CENTER)
-
-        elif layout == "icon_columns":
-            # Header
-            _rect(s, 0, 0, SW, 1.1, fill=accent)
-            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
-                 bold=True, font=F_HEAD)
-            items = slide_data.get("items", [])
-            iy = 1.6
-            for item in items[:5]:
-                _rect(s, 0.8, iy, 11.4, 0.06, fill=card_bg)
-                _txt(s, str(item.get("title", "")), 1.0, iy + 0.15, 10, 0.35, 16,
-                     txt_color, bold=True, font=F_HEAD)
-                _txt_multi(s, str(item.get("text", "")), 1.0, iy + 0.55, 10.5, 0.6, 12,
-                           sub_color, font=F_BODY)
-                iy += 1.3
-
-        elif layout == "flowchart":
-            # Header
-            _rect(s, 0, 0, SW, 1.1, fill=accent)
-            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
-                 bold=True, font=F_HEAD)
-            items = slide_data.get("items", [])
-            n = len(items) if items else 1
-            box_w = min(3.0, (SW - 1.6 - 0.6 * (n - 1)) / n)
-            start_x = (SW - (box_w * n + 0.6 * (n - 1))) / 2
-            for idx, item in enumerate(items[:6]):
-                bx = start_x + idx * (box_w + 0.6)
-                _rect(s, bx, 2.5, box_w, 1.8, fill=card_bg, border=accent, border_w=1)
-                # Step number
-                _labeled_shape(s, bx + box_w / 2 - 0.2, 2.1, 0.4, 0.4, accent,
-                               str(idx + 1), 14, C_WHITE, font=F_HEAD)
-                title = item.get("title", item) if isinstance(item, dict) else str(item)
-                _txt(s, title, bx + 0.15, 2.9, box_w - 0.3, 1.0, 13, txt_color,
-                     bold=True, font=F_BODY, align=PP_ALIGN.CENTER,
-                     v_anchor=MSO_ANCHOR.MIDDLE)
-                # Arrow between boxes
-                if idx < n - 1:
-                    ax = bx + box_w + 0.1
-                    _txt(s, "→", ax, 3.1, 0.4, 0.5, 24, accent, bold=True, font=F_BODY,
-                         align=PP_ALIGN.CENTER)
-
-        else:  # "standard" or any other layout
-            # Header
-            _rect(s, 0, 0, SW, 1.1, fill=accent)
-            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
-                 bold=True, font=F_HEAD)
-            # Bullet content
-            content = slide_data.get("content", [])
-            if isinstance(content, str):
-                content = [content]
-            cy = 1.6
-            for bullet in content:
-                _txt(s, "●", 0.8, cy + 0.05, 0.2, 0.3, 8, accent, font=F_BODY)
-                _txt_multi(s, str(bullet), 1.2, cy, 10.5, 0.8, 14, txt_color, font=F_BODY)
-                lines_est = max(1, len(str(bullet)) // 80 + 1)
-                cy += 0.35 + lines_est * 0.25
-
-    buf = BytesIO()
-    prs.save(buf)
-    buf.seek(0)
-    return buf
-
-
-# ════════════════════════════════════════════
-#  SAMPLE DATA (for testing)
-# ════════════════════════════════════════════
-SAMPLE_DATA = {
-    "sprint_name": "FY26.PI3.S2",
-    "date_range": "02/05/2026 – 02/18/2026",
-    "company": "GENSPARK CONSULTING",
-    "title_line1": "BI-Weekly Project",
-    "title_line2": "Status Report",
-    "eyebrow": "Sprint Review",
-    "subtitle": "Comprehensive overview of sprint progress, metrics and team activities across all active PODs",
-    "report_name": "Weekly Project Status Report",
-    "pods": [
-        {
-            "name": "Business Development POD",
-            "short_name": "Business Development",
-            "scrum_mgr": "Neetha Kotagiri",
-            "sem": "Mothilal Ramavath",
-            "product_mgr": "Lance Nazer",
-            "sprint_focus": [
-                "Transfer Center",
-                "AscOne PEI batch scaling",
-                "PRM NPI Search",
-                "PRM Enhancements and Cleanup"
-            ],
-            "total_issues": 13,
-            "story_points": 36,
-            "issue_breakdown": [
-                {"type": "Story", "todo": 0, "progress": 5, "done": 3, "total": 8},
-                {"type": "Task", "todo": 1, "progress": 0, "done": 2, "total": 3},
-                {"type": "Bug", "todo": 0, "progress": 1, "done": 1, "total": 2}
-            ],
-            "story_points_alloc": [
-                {"epic": "Transfer Center", "points": 13, "status": "In Progress"},
-                {"epic": "PEI Batch Scaling", "points": 8, "status": "In Progress"},
-                {"epic": "PRM NPI Search", "points": 8, "status": "To Do"},
-                {"epic": "PRM Enhancements", "points": 7, "status": "Done"}
-            ],
-            "accomplishments": [
-                "Transfer center Enhancements: Implemented a standardized call flow and improved routing logic",
-                "AscOne PEI batch scaling: Completed the initial batch processing framework",
-                "PRM NPI Search: Built the NPI validation search module",
-                "PRM Cleanup: Resolved 7 legacy data quality issues"
-            ],
-            "risks": [
-                {"title": "PEI Scaling: Implementation for SFMC",
-                 "description": "Blocked as we are waiting on the approval for the design from GCP team. Will resume implementation once approved.",
-                 "status": "Active Risk"},
-                {"title": "GCP Team Design Issue",
-                 "description": "Design issue identified with the Google Cloud Platform integration. Team has proposed alternative architecture.",
-                 "status": "Mitigated"}
-            ],
-            "next_steps": [
-                {"title": "BD – Gmail Plug In", "description": "Discovery for identifying right plug in for generating leads from email interactions"},
-                {"title": "ACVS – Solution discovery", "description": "Document Discovery for ACVS implementation on salesforce platform"},
-                {"title": "AI Summaries Discovery", "description": "Initiate discovery for AI-driven tasks and cases summarization capabilities"}
-            ]
-        },
-        {
-            "name": "Provider Services POD",
-            "short_name": "Provider Services",
-            "scrum_mgr": "Neetha Kotagiri",
-            "sem": "Surya Chinta",
-            "product_mgr": "Nichole Van",
-            "sprint_focus": [
-                "Form Assembly: Provider Type logic & general info",
-                "Form Assembly: Billing/Remittance/Identification",
-                "Texas CIN migration: solution design",
-                "Automated reminder email enhancements",
-                "Legacy report migration to Enterprise"
-            ],
-            "total_issues": 16,
-            "story_points": 49,
-            "issue_breakdown": [
-                {"type": "Story", "todo": 2, "progress": 6, "done": 4, "total": 12},
-                {"type": "Task", "todo": 0, "progress": 1, "done": 2, "total": 3},
-                {"type": "Bug", "todo": 0, "progress": 0, "done": 1, "total": 1}
-            ],
-            "story_points_alloc": [
-                {"epic": "Form Assembly", "points": 18, "status": "In Progress"},
-                {"epic": "Texas CIN Migration", "points": 13, "status": "In Progress"},
-                {"epic": "Reminder Emails", "points": 10, "status": "In Progress"},
-                {"epic": "Legacy Reports", "points": 5, "status": "To Do"},
-                {"epic": "Provider Search", "points": 3, "status": "Done"}
-            ],
-            "accomplishments": [
-                "Enabled provider-type driven dynamic intake (Professional vs Facility) with conditional field rendering",
-                "Completed Texas CIN migration solution design document",
-                "Automated reminder email enhancements — added configurable frequency settings",
-                "Legacy report migration: Mapped 12 reports to Enterprise reporting framework",
-                "Address APDH team request — Successfully sending Provider data via API integration"
-            ],
-            "risks": [],
-            "next_steps": [
-                {"title": "New Sharing Structure", "description": "Configure the updated sharing set-up to support Texas provider groups"},
-                {"title": "Digital Provider App", "description": "Develop new sections for Licensure, Compliance, and Credentialing"},
-                {"title": "Automated Reminder Emails", "description": "Complete the Automated email configuration to enable scheduled provider notifications"}
-            ]
-        },
-        {
-            "name": "VBC POD",
-            "short_name": "VBC POD",
-            "scrum_mgr": "Sandeep Kandiraju",
-            "sem": "Suraj Chalanti",
-            "product_mgr": "Kammal Sunmola",
-            "sprint_focus": [
-                "Ingest targeting data from ADSI into Data Cloud",
-                "Setup ADSI data streaming and mapping to objects",
-                "Segment members using ADSI indicators (CHF Tags)"
-            ],
-            "total_issues": 5,
-            "story_points": 29,
-            "issue_breakdown": [
-                {"type": "Story", "todo": 0, "progress": 3, "done": 1, "total": 4},
-                {"type": "Task", "todo": 0, "progress": 0, "done": 1, "total": 1}
-            ],
-            "story_points_alloc": [
-                {"epic": "ADSI Data Ingestion", "points": 13, "status": "In Progress"},
-                {"epic": "Data Streaming", "points": 8, "status": "In Progress"},
-                {"epic": "Member Segmentation", "points": 5, "status": "To Do"},
-                {"epic": "CHF Tag Rules", "points": 3, "status": "To Do"}
-            ],
-            "accomplishments": [
-                "Built the ADSI data integration pipeline to bring targeting data into Data Cloud",
-                "Implemented data streaming and mapping so ADSI fields populate Salesforce Data Cloud Objects",
-                "Configured initial CHF tag-based segmentation rules"
-            ],
-            "risks": [
-                {"title": "Targeting Logic & CTA Pending",
-                 "description": "Finalization of targeting logic and Call-to-Action templates pending business review and approval",
-                 "status": "Active Risk"}
-            ],
-            "next_steps": [
-                {"title": "Approved Message Templates", "description": "Build the template library to support the pilot messaging campaigns"},
-                {"title": "Enable SMS messaging Channel", "description": "Complete SMS channel setup and validate SMS verbiage and delivery"},
-                {"title": "Activate Data Cloud → SFMC Mapping", "description": "Configure and validate Data Cloud and SFMC activation for outreach"}
-            ]
-        }
-    ]
+# Backward-compat aliases
+LAYOUT_MAP = {
+    'hero': 'hero', 'agenda': 'agenda', 'sprint_overview': 'sprint_overview',
+    'kpi_grid': 'kpis', 'kpis': 'kpis', 'accomplishments': 'accomplishments',
+    'risks': 'risks', 'risks_blockers': 'risks', 'next_steps': 'next_steps',
+    'standard': 'accomplishments', 'split_panel': 'accomplishments',
+    'flowchart': 'sprint_overview', 'icon_columns': 'accomplishments',
+    'timeline': 'next_steps', 'progress_cards': 'kpis',
+    'table': 'kpis', 'big_statement': 'hero', 'quote': 'hero',
 }
 
-if __name__ == '__main__':
-    buf = generate_sprint_deck(SAMPLE_DATA)
-    with open('sprint_deck_test.pptx', 'wb') as f:
-        f.write(buf.read())
-    print("✅ Sprint deck generated: sprint_deck_test.pptx")
+THEMES = {'sprint':{},'weekly':{},'monthly':{},'quarterly':{}}
+
+
+def generate_native_editable_pptx(slides_data, theme_name='sprint'):
+    """Main entry. slides_data = list of dicts with 'layout' key."""
+    prs = Presentation()
+    prs.slide_width = Inches(SW); prs.slide_height = Inches(SH)
+    blank = prs.slide_layouts[6]
+
+    first = slides_data[0] if slides_data else {}
+    dr = first.get('date_range', first.get('subtitle',''))
+    pods = first.get('pods_list', ['Business Development POD','Provider Services POD','VBC POD'])
+    if isinstance(pods, list) and pods and isinstance(pods[0], dict):
+        pods = [p.get('name', f'POD {i+1}') for i,p in enumerate(pods)]
+
+    for idx, sd in enumerate(slides_data):
+        slide = prs.slides.add_slide(blank)
+        lk = str(sd.get('layout','standard')).lower()
+        bk = LAYOUT_MAP.get(lk, lk)
+        builder = SPRINT_BUILDERS.get(bk, build_accomplishments)
+        try:
+            builder(slide, sd, dr, pods)
+        except Exception as e:
+            print(f"Slide {idx+1} error ({lk}): {e}", flush=True)
+            traceback.print_exc()
+            R(slide, 0, 0, SW, SH, BG)
+            hdr_band(slide, str(sd.get('title','Error')))
+            T(slide, str(e), MX, 2, SW-MX*2, 2, 12, M, wrap=1)
+
+    buf = io.BytesIO(); prs.save(buf); buf.seek(0)
+    return buf
