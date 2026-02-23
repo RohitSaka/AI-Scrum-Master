@@ -1,623 +1,670 @@
 """
-PPTX ENGINE v5 — Revenue-Grade Presentation Generator
-4 GENUINELY DISTINCT visual themes inspired by Genspark & Ascension QBR references.
+PPTX ENGINE v6 — Premium Presentation Generator
+Inspired by: Weekly Project Status Review hero + Salesforce Practice deck designs.
+Soul DNA: Asymmetric hero with geometric shapes, icon circles on pastel backgrounds,
+card grids with colored top borders, clean process flows, ghosted slide numbers.
 """
 
 import math, io, traceback
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.shapes import MSO_SHAPE
 
-PHI = (1 + math.sqrt(5)) / 2
-FIB = [1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]
 SW = 13.333
 SH = 7.5
-MX = 0.75
-GAP = 0.22
+MX = 0.65
+GAP = 0.28
 
+# ═══════════════════════════════════════════
+#  ICON SYSTEM — Unicode glyphs for circles
+# ═══════════════════════════════════════════
+ICONS = {
+    'chart': '\u2261', 'target': '\u25CE', 'check': '\u2713', 'star': '\u2605',
+    'arrow': '\u279C', 'bolt': '\u26A1', 'gear': '\u2699', 'shield': '\u25C6',
+    'people': '\u263B', 'flag': '\u2691', 'clock': '\u25F7', 'up': '\u25B2',
+    'diamond': '\u25C8', 'circle': '\u25CF', 'box': '\u25A0', 'play': '\u25BA',
+    'code': '\u2039\u2044\u203A', 'doc': '\u2630', 'wave': '\u223F',
+}
+ICON_CYCLE = ['check', 'bolt', 'gear', 'star', 'target', 'flag', 'arrow', 'shield']
+
+
+# ═══════════════════════════════════════════
+#  THEME DEFINITIONS — 4 distinct identities
+# ═══════════════════════════════════════════
 class Theme:
-    def __init__(self, name, bg_primary, bg_secondary, bg_card, bg_card_alt,
-                 accent_1, accent_2, accent_3, accent_4,
-                 text_primary, text_secondary, text_muted, text_on_header,
-                 header_bg, footer_bg, divider, card_shadow=False):
+    def __init__(self, name, bg, card, header,
+                 a1, a2, a3, a4,
+                 txt_dark, txt_mid, txt_light, txt_white,
+                 hero_right, hero_mid, hero_accent):
         self.name = name
-        self.bg_primary = bg_primary
-        self.bg_secondary = bg_secondary
-        self.bg_card = bg_card
-        self.bg_card_alt = bg_card_alt
-        self.accent_1 = accent_1
-        self.accent_2 = accent_2
-        self.accent_3 = accent_3
-        self.accent_4 = accent_4
-        self.text_primary = text_primary
-        self.text_secondary = text_secondary
-        self.text_muted = text_muted
-        self.text_on_header = text_on_header
-        self.header_bg = header_bg
-        self.footer_bg = footer_bg
-        self.divider = divider
-        self.card_shadow = card_shadow
-        self.accent_cycle = [accent_1, accent_2, accent_3, accent_4]
+        self.bg = bg; self.card = card; self.header = header
+        self.a1 = a1; self.a2 = a2; self.a3 = a3; self.a4 = a4
+        self.txt_dark = txt_dark; self.txt_mid = txt_mid
+        self.txt_light = txt_light; self.txt_white = txt_white
+        self.hero_right = hero_right; self.hero_mid = hero_mid
+        self.hero_accent = hero_accent
+        self.accents = [a1, a2, a3, a4]
 
     @property
     def is_dark(self):
-        return (self.bg_primary[0] + self.bg_primary[1] + self.bg_primary[2]) < 380
+        return sum([self.bg[0], self.bg[1], self.bg[2]]) < 380
 
-THEME_SPRINT = Theme(
-    name='sprint',
-    bg_primary=RGBColor(0, 38, 56), bg_secondary=RGBColor(0, 50, 75),
-    bg_card=RGBColor(0, 60, 90), bg_card_alt=RGBColor(0, 75, 110),
-    accent_1=RGBColor(0, 193, 151), accent_2=RGBColor(0, 163, 196),
-    accent_3=RGBColor(253, 199, 4), accent_4=RGBColor(255, 0, 105),
-    text_primary=RGBColor(255, 255, 255), text_secondary=RGBColor(200, 220, 230),
-    text_muted=RGBColor(140, 170, 190), text_on_header=RGBColor(255, 255, 255),
-    header_bg=RGBColor(0, 28, 42), footer_bg=RGBColor(0, 20, 30),
-    divider=RGBColor(0, 80, 120),
-)
+    def pastel(self, c):
+        """Soft tint of accent color for icon circle backgrounds."""
+        if self.is_dark:
+            return RGBColor(
+                min(255, self.card[0] + c[0] // 6),
+                min(255, self.card[1] + c[1] // 6),
+                min(255, self.card[2] + c[2] // 6))
+        return RGBColor(
+            min(255, 235 + c[0] // 20),
+            min(255, 235 + c[1] // 20),
+            min(255, 240 + c[2] // 20))
 
-THEME_WEEKLY = Theme(
-    name='weekly',
-    bg_primary=RGBColor(244, 246, 249), bg_secondary=RGBColor(255, 255, 255),
-    bg_card=RGBColor(255, 255, 255), bg_card_alt=RGBColor(240, 248, 255),
-    accent_1=RGBColor(0, 112, 210), accent_2=RGBColor(27, 150, 255),
-    accent_3=RGBColor(46, 132, 74), accent_4=RGBColor(230, 126, 34),
-    text_primary=RGBColor(22, 50, 92), text_secondary=RGBColor(51, 65, 85),
-    text_muted=RGBColor(100, 116, 139), text_on_header=RGBColor(255, 255, 255),
-    header_bg=RGBColor(3, 45, 96), footer_bg=RGBColor(0, 0, 0),
-    divider=RGBColor(224, 228, 235), card_shadow=True,
-)
 
-THEME_MONTHLY = Theme(
-    name='monthly',
-    bg_primary=RGBColor(245, 240, 235), bg_secondary=RGBColor(255, 255, 255),
-    bg_card=RGBColor(255, 255, 255), bg_card_alt=RGBColor(250, 245, 240),
-    accent_1=RGBColor(142, 68, 173), accent_2=RGBColor(41, 128, 185),
-    accent_3=RGBColor(39, 174, 96), accent_4=RGBColor(243, 156, 18),
-    text_primary=RGBColor(44, 44, 44), text_secondary=RGBColor(68, 68, 68),
-    text_muted=RGBColor(120, 120, 130), text_on_header=RGBColor(255, 255, 255),
-    header_bg=RGBColor(30, 30, 60), footer_bg=RGBColor(20, 20, 40),
-    divider=RGBColor(210, 205, 200), card_shadow=True,
-)
+# Sprint — Dark teal with mint accents
+THEME_SPRINT = Theme('sprint',
+    bg=RGBColor(0, 38, 56), card=RGBColor(0, 55, 82), header=RGBColor(0, 82, 120),
+    a1=RGBColor(0, 193, 151), a2=RGBColor(0, 170, 210), a3=RGBColor(253, 199, 4), a4=RGBColor(255, 90, 120),
+    txt_dark=RGBColor(235, 245, 255), txt_mid=RGBColor(160, 185, 210),
+    txt_light=RGBColor(100, 130, 160), txt_white=RGBColor(255, 255, 255),
+    hero_right=RGBColor(0, 55, 100), hero_mid=RGBColor(0, 90, 155), hero_accent=RGBColor(0, 193, 151))
 
-THEME_QUARTERLY = Theme(
-    name='quarterly',
-    bg_primary=RGBColor(8, 12, 28), bg_secondary=RGBColor(16, 22, 48),
-    bg_card=RGBColor(22, 28, 56), bg_card_alt=RGBColor(30, 38, 70),
-    accent_1=RGBColor(0, 214, 242), accent_2=RGBColor(253, 199, 4),
-    accent_3=RGBColor(0, 193, 151), accent_4=RGBColor(255, 56, 116),
-    text_primary=RGBColor(240, 240, 255), text_secondary=RGBColor(180, 190, 220),
-    text_muted=RGBColor(120, 130, 160), text_on_header=RGBColor(255, 255, 255),
-    header_bg=RGBColor(4, 6, 16), footer_bg=RGBColor(2, 4, 10),
-    divider=RGBColor(50, 58, 90),
-)
+# Weekly — Clean light with corporate blue
+THEME_WEEKLY = Theme('weekly',
+    bg=RGBColor(235, 240, 248), card=RGBColor(255, 255, 255), header=RGBColor(0, 68, 148),
+    a1=RGBColor(0, 112, 210), a2=RGBColor(130, 60, 180), a3=RGBColor(230, 126, 34), a4=RGBColor(46, 160, 67),
+    txt_dark=RGBColor(20, 35, 75), txt_mid=RGBColor(75, 90, 125),
+    txt_light=RGBColor(140, 155, 180), txt_white=RGBColor(255, 255, 255),
+    hero_right=RGBColor(25, 55, 140), hero_mid=RGBColor(60, 100, 210), hero_accent=RGBColor(0, 112, 210))
 
-THEMES = {'sprint': THEME_SPRINT, 'weekly': THEME_WEEKLY, 'monthly': THEME_MONTHLY, 'quarterly': THEME_QUARTERLY}
+# Monthly — Warm cream with purple
+THEME_MONTHLY = Theme('monthly',
+    bg=RGBColor(240, 236, 230), card=RGBColor(255, 255, 255), header=RGBColor(28, 28, 62),
+    a1=RGBColor(130, 50, 160), a2=RGBColor(0, 120, 190), a3=RGBColor(230, 140, 20), a4=RGBColor(40, 165, 85),
+    txt_dark=RGBColor(30, 30, 55), txt_mid=RGBColor(80, 80, 110),
+    txt_light=RGBColor(130, 130, 155), txt_white=RGBColor(255, 255, 255),
+    hero_right=RGBColor(22, 22, 52), hero_mid=RGBColor(60, 40, 110), hero_accent=RGBColor(130, 50, 160))
 
-def _i(n):
-    return Inches(n)
+# Quarterly — Deep navy with cyan glow
+THEME_QUARTERLY = Theme('quarterly',
+    bg=RGBColor(6, 10, 24), card=RGBColor(14, 22, 48), header=RGBColor(0, 55, 120),
+    a1=RGBColor(0, 200, 230), a2=RGBColor(253, 199, 4), a3=RGBColor(0, 193, 151), a4=RGBColor(255, 70, 120),
+    txt_dark=RGBColor(225, 235, 250), txt_mid=RGBColor(145, 165, 200),
+    txt_light=RGBColor(85, 105, 145), txt_white=RGBColor(255, 255, 255),
+    hero_right=RGBColor(0, 40, 90), hero_mid=RGBColor(0, 75, 150), hero_accent=RGBColor(0, 200, 230))
 
-def add_rect(slide, x, y, w, h, color, radius=0.0):
-    shape_id = 5 if radius > 0 else 1
-    shp = slide.shapes.add_shape(shape_id, _i(x), _i(y), _i(w), _i(h))
-    shp.fill.solid()
-    shp.fill.fore_color.rgb = color
-    shp.line.fill.background()
-    if radius > 0:
-        try: shp.adjustments[0] = min(radius, 0.5)
+THEMES = {'sprint': THEME_SPRINT, 'weekly': THEME_WEEKLY,
+          'monthly': THEME_MONTHLY, 'quarterly': THEME_QUARTERLY}
+
+
+# ═══════════════════════════════════════════
+#  SHAPE PRIMITIVES
+# ═══════════════════════════════════════════
+def _i(n): return Inches(n)
+
+def R(s, x, y, w, h, c, rad=0):
+    """Rectangle with optional rounded corners."""
+    sid = MSO_SHAPE.ROUNDED_RECTANGLE if rad > 0 else MSO_SHAPE.RECTANGLE
+    sh = s.shapes.add_shape(sid, _i(x), _i(y), _i(w), _i(h))
+    sh.fill.solid(); sh.fill.fore_color.rgb = c
+    sh.line.fill.background()
+    if rad > 0:
+        try: sh.adjustments[0] = min(rad, 0.5)
         except: pass
-    return shp
+    return sh
 
-def add_oval(slide, cx, cy, rx, ry, color):
-    shp = slide.shapes.add_shape(9, _i(cx - rx), _i(cy - ry), _i(rx * 2), _i(ry * 2))
-    shp.fill.solid()
-    shp.fill.fore_color.rgb = color
-    shp.line.fill.background()
-    return shp
+def O(s, cx, cy, r, c):
+    """Circle centered at (cx, cy)."""
+    sh = s.shapes.add_shape(MSO_SHAPE.OVAL, _i(cx - r), _i(cy - r), _i(r*2), _i(r*2))
+    sh.fill.solid(); sh.fill.fore_color.rgb = c; sh.line.fill.background()
+    return sh
 
-def add_hbar(slide, x, y, w, h, color):
-    return add_rect(slide, x, y, w, max(h, 0.015), color)
+def O_ring(s, cx, cy, r, c, line_w=1.5):
+    """Circle outline (ring) — no fill."""
+    sh = s.shapes.add_shape(MSO_SHAPE.OVAL, _i(cx - r), _i(cy - r), _i(r*2), _i(r*2))
+    sh.fill.background(); sh.line.color.rgb = c; sh.line.width = Pt(line_w)
+    return sh
 
-def add_vbar(slide, x, y, w, h, color):
-    return add_rect(slide, x, y, max(w, 0.015), h, color)
+def H(s, x, y, w, h, c):
+    """Horizontal bar."""
+    return R(s, x, y, w, max(h, 0.015), c)
 
-def add_text(slide, txt, x, y, w, h, size, color, bold=False, italic=False,
-             align=PP_ALIGN.LEFT, wrap=True, font='Calibri Light'):
-    if not txt: return None
-    txb = slide.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
-    tf = txb.text_frame
-    tf.word_wrap = wrap
-    p = tf.paragraphs[0]
-    p.text = str(txt)
-    p.font.size = Pt(size)
-    p.font.color.rgb = color
-    p.font.bold = bold
-    p.font.italic = italic
-    p.font.name = font
-    p.alignment = align
-    return txb
+def V(s, x, y, w, h, c):
+    """Vertical bar."""
+    return R(s, x, y, max(w, 0.015), h, c)
 
-def add_multiline(slide, lines, x, y, w, h, size, color, bullet='  ', font='Calibri Light', spacing=14):
+def T(s, text, x, y, w, h, sz, c, bold=False, italic=False,
+      align=PP_ALIGN.LEFT, wrap=True, font='Calibri'):
+    """Add text box."""
+    if not text: return None
+    tb = s.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
+    tf = tb.text_frame; tf.word_wrap = wrap
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
+    p = tf.paragraphs[0]; p.text = str(text)
+    p.font.size = Pt(sz); p.font.color.rgb = c; p.font.bold = bold
+    p.font.italic = italic; p.font.name = font; p.alignment = align
+    return tb
+
+def T_multi(s, lines, x, y, w, h, sz, c, sp=10, font='Calibri'):
+    """Multi-paragraph text box."""
     if not lines: return None
-    txb = slide.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
-    tf = txb.text_frame
-    tf.word_wrap = True
-    for i, line in enumerate(lines):
+    tb = s.shapes.add_textbox(_i(x), _i(y), _i(w), _i(h))
+    tf = tb.text_frame; tf.word_wrap = True
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
+    for i, ln in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.text = f"{bullet}{line}"
-        p.font.size = Pt(size)
-        p.font.color.rgb = color
-        p.font.name = font
-        p.space_after = Pt(spacing)
-    return txb
+        p.text = str(ln); p.font.size = Pt(sz); p.font.color.rgb = c
+        p.font.name = font; p.space_after = Pt(sp)
+    return tb
 
-def add_eyebrow(slide, label, x, y, color):
-    add_hbar(slide, x, y + 0.08, 0.22, 0.028, color)
-    add_text(slide, label.upper(), x + 0.32, y, 5, 0.3, 9, color, bold=True, font='Calibri')
+def icon_circ(s, cx, cy, r, bg, fg, key='check', fsz=16):
+    """Icon circle with pastel background and unicode glyph."""
+    O(s, cx, cy, r, bg)
+    sym = ICONS.get(key, '\u2713')
+    T(s, sym, cx - r, cy - r * 0.85, r*2, r*1.7, fsz, fg,
+      bold=True, align=PP_ALIGN.CENTER, font='Segoe UI Symbol')
 
-def _normalize_items(data):
-    items = data.get('items') or data.get('content') or []
-    if isinstance(items, str):
-        items = [{"title": s.strip()} for s in items.split(',') if s.strip()]
-    result = []
-    for it in items:
-        if isinstance(it, str): result.append({"title": it})
-        elif isinstance(it, dict): result.append(it)
-    return result
+def slide_num(s, n, theme):
+    """Ghosted slide number bottom-right."""
+    d = 18 if theme.is_dark else -15
+    gc = RGBColor(
+        max(0, min(255, theme.bg[0] + d)),
+        max(0, min(255, theme.bg[1] + d)),
+        max(0, min(255, theme.bg[2] + d)))
+    T(s, f'{n:02d}', SW - 1.8, SH - 1.2, 1.4, 1.0, 60, gc,
+      bold=True, align=PP_ALIGN.RIGHT)
 
-# === THEME-SPECIFIC DECORATIONS ===
+def _items(data):
+    """Normalize items/content from slide data."""
+    raw = data.get('items') or data.get('content') or []
+    if isinstance(raw, str):
+        raw = [{"title": s.strip()} for s in raw.split(',') if s.strip()]
+    out = []
+    for it in raw:
+        if isinstance(it, str): out.append({"title": it})
+        elif isinstance(it, dict): out.append(it)
+    return out
 
-def deco_sprint(slide, T, zone='full'):
-    add_oval(slide, SW + 0.8, -0.8, 2.2, 2.2, T.bg_secondary)
-    add_oval(slide, SW + 0.8, -0.8, 1.3, 1.3, T.bg_card)
-    add_oval(slide, -0.8, SH + 0.8, 1.6, 1.6, T.bg_secondary)
-    if zone == 'hero':
-        add_hbar(slide, 0, 0, SW * 0.35, 0.04, T.accent_1)
-        add_hbar(slide, SW * 0.65, SH - 0.04, SW * 0.35, 0.04, T.accent_2)
 
-def deco_weekly(slide, T, zone='full'):
-    band_h = 0.78
-    add_rect(slide, 0, 0, SW, band_h, T.header_bg)
-    add_rect(slide, 0, SH - 0.08, SW, 0.08, T.footer_bg)
-    add_hbar(slide, 0, band_h, SW, 0.025, T.accent_1)
+# ═══════════════════════════════════════════
+#  HEADER BAND — Blue bar + accent stripe
+# ═══════════════════════════════════════════
+def header_band(s, title, sub, th):
+    bh = 0.82
+    R(s, 0, 0, SW, bh, th.header)
+    H(s, 0, bh, SW, 0.035, th.a1)
+    T(s, str(title), MX, 0.16, 7.5, 0.5, 24, th.txt_white, bold=True)
+    if sub:
+        V(s, 8.3, 0.2, 0.02, 0.42, RGBColor(180, 200, 230))
+        T(s, str(sub), 8.55, 0.22, 4.3, 0.4, 12, RGBColor(190, 210, 235))
 
-def deco_monthly(slide, T, zone='full'):
-    band_h = 0.78
-    add_rect(slide, 0, 0, SW, band_h, T.header_bg)
-    add_hbar(slide, 0, band_h, SW * 0.5, 0.03, T.accent_1)
-    add_hbar(slide, SW * 0.5, band_h, SW * 0.5, 0.03, T.accent_4)
-    add_rect(slide, SW - 0.5, 0, 0.5, 0.5, T.accent_1)
-    add_rect(slide, 0, SH - 0.06, SW, 0.06, T.header_bg)
 
-def deco_quarterly(slide, T, zone='full'):
-    add_rect(slide, 0, 0, SW, 0.12, T.bg_secondary)
-    add_rect(slide, 0, SH - 0.12, SW, 0.12, T.bg_secondary)
-    add_oval(slide, SW + 0.5, -0.5, 2.8, 2.8, T.bg_secondary)
-    add_oval(slide, SW + 0.5, -0.5, 1.6, 1.6, T.bg_card)
-    add_oval(slide, -0.5, SH + 0.5, 2.0, 2.0, T.bg_secondary)
-    if zone == 'hero':
-        add_hbar(slide, 0, 0.12, SW * 0.3, 0.035, T.accent_1)
-        add_hbar(slide, SW * 0.7, SH - 0.16, SW * 0.3, 0.035, T.accent_2)
-
-DECO_MAP = {'sprint': deco_sprint, 'weekly': deco_weekly, 'monthly': deco_monthly, 'quarterly': deco_quarterly}
-
-# === LAYOUT BUILDERS ===
-
-def build_hero(slide, data, T):
+# ═══════════════════════════════════════════════════
+#  HERO SLIDE — Asymmetric split with geometric depth
+#  Reference: Weekly Project Status Review screenshot
+# ═══════════════════════════════════════════════════
+def build_hero(s, data, th, idx):
     title = str(data.get('title', 'Presentation'))
     subtitle = str(data.get('subtitle', ''))
 
-    if T.name == 'weekly':
-        add_rect(slide, 0, 0, SW, SH, RGBColor(0, 31, 69))
-        add_oval(slide, SW * 0.55, SH * 0.5, 5.0, 5.0, RGBColor(0, 54, 102))
-        add_oval(slide, SW * 0.6, SH * 0.45, 3.5, 3.5, RGBColor(0, 112, 210))
-        add_rect(slide, 0, SH - 0.5, SW, 0.5, RGBColor(0, 0, 0))
-        add_hbar(slide, 0, SH - 0.5, SW, 0.018, RGBColor(255, 255, 255))
-        center_y = SH / PHI - 0.3
-        fs = 44 if len(title) > 35 else 50
-        add_text(slide, title, MX + 0.3, center_y, 6.5, 1.8, fs, RGBColor(255, 255, 255), bold=True, font='Calibri')
-        if subtitle:
-            add_text(slide, subtitle, MX + 0.3, center_y + 1.6, 6.0, 0.5, 16, RGBColor(180, 200, 220))
-    elif T.name == 'monthly':
-        add_rect(slide, 0, 0, SW, SH, T.header_bg)
-        add_rect(slide, 0, SH - 0.7, SW, 0.7, T.accent_1)
-        add_rect(slide, 0, SH - 0.72, SW, 0.03, T.accent_4)
-        add_rect(slide, SW - 2.5, 0, 2.5, 0.06, T.accent_4)
-        add_rect(slide, 0, 0, 0.06, 2.5, T.accent_1)
-        center_y = SH / PHI - 0.5
-        fs = 44 if len(title) > 35 else 52
-        add_text(slide, title, MX + 0.5, center_y, SW - MX * 2 - 1, 2.0, fs, RGBColor(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, font='Calibri')
-        if subtitle:
-            add_hbar(slide, (SW - 2.5) / 2, center_y + 1.7, 2.5, 0.03, T.accent_4)
-            add_text(slide, subtitle, MX, center_y + 1.95, SW - MX * 2, 0.5, 15, RGBColor(200, 200, 220), align=PP_ALIGN.CENTER)
-    elif T.name == 'quarterly':
-        add_rect(slide, 0, 0, SW, SH, T.bg_primary)
-        deco_quarterly(slide, T, 'hero')
-        add_rect(slide, 0, SH * 0.65, SW, 0.04, T.accent_1)
-        add_rect(slide, 0, SH * 0.65 + 0.08, SW * 0.6, 0.025, T.accent_2)
-        center_y = SH / PHI - 0.6
-        fs = 44 if len(title) > 35 else 52
-        add_text(slide, title, MX, center_y, SW - MX * 2, 2.0, fs, T.text_primary, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
-        if subtitle:
-            add_text(slide, subtitle, MX + 1, center_y + 1.9, SW - MX * 2 - 2, 0.5, 15, T.text_muted, align=PP_ALIGN.CENTER)
+    # ── Full background ──
+    if th.is_dark:
+        R(s, 0, 0, SW, SH, th.bg)
     else:
-        add_rect(slide, 0, 0, SW, SH, T.bg_primary)
-        deco_sprint(slide, T, 'hero')
-        center_y = SH / PHI - 0.5
-        fs = 44 if len(title) > 35 else 52
-        add_text(slide, title, MX, center_y, SW - MX * 2, 2.0, fs, T.text_primary, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
-        rule_w = min(len(title) * 0.07 + 0.5, 3.2)
-        add_hbar(slide, (SW - rule_w) / 2, center_y + 1.75, rule_w, 0.04, T.accent_1)
-        if subtitle:
-            add_text(slide, subtitle, MX + 1, center_y + 2.05, SW - MX * 2 - 2, 0.5, 15, T.text_muted, align=PP_ALIGN.CENTER)
+        R(s, 0, 0, SW, SH, RGBColor(248, 250, 255))
+
+    # ── RIGHT BLOCK: Main color rectangle (~45%) ──
+    rx = 7.0
+    R(s, rx, 0, SW - rx + 0.1, SH, th.hero_right)
+
+    # Overlapping angular shape — mid-tone (creates layered look)
+    R(s, rx - 1.0, SH * 0.52, 3.2, SH * 0.48 + 0.1, th.hero_mid, rad=0.04)
+
+    # Second lighter accent wedge
+    R(s, rx - 0.3, SH * 0.62, 2.4, SH * 0.38 + 0.1, th.a1, rad=0.04)
+
+    # ── TOP-LEFT: Decorative arc (subtle) ──
+    if th.is_dark:
+        bg_tint = RGBColor(
+            min(255, th.bg[0] + 14), min(255, th.bg[1] + 14), min(255, th.bg[2] + 22))
+    else:
+        bg_tint = RGBColor(228, 235, 248)
+    O(s, -0.7, -0.7, 2.0, bg_tint)
+
+    # ── TEXT CONTENT (left side) ──
+    lx = 1.0
+
+    # Eyebrow label with accent dash
+    labels = {'sprint': 'SPRINT REVIEW', 'weekly': 'PROJECT STATUS REPORT',
+              'monthly': 'MONTHLY BUSINESS REVIEW', 'quarterly': 'QUARTERLY BUSINESS REVIEW'}
+    eyebrow = labels.get(th.name, 'REPORT')
+    H(s, lx, 1.55, 0.45, 0.04, th.a1)
+    T(s, eyebrow, lx + 0.6, 1.45, 5, 0.3, 11, th.hero_accent, bold=True)
+
+    # Title — split into two lines: dark + accent color
+    words = title.split()
+    mid = max(1, len(words) // 2)
+    line1 = ' '.join(words[:mid])
+    line2 = ' '.join(words[mid:]) if len(words) > 1 else ''
+
+    fsz = 38 if len(title) > 50 else (44 if len(title) > 30 else 50)
+    T(s, line1, lx, 2.0, 5.6, 0.85, fsz, th.txt_dark, bold=True)
+    if line2:
+        y2 = 2.0 + fsz * 0.017 + 0.15
+        T(s, line2, lx, y2, 5.6, 0.85, fsz, th.hero_accent, bold=True)
+
+    # Subtitle / date
+    if subtitle:
+        sy = 2.0 + fsz * 0.034 + 0.55
+        T(s, '\u25A1  ' + subtitle, lx, sy, 5.5, 0.35, 13, th.txt_mid)
+
+    # PREPARED BY block
+    V(s, lx, SH - 1.8, 0.035, 0.75, th.txt_light)
+    T(s, 'PREPARED BY', lx + 0.2, SH - 1.78, 4, 0.22, 9, th.txt_light, bold=True)
+    T(s, 'IG Agile Scrum | AI-Powered', lx + 0.2, SH - 1.48, 4, 0.3, 13, th.txt_dark, bold=True)
+
+    # Ghosted number on right panel
+    ghost = RGBColor(
+        min(255, th.hero_right[0] + 22), min(255, th.hero_right[1] + 22),
+        min(255, th.hero_right[2] + 22))
+    T(s, '01', SW - 2.0, SH - 1.5, 1.5, 1.2, 72, ghost,
+      bold=True, align=PP_ALIGN.RIGHT)
+
+    # Bottom accent
+    H(s, 0, SH - 0.06, SW, 0.06, th.a1)
 
 
-def build_kpi_grid(slide, data, T):
+# ═══════════════════════════════════════════
+#  KPI GRID — Big numbers in cards with icons
+# ═══════════════════════════════════════════
+def build_kpi_grid(s, data, th, idx):
     title = str(data.get('title', 'Metrics'))
-    kpis = _normalize_items(data)[:4]
+    kpis = _items(data)[:4]
     n = max(len(kpis), 1)
 
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary)
+    R(s, 0, 0, SW, SH, th.bg)
+    header_band(s, title, 'Performance Metrics', th)
 
-    if T.name == 'weekly':
-        deco_weekly(slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        add_vbar(slide, 7.0, 0.18, 0.015, 0.42, RGBColor(255, 255, 255))
-        add_text(slide, 'Performance Metrics', 7.2, 0.22, 5, 0.4, 13, RGBColor(200, 215, 240))
-        card_y = 1.15
-    elif T.name == 'monthly':
-        deco_monthly(slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        card_y = 1.15
-    elif T.name == 'quarterly':
-        hh = 1.8
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        deco_quarterly(slide, T)
-        add_eyebrow(slide, 'Performance', MX, 0.4, T.accent_1)
-        add_text(slide, title, MX, 0.78, SW - MX * 2, 0.85, 36, T.text_on_header, bold=True, font='Calibri')
-        card_y = hh + 0.3
-    else:
-        hh = 1.85
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        deco_sprint(slide, T)
-        add_eyebrow(slide, 'Sprint Metrics', MX, 0.42, T.accent_1)
-        add_text(slide, title, MX, 0.8, SW - MX * 2, 0.9, 36, T.text_on_header, bold=True, font='Calibri')
-        card_y = hh + 0.3
+    cy = 1.3; cw = (SW - 2*MX - GAP*(n-1)) / n; ch = SH - cy - 0.55
+    ik = ['chart', 'target', 'people', 'up']
 
-    card_w = (SW - 2 * MX - GAP * (n - 1)) / n
-    card_h = SH - card_y - 0.45
+    for i, kpi in enumerate(kpis):
+        cx = MX + i * (cw + GAP)
+        ac = th.accents[i % 4]
 
-    for i, kpi in enumerate(kpis[:n]):
-        cx = MX + i * (card_w + GAP)
-        ac = T.accent_cycle[i % 4]
-        add_rect(slide, cx, card_y, card_w, card_h, T.bg_card, radius=0.07)
-        if T.is_dark:
-            add_hbar(slide, cx, card_y, card_w, 0.05, ac)
-        else:
-            add_vbar(slide, cx, card_y, 0.055, card_h, ac)
-            add_hbar(slide, cx, card_y, card_w, 0.03, ac)
-        val_str = str(kpi.get('value', '—'))
-        fs_val = 36 if len(val_str) > 6 else (44 if len(val_str) > 4 else 54)
-        add_text(slide, val_str, cx + 0.15, card_y + 0.7, card_w - 0.3, card_h * 0.55, fs_val, T.text_primary, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
-        label = (kpi.get('label') or '').upper()
-        add_text(slide, label, cx + 0.12, card_y + card_h - 0.65, card_w - 0.24, 0.45, 9.5, T.text_muted, bold=True, align=PP_ALIGN.CENTER)
+        R(s, cx, cy, cw, ch, th.card, rad=0.06)
+        H(s, cx, cy, cw, 0.06, ac)  # colored top border
+
+        # Icon circle
+        icon_circ(s, cx + 0.55, cy + 0.75, 0.3, th.pastel(ac), ac, ik[i % 4], 15)
+
+        # Big value
+        val = str(kpi.get('value', kpi.get('title', '—')))
+        vs = 34 if len(val) > 6 else (42 if len(val) > 3 else 50)
+        T(s, val, cx + 0.25, cy + ch * 0.33, cw - 0.5, 0.85, vs, th.txt_dark, bold=True)
+
+        # Label
+        lab = str(kpi.get('label', '')).upper()
+        T(s, lab, cx + 0.25, cy + ch - 0.7, cw - 0.5, 0.4, 10, th.txt_light, bold=True)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
 
 
-def build_flowchart(slide, data, T):
+# ═══════════════════════════════════════════════════
+#  ICON COLUMNS — Card grid with colored borders
+#  Reference: Salesforce Cloud Expertise screenshot
+# ═══════════════════════════════════════════════════
+def build_icon_columns(s, data, th, idx):
+    title = str(data.get('title', 'Highlights'))
+    cols = _items(data)[:6]
+    n = max(len(cols), 1)
+
+    R(s, 0, 0, SW, SH, th.bg)
+    header_band(s, title, 'Key Highlights', th)
+
+    rows = 1 if n <= 3 else 2
+    per = min(3, n) if rows == 2 else n
+    gx, gy = 0.3, 0.3
+    cw = (SW - 2*MX - gx*(per - 1)) / per
+    ch = (SH - 1.2 - 0.5 - gy*(rows - 1)) / rows
+
+    for i, cd in enumerate(cols[:per * rows]):
+        r, c = i // per, i % per
+        cx = MX + c * (cw + gx)
+        cy_pos = 1.2 + r * (ch + gy)
+        ac = th.accents[i % 4]
+
+        # Card
+        R(s, cx, cy_pos, cw, ch, th.card, rad=0.06)
+        H(s, cx, cy_pos, cw, 0.055, ac)
+
+        # Icon
+        ik = ICON_CYCLE[i % len(ICON_CYCLE)]
+        icon_circ(s, cx + 0.55, cy_pos + 0.55, 0.3, th.pastel(ac), ac, ik, 15)
+
+        # Title + description
+        pad = 0.28
+        T(s, str(cd.get('title', '')), cx + pad, cy_pos + 1.05, cw - pad*2, 0.45,
+          14, th.txt_dark, bold=True)
+        desc = str(cd.get('text', cd.get('description', '')))
+        if desc:
+            T(s, desc, cx + pad, cy_pos + 1.5, cw - pad*2, ch - 1.75,
+              11, th.txt_mid, wrap=True)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
+
+
+# ═══════════════════════════════════════════════════
+#  FLOWCHART — Process circles + cards below
+#  Reference: Structured Delivery & Release Governance
+# ═══════════════════════════════════════════════════
+def build_flowchart(s, data, th, idx):
     title = str(data.get('title', 'Process'))
-    steps = _normalize_items(data)[:6]
+    steps = _items(data)[:6]
     if not steps:
         steps = [{"title": "Step 1"}, {"title": "Step 2"}, {"title": "Step 3"}]
     n = len(steps)
 
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary)
+    R(s, 0, 0, SW, SH, th.bg)
+    header_band(s, title, 'Process Flow', th)
 
-    if T.name == 'weekly':
-        deco_weekly(slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        area_y = 1.1
-    elif T.name == 'monthly':
-        deco_monthly(slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        area_y = 1.1
-    elif T.name == 'quarterly':
-        hh = 1.75
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        deco_quarterly(slide, T)
-        add_eyebrow(slide, 'Process Flow', MX, 0.38, T.accent_1)
-        add_text(slide, title, MX, 0.75, SW - MX * 2, 0.85, 36, T.text_on_header, bold=True, font='Calibri')
-        area_y = hh + 0.25
-    else:
-        hh = 1.75
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        deco_sprint(slide, T)
-        add_eyebrow(slide, 'Process Flow', MX, 0.38, T.accent_1)
-        add_text(slide, title, MX, 0.75, SW - MX * 2, 0.85, 36, T.text_on_header, bold=True, font='Calibri')
-        area_y = hh + 0.25
+    # Section title below header
+    section = str(data.get('section_title', 'End-to-End Lifecycle'))
+    pill_w = min(len(section) * 0.1 + 0.8, 4.0)
+    R(s, MX + 0.2, 1.15, pill_w, 0.38, th.a1, rad=0.5)
+    T(s, section, MX + 0.2, 1.18, pill_w, 0.32, 10, th.txt_white,
+      bold=True, align=PP_ALIGN.CENTER)
 
-    area_x = MX + 0.1
-    area_w = SW - (MX + 0.1) * 2
-    slot_w = area_w / n
-    circle_r = min(slot_w * 0.15, 0.38)
-    node_cy = area_y + circle_r + 0.15
+    # Circles row
+    circle_y = 2.3
+    slot_w = (SW - 2*MX) / n
+    cr = 0.38
 
-    for i, step in enumerate(steps[:n]):
-        cx_center = area_x + slot_w * i + slot_w / 2
-        ac = T.accent_cycle[i % 4]
-        if i > 0:
-            prev_cx = area_x + slot_w * (i - 1) + slot_w / 2
-            lx = prev_cx + circle_r + 0.08
-            le = cx_center - circle_r - 0.08
-            if le > lx:
-                add_hbar(slide, lx, node_cy - 0.012, le - lx, 0.025, T.divider)
-        node_color = T.accent_1 if i == 0 else ac
-        add_oval(slide, cx_center, node_cy, circle_r, circle_r, node_color)
-        num_fs = max(int(circle_r * 20), 11)
-        add_text(slide, str(i + 1), cx_center - circle_r, node_cy - circle_r, circle_r * 2, circle_r * 2, num_fs, RGBColor(255, 255, 255), bold=True, align=PP_ALIGN.CENTER)
-        card_x = area_x + slot_w * i + 0.12
-        card_w = slot_w - 0.24
-        card_y = node_cy + circle_r + 0.3
-        card_h = SH - card_y - 0.4
-        if card_h > 0.4:
-            add_rect(slide, card_x, card_y, card_w, card_h, T.bg_card, radius=0.06)
-            add_hbar(slide, card_x, card_y, card_w, 0.04, ac)
-            if not T.is_dark:
-                add_vbar(slide, card_x, card_y, 0.04, card_h, ac)
-            step_title = str(step.get('title', f'Step {i+1}'))
-            add_text(slide, step_title, card_x + 0.1, card_y + 0.15, card_w - 0.2, card_h - 0.25, 11, T.text_primary, align=PP_ALIGN.CENTER, wrap=True)
+    # Connecting line
+    line_c = RGBColor(200, 208, 220) if not th.is_dark else RGBColor(40, 55, 75)
+    H(s, MX + slot_w*0.5, circle_y - 0.02, (n-1)*slot_w, 0.04, line_c)
 
+    ik_flow = ['doc', 'code', 'gear', 'play', 'check', 'shield']
 
-def build_icon_columns(slide, data, T):
-    title = str(data.get('title', 'Highlights'))
-    cols = _normalize_items(data)[:4]
-    n = max(len(cols), 1)
+    for i, step in enumerate(steps):
+        cx = MX + slot_w*i + slot_w/2
+        ac = th.accents[i % 4]
 
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary)
+        # Circle outline with icon inside
+        O_ring(s, cx, circle_y, cr, ac, 2.5)
+        sym = ICONS.get(ik_flow[i % len(ik_flow)], '\u2713')
+        T(s, sym, cx - cr, circle_y - cr*0.8, cr*2, cr*1.6, 18, ac,
+          bold=True, align=PP_ALIGN.CENTER, font='Segoe UI Symbol')
 
-    if T.name == 'weekly':
-        deco_weekly(slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        col_y = 1.15
-    elif T.name == 'monthly':
-        deco_monthly(slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        col_y = 1.15
-    elif T.name == 'quarterly':
-        hh = 1.75
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        deco_quarterly(slide, T)
-        add_eyebrow(slide, 'Key Insights', MX, 0.38, T.accent_1)
-        add_text(slide, title, MX, 0.75, SW - MX * 2, 0.85, 36, T.text_on_header, bold=True, font='Calibri')
-        col_y = hh + 0.3
-    else:
-        hh = 1.75
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        deco_sprint(slide, T)
-        add_eyebrow(slide, 'Highlights', MX, 0.38, T.accent_1)
-        add_text(slide, title, MX, 0.75, SW - MX * 2, 0.85, 36, T.text_on_header, bold=True, font='Calibri')
-        col_y = hh + 0.3
+        # Label below circle
+        step_title = str(step.get('title', f'Step {i+1}'))
+        T(s, step_title, cx - slot_w*0.4, circle_y + cr + 0.15, slot_w*0.8, 0.4,
+          12, th.txt_dark, bold=True, align=PP_ALIGN.CENTER)
 
-    col_w = (SW - 2 * MX - GAP * (n - 1)) / n
-    col_h = SH - col_y - 0.4
+        # Short description
+        step_desc = str(step.get('text', ''))
+        if step_desc:
+            T(s, step_desc, cx - slot_w*0.4, circle_y + cr + 0.55, slot_w*0.8, 0.6,
+              9.5, th.txt_mid, wrap=True, align=PP_ALIGN.CENTER)
 
-    for i, cd in enumerate(cols[:n]):
-        cx = MX + i * (col_w + GAP)
-        ac = T.accent_cycle[i % 4]
-        card_bg = T.bg_card if (i % 2 == 0) else T.bg_card_alt
-        add_rect(slide, cx, col_y, col_w, col_h, card_bg, radius=0.07)
-        if T.is_dark:
-            add_hbar(slide, cx, col_y, col_w, 0.05, ac)
-        else:
-            add_vbar(slide, cx, col_y, 0.05, col_h, ac)
-            add_hbar(slide, cx, col_y, col_w, 0.025, ac)
-        pad = 0.3
-        inner_w = col_w - pad * 2
-        icon_str = cd.get('icon', '')
-        if icon_str and not T.is_dark:
-            circle_cx = cx + col_w / 2
-            add_oval(slide, circle_cx, col_y + 0.55, 0.28, 0.28, ac)
-            add_text(slide, str(icon_str), cx + pad, col_y + 0.3, inner_w, 0.5, 18, RGBColor(255, 255, 255), align=PP_ALIGN.CENTER)
-        elif icon_str:
-            add_text(slide, str(icon_str), cx + pad, col_y + 0.25, inner_w, 0.5, 22, T.text_primary, align=PP_ALIGN.CENTER)
-        title_y = col_y + (0.95 if icon_str else 0.3)
-        add_text(slide, str(cd.get('title', '')), cx + pad, title_y, inner_w, 0.6, 15, T.text_primary, bold=True, font='Calibri')
-        body_y = title_y + 0.65
-        add_text(slide, str(cd.get('text', '')), cx + pad, body_y, inner_w, col_h - (body_y - col_y) - 0.3, 11.5, T.text_muted, wrap=True)
-        bar_w = col_w / PHI
-        add_hbar(slide, cx + pad, col_y + col_h - 0.18, bar_w, 0.035, ac)
+    # Bottom section — Governance Pillars cards
+    pillars = data.get('pillars') or data.get('details') or []
+    if isinstance(pillars, list) and pillars:
+        sect2_y = SH * 0.57
+        T(s, str(data.get('section_title_2', 'Key Pillars')), MX + 0.2, sect2_y, 5, 0.35,
+          16, th.txt_dark, bold=True)
+        V(s, MX, sect2_y + 0.02, 0.04, 0.3, th.a1)
+
+        np = min(len(pillars), 5)
+        pw = (SW - 2*MX - 0.2*(np-1)) / np
+        py = sect2_y + 0.55
+        ph = SH - py - 0.5
+
+        for j, pill in enumerate(pillars[:np]):
+            px = MX + j * (pw + 0.2)
+            ac2 = th.accents[j % 4]
+            pt = pill if isinstance(pill, str) else pill.get('title', '')
+
+            R(s, px, py, pw, ph, th.card, rad=0.05)
+            H(s, px, py, pw, 0.045, ac2)
+            icon_circ(s, px + pw/2, py + 0.45, 0.25, th.pastel(ac2), ac2,
+                      ICON_CYCLE[j % len(ICON_CYCLE)], 13)
+            T(s, str(pt), px + 0.12, py + 0.85, pw - 0.24, 0.4, 10.5, th.txt_dark,
+              bold=True, align=PP_ALIGN.CENTER, wrap=True)
+
+            pdesc = '' if isinstance(pill, str) else pill.get('text', '')
+            if pdesc:
+                T(s, str(pdesc), px + 0.1, py + 1.25, pw - 0.2, ph - 1.45,
+                  9, th.txt_mid, wrap=True, align=PP_ALIGN.CENTER)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
 
 
-def build_split_panel(slide, data, T):
+# ═══════════════════════════════════════════
+#  SPLIT PANEL — Left accent bar + cards
+# ═══════════════════════════════════════════
+def build_split_panel(s, data, th, idx):
     title = str(data.get('title', 'Section'))
-    content = data.get('content') or []
+    content = data.get('content') or data.get('items') or []
     if isinstance(content, str): content = [content]
-    left_w = SW / (PHI * PHI)
+    if isinstance(content, list):
+        content = [c if isinstance(c, dict) else {"title": str(c)} for c in content]
 
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary)
+    R(s, 0, 0, SW, SH, th.bg)
+    header_band(s, title, 'Overview', th)
 
-    if T.name == 'weekly':
-        add_rect(slide, 0, 0, left_w, SH, T.header_bg)
-        add_vbar(slide, 0, 0, 0.05, SH, T.accent_1)
-        add_vbar(slide, left_w - 0.01, 0.3, 0.015, SH - 0.6, T.divider)
-    elif T.name == 'monthly':
-        add_rect(slide, 0, 0, left_w, SH, T.header_bg)
-        add_vbar(slide, 0, 0, 0.05, SH, T.accent_1)
-        add_rect(slide, left_w, SH - 0.05, SW - left_w, 0.05, T.accent_4)
-    elif T.name == 'quarterly':
-        add_rect(slide, 0, 0, left_w, SH, T.header_bg)
-        add_vbar(slide, 0, 0, 0.05, SH, T.accent_1)
-        deco_quarterly(slide, T)
-    else:
-        add_rect(slide, 0, 0, left_w, SH, T.bg_secondary)
-        add_vbar(slide, 0, 0, 0.05, SH, T.accent_1)
-        deco_sprint(slide, T)
+    if not content:
+        content = [{"title": "No content provided."}]
 
-    eyebrow_txt = data.get('eyebrow', 'Key Insights')
-    add_eyebrow(slide, eyebrow_txt, MX, 0.75, T.accent_1)
-    fs = 28 if len(title) > 40 else (34 if len(title) > 25 else 38)
-    add_text(slide, title, MX, 1.2, left_w - MX - 0.4, 3.0, fs, RGBColor(255, 255, 255), bold=True, wrap=True, font='Calibri')
+    # Cards with left accent bar + icon
+    by = 1.25
+    n = min(len(content), 6)
+    bh = min(0.82, (SH - by - 0.45) / n - 0.1)
 
-    right_pad = 0.55
-    right_x = left_w + right_pad
-    rw = SW - right_x - MX
-    if not content: content = ['No content provided.']
-    add_multiline(slide, content, right_x, 0.9, rw, SH - 1.4, 15, T.text_primary)
+    for i, item in enumerate(content[:n]):
+        iy = by + i * (bh + 0.12)
+        bx = MX + 0.15
+        bw = SW - bx - MX - 0.15
+        ac = th.accents[i % 4]
+        item_title = item.get('title', '') if isinstance(item, dict) else str(item)
+        item_desc = item.get('text', item.get('description', '')) if isinstance(item, dict) else ''
 
+        # Card
+        R(s, bx, iy, bw, bh, th.card, rad=0.05)
+        V(s, bx, iy, 0.04, bh, ac)
 
-def build_big_statement(slide, data, T):
-    title = str(data.get('title', ''))
-    content = data.get('content') or []
-    statement = content[0] if content else title
+        # Icon circle
+        icon_circ(s, bx + 0.5, iy + bh/2, 0.22, th.pastel(ac), ac,
+                  ICON_CYCLE[i % len(ICON_CYCLE)], 12)
 
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary if T.is_dark else T.header_bg)
-    panel_w = SW / PHI
-    panel_x = SW - panel_w
-    if T.is_dark:
-        add_rect(slide, panel_x, 0, panel_w, SH, T.bg_secondary)
-    else:
-        add_rect(slide, panel_x, 0, panel_w, SH, RGBColor(2, 35, 75))
-    add_text(slide, '\u201C', 0.5, 0.2, 2.5, 1.8, 72, T.divider, bold=True)
-    fs = 24 if len(str(statement)) > 150 else (28 if len(str(statement)) > 90 else 34)
-    txt_color = T.text_primary if T.is_dark else RGBColor(255, 255, 255)
-    add_text(slide, str(statement), MX + 0.5, 1.8, SW - MX * 2 - 1, 3.5, fs, txt_color, wrap=True, align=PP_ALIGN.CENTER, font='Calibri Light')
-    if title and title != statement:
-        add_hbar(slide, (SW - 2.0) / 2, SH - 1.4, 2.0, 0.03, T.accent_1)
-        add_text(slide, title, 1.5, SH - 1.2, SW - 3, 0.6, 12, T.text_muted, align=PP_ALIGN.CENTER)
+        # Text
+        tx = bx + 0.85
+        tw = bw - 1.0
+        if item_desc:
+            T(s, str(item_title), tx, iy + 0.08, tw, 0.3, 13, th.txt_dark, bold=True)
+            T(s, str(item_desc), tx, iy + 0.38, tw, bh - 0.48, 10.5, th.txt_mid, wrap=True)
+        else:
+            T(s, str(item_title), tx, iy + 0.12, tw, bh - 0.24, 13, th.txt_dark, wrap=True)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
 
 
-def build_table_grid(slide, data, T):
-    title = str(data.get('title', 'Data'))
-    headers = data.get('headers') or []
-    rows = data.get('rows') or []
-
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary)
-
-    if T.name in ('weekly', 'monthly'):
-        DECO_MAP[T.name](slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        table_y = 1.1
-    else:
-        hh = 1.5
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        if T.name == 'quarterly': deco_quarterly(slide, T)
-        else: deco_sprint(slide, T)
-        add_text(slide, title, MX, 0.3, SW - MX * 2, 1.0, 34, T.text_on_header, bold=True, font='Calibri')
-        table_y = hh + 0.25
-
-    table_x = MX
-    table_w = SW - MX * 2
-    n_cols = max(len(headers), 1)
-    n_rows = min(len(rows), 8)
-    col_w = table_w / n_cols
-    row_h = min(0.52, (SH - table_y - 0.4) / max(n_rows + 1, 1))
-
-    for j, hdr in enumerate(headers[:n_cols]):
-        hx = table_x + j * col_w
-        add_rect(slide, hx, table_y, col_w, row_h, T.accent_1)
-        add_text(slide, str(hdr), hx + 0.1, table_y + 0.05, col_w - 0.2, row_h - 0.1, 11, RGBColor(255, 255, 255), bold=True, align=PP_ALIGN.CENTER, font='Calibri')
-
-    for i, row in enumerate(rows[:n_rows]):
-        ry = table_y + row_h * (i + 1)
-        row_bg = T.bg_card if (i % 2 == 0) else T.bg_card_alt
-        for j, cell in enumerate(row[:n_cols]):
-            cx_pos = table_x + j * col_w
-            add_rect(slide, cx_pos, ry, col_w, row_h, row_bg)
-            add_text(slide, str(cell), cx_pos + 0.1, ry + 0.05, col_w - 0.2, row_h - 0.1, 10, T.text_primary, align=PP_ALIGN.CENTER)
-
-
-def build_progress_cards(slide, data, T):
-    title = str(data.get('title', 'Objectives'))
-    cards = _normalize_items(data)[:3]
-    n = max(len(cards), 1)
-
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary)
-
-    if T.name in ('weekly', 'monthly'):
-        DECO_MAP[T.name](slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        card_y = 1.15
-    else:
-        add_text(slide, title, MX, 0.35, SW - MX * 2, 0.85, 36, T.text_primary, bold=True, font='Calibri')
-        add_hbar(slide, MX, 1.2, SW - MX * 2, 0.025, T.divider)
-        card_y = 1.5
-
-    card_w = (SW - 2 * MX - GAP * (n - 1)) / n
-    card_h = SH - card_y - 0.4
-
-    for i, cd in enumerate(cards[:n]):
-        cx = MX + i * (card_w + GAP)
-        ac = T.accent_cycle[i % 4]
-        add_rect(slide, cx, card_y, card_w, card_h, T.bg_card, radius=0.07)
-        add_hbar(slide, cx, card_y, card_w, 0.055, ac)
-        if not T.is_dark:
-            add_vbar(slide, cx, card_y, 0.05, card_h, ac)
-        pad = 0.3
-        inner_w = card_w - pad * 2
-        add_text(slide, str(cd.get('title', '')), cx + pad, card_y + 0.2, inner_w, 0.6, 15, T.text_primary, bold=True, font='Calibri')
-        add_text(slide, str(cd.get('text', '')), cx + pad, card_y + 0.8, inner_w, card_h - 1.3, 11, T.text_muted, wrap=True)
-        progress = cd.get('progress')
-        if progress:
-            bar_y = card_y + card_h - 0.5
-            add_hbar(slide, cx + pad, bar_y, inner_w, 0.1, T.divider)
-            fill_w = inner_w * min(float(progress) / 100, 1.0)
-            add_hbar(slide, cx + pad, bar_y, fill_w, 0.1, ac)
-            add_text(slide, f"{progress}%", cx + pad, bar_y - 0.22, inner_w, 0.2, 9, T.text_muted, align=PP_ALIGN.RIGHT)
-
-
-def build_timeline(slide, data, T):
+# ═══════════════════════════════════════════════════
+#  TIMELINE — Horizontal axis with icon circles + cards
+#  Reference: Building Tomorrow's Salesforce Practice
+# ═══════════════════════════════════════════════════
+def build_timeline(s, data, th, idx):
     title = str(data.get('title', 'Roadmap'))
-    milestones = _normalize_items(data)[:5]
+    milestones = _items(data)[:5]
     if not milestones:
         milestones = [{"title": "Phase 1"}, {"title": "Phase 2"}, {"title": "Phase 3"}]
     n = len(milestones)
 
-    add_rect(slide, 0, 0, SW, SH, T.bg_primary)
+    R(s, 0, 0, SW, SH, th.bg)
+    header_band(s, title, 'Strategic Roadmap', th)
 
-    if T.name in ('weekly', 'monthly'):
-        DECO_MAP[T.name](slide, T)
-        add_text(slide, title, MX + 0.1, 0.12, 7, 0.55, 22, T.text_on_header, bold=True, font='Calibri')
-        axis_y = 2.5
-    else:
-        hh = 1.7
-        add_rect(slide, 0, 0, SW, hh, T.header_bg)
-        add_hbar(slide, 0, hh - 0.035, SW, 0.035, T.accent_1)
-        if T.name == 'quarterly': deco_quarterly(slide, T)
-        else: deco_sprint(slide, T)
-        add_eyebrow(slide, 'Roadmap', MX, 0.35, T.accent_1)
-        add_text(slide, title, MX, 0.7, SW - MX * 2, 0.8, 34, T.text_on_header, bold=True, font='Calibri')
-        axis_y = 3.0
+    # Timeline axis
+    ax_y = 2.55
+    ax_x = MX + 0.4
+    ax_w = SW - 2*MX - 0.8
+    slot = ax_w / n
 
-    axis_x = MX + 0.5
-    axis_w = SW - MX * 2 - 1.0
-    add_hbar(slide, axis_x, axis_y, axis_w, 0.035, T.divider)
-    slot_w = axis_w / n
-    node_r = min(slot_w * 0.1, 0.2)
+    # Horizontal line
+    line_c = RGBColor(195, 200, 212) if not th.is_dark else RGBColor(38, 50, 70)
+    H(s, ax_x, ax_y, ax_w, 0.045, line_c)
 
-    for i, ms in enumerate(milestones[:n]):
-        mx_pos = axis_x + slot_w * i + slot_w / 2
-        ac = T.accent_cycle[i % 4]
-        add_oval(slide, mx_pos, axis_y + 0.018, node_r, node_r, ac)
-        phase = ms.get('phase', f'Phase {i+1}')
-        add_text(slide, str(phase), mx_pos - slot_w / 2 + 0.1, axis_y - 0.8, slot_w - 0.2, 0.45, 10, ac, bold=True, align=PP_ALIGN.CENTER, font='Calibri')
-        card_x = mx_pos - slot_w / 2 + 0.1
-        card_w_val = slot_w - 0.2
-        card_y_pos = axis_y + 0.45
-        card_h = SH - card_y_pos - 0.4
-        if card_h > 0.5:
-            add_rect(slide, card_x, card_y_pos, card_w_val, card_h, T.bg_card, radius=0.05)
-            add_hbar(slide, card_x, card_y_pos, card_w_val, 0.035, ac)
-            if not T.is_dark:
-                add_vbar(slide, card_x, card_y_pos, 0.035, card_h, ac)
-            add_text(slide, str(ms.get('title', '')), card_x + 0.08, card_y_pos + 0.12, card_w_val - 0.16, card_h - 0.22, 10.5, T.text_primary, wrap=True, align=PP_ALIGN.CENTER)
+    phases = ['Now', 'Near-Term', 'Mid-Term', 'Long-Term', 'Future']
+    tl_icons = ['check', 'up', 'diamond', 'star', 'flag']
+
+    for i, ms in enumerate(milestones):
+        mcx = ax_x + slot*i + slot/2
+        ac = th.accents[i % 4]
+
+        # Filled circle icon
+        O(s, mcx, ax_y + 0.02, 0.35, ac)
+        sym = ICONS.get(tl_icons[i % 5], '\u2713')
+        T(s, sym, mcx - 0.35, ax_y + 0.02 - 0.32, 0.7, 0.64, 16, th.txt_white,
+          bold=True, align=PP_ALIGN.CENTER, font='Segoe UI Symbol')
+
+        # Card below
+        cx = ax_x + slot*i + 0.08
+        cw = slot - 0.16
+        cy_pos = ax_y + 0.65
+        ch = SH - cy_pos - 0.5
+
+        R(s, cx, cy_pos, cw, ch, th.card, rad=0.05)
+        H(s, cx, cy_pos, cw, 0.045, ac)
+
+        phase = ms.get('phase', phases[i % 5])
+        T(s, str(phase).upper(), cx + 0.15, cy_pos + 0.15, cw - 0.3, 0.22,
+          9, ac, bold=True)
+
+        T(s, str(ms.get('title', '')), cx + 0.15, cy_pos + 0.4, cw - 0.3, 0.5,
+          13, th.txt_dark, bold=True, wrap=True)
+
+        desc = ms.get('text', '')
+        if desc:
+            T(s, str(desc), cx + 0.15, cy_pos + 0.9, cw - 0.3, ch - 1.1,
+              10, th.txt_mid, wrap=True)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
 
 
+# ═══════════════════════════════════════════
+#  PROGRESS CARDS — Phase columns
+# ═══════════════════════════════════════════
+def build_progress_cards(s, data, th, idx):
+    title = str(data.get('title', 'Objectives'))
+    cards = _items(data)[:4]
+    n = max(len(cards), 1)
+
+    R(s, 0, 0, SW, SH, th.bg)
+    header_band(s, title, 'Progress Tracking', th)
+
+    cy = 1.3; cw = (SW - 2*MX - GAP*(n-1)) / n; ch = SH - cy - 0.55
+
+    for i, cd in enumerate(cards):
+        cx = MX + i * (cw + GAP)
+        ac = th.accents[i % 4]
+
+        R(s, cx, cy, cw, ch, th.card, rad=0.06)
+        H(s, cx, cy, cw, 0.055, ac)
+
+        phase = cd.get('phase', f'Phase {i+1}')
+        T(s, str(phase).upper(), cx + 0.22, cy + 0.2, cw - 0.44, 0.25, 9, ac, bold=True)
+        T(s, str(cd.get('title', '')), cx + 0.22, cy + 0.48, cw - 0.44, 0.5, 14.5,
+          th.txt_dark, bold=True, wrap=True)
+
+        desc = str(cd.get('text', ''))
+        if desc:
+            T(s, desc, cx + 0.22, cy + 1.05, cw - 0.44, ch - 1.7, 11, th.txt_mid, wrap=True)
+
+        prog = cd.get('progress')
+        if prog:
+            bar_y = cy + ch - 0.4
+            track_c = RGBColor(220, 225, 235) if not th.is_dark else RGBColor(25, 35, 55)
+            H(s, cx + 0.22, bar_y, cw - 0.44, 0.1, track_c)
+            H(s, cx + 0.22, bar_y, (cw - 0.44) * min(float(prog)/100, 1.0), 0.1, ac)
+            T(s, f"{prog}%", cx + 0.22, bar_y - 0.22, cw - 0.44, 0.2, 9,
+              th.txt_light, align=PP_ALIGN.RIGHT)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
+
+
+# ═══════════════════════════════════════════
+#  TABLE GRID
+# ═══════════════════════════════════════════
+def build_table_grid(s, data, th, idx):
+    title = str(data.get('title', 'Data'))
+    headers = data.get('headers') or []
+    rows = data.get('rows') or []
+
+    R(s, 0, 0, SW, SH, th.bg)
+    header_band(s, title, 'Data Summary', th)
+
+    tx = MX; tw = SW - MX*2; ty = 1.25
+    nc = max(len(headers), 1); nr = min(len(rows), 8)
+    cw_t = tw / nc
+    rh = min(0.5, (SH - ty - 0.45) / max(nr + 1, 1))
+
+    for j, hd in enumerate(headers[:nc]):
+        hx = tx + j*cw_t
+        R(s, hx, ty, cw_t, rh, th.header)
+        T(s, str(hd), hx + 0.1, ty + 0.08, cw_t - 0.2, rh - 0.16, 11,
+          th.txt_white, bold=True, align=PP_ALIGN.CENTER)
+
+    for i, row in enumerate(rows[:nr]):
+        ry = ty + rh*(i + 1)
+        rc = th.card if i % 2 == 0 else th.bg
+        for j, cell in enumerate(row[:nc]):
+            cx = tx + j*cw_t
+            R(s, cx, ry, cw_t, rh, rc)
+            T(s, str(cell), cx + 0.1, ry + 0.08, cw_t - 0.2, rh - 0.16, 10,
+              th.txt_dark, align=PP_ALIGN.CENTER)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
+
+
+# ═══════════════════════════════════════════
+#  BIG STATEMENT / QUOTE
+# ═══════════════════════════════════════════
+def build_big_statement(s, data, th, idx):
+    title = str(data.get('title', ''))
+    content = data.get('content') or []
+    stmt = content[0] if content else title
+
+    R(s, 0, 0, SW, SH, th.bg)
+
+    # Quote mark
+    T(s, '\u201C', MX + 0.3, 1.2, 2.5, 2.0, 80,
+      RGBColor(200, 210, 225) if not th.is_dark else RGBColor(35, 48, 65),
+      bold=True, font='Georgia')
+
+    fs = 24 if len(str(stmt)) > 150 else (30 if len(str(stmt)) > 80 else 36)
+    T(s, str(stmt), MX + 1.0, 2.4, SW - MX*2 - 2, 3.0, fs,
+      th.txt_dark, wrap=True, align=PP_ALIGN.CENTER)
+
+    if title and title != str(stmt):
+        H(s, (SW - 2)/2, SH - 1.5, 2, 0.03, th.a1)
+        T(s, title, 1.5, SH - 1.3, SW - 3, 0.45, 12, th.txt_light, align=PP_ALIGN.CENTER)
+
+    slide_num(s, idx, th)
+    H(s, 0, SH - 0.045, SW, 0.045, th.a1)
+
+
+# ═══════════════════════════════════════════
+#  LAYOUT MAP + MAIN GENERATOR
+# ═══════════════════════════════════════════
 LAYOUT_MAP = {
     'hero': build_hero, 'kpi_grid': build_kpi_grid, 'flowchart': build_flowchart,
     'icon_columns': build_icon_columns, 'standard': build_split_panel,
@@ -628,25 +675,26 @@ LAYOUT_MAP = {
 
 
 def generate_native_editable_pptx(slides_data, theme_name='sprint'):
-    T = THEMES.get(theme_name, THEME_SPRINT)
+    """Main entry point — generates PPTX buffer from slide data + theme."""
+    th = THEMES.get(theme_name, THEME_SPRINT)
     prs = Presentation()
     prs.slide_width = Inches(SW)
     prs.slide_height = Inches(SH)
-    blank_layout = prs.slide_layouts[6]
+    blank = prs.slide_layouts[6]
 
-    for idx, slide_data in enumerate(slides_data):
-        slide = prs.slides.add_slide(blank_layout)
-        layout_key = str(slide_data.get('layout', 'standard')).lower()
-        builder = LAYOUT_MAP.get(layout_key, build_split_panel)
+    for idx, sd in enumerate(slides_data):
+        slide = prs.slides.add_slide(blank)
+        layout = str(sd.get('layout', 'standard')).lower()
+        builder = LAYOUT_MAP.get(layout, build_split_panel)
         try:
-            builder(slide, slide_data, T)
+            builder(slide, sd, th, idx + 1)
         except Exception as e:
-            print(f"Slide {idx+1} build error ({layout_key}): {e}", flush=True)
+            print(f"Slide {idx+1} error ({layout}): {e}", flush=True)
             traceback.print_exc()
-            add_rect(slide, 0, 0, SW, SH, T.bg_primary)
-            add_text(slide, str(slide_data.get('title', 'Slide')), MX, 2.8, SW - MX * 2, 2.0, 36, T.text_primary, bold=True, align=PP_ALIGN.CENTER)
+            R(slide, 0, 0, SW, SH, th.bg)
+            T(slide, str(sd.get('title', 'Slide')), MX, 3, SW - MX*2, 1.5, 36,
+              th.txt_dark, bold=True, align=PP_ALIGN.CENTER)
 
     buf = io.BytesIO()
-    prs.save(buf)
-    buf.seek(0)
+    prs.save(buf); buf.seek(0)
     return buf
