@@ -161,11 +161,17 @@ def T_multi(s, lines, x, y, w, h, sz, c, sp=10, font='Calibri'):
     return tb
 
 def icon_circ(s, cx, cy, r, bg, fg, key='check', fsz=16):
-    """Icon circle with pastel background and unicode glyph."""
+    """Icon circle with pastel background and unicode glyph — properly centered."""
     O(s, cx, cy, r, bg)
     sym = ICONS.get(key, '\u2713')
-    T(s, sym, cx - r, cy - r * 0.85, r*2, r*1.7, fsz, fg,
-      bold=True, align=PP_ALIGN.CENTER, font='Segoe UI Symbol')
+    tb = s.shapes.add_textbox(_i(cx - r), _i(cy - r), _i(r*2), _i(r*2))
+    tf = tb.text_frame; tf.word_wrap = False
+    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
+    try: tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    except: pass
+    p = tf.paragraphs[0]; p.text = sym
+    p.font.size = Pt(fsz); p.font.color.rgb = fg; p.font.bold = True
+    p.font.name = 'Segoe UI Symbol'; p.alignment = PP_ALIGN.CENTER
 
 def slide_num(s, n, theme):
     """Ghosted slide number bottom-right."""
@@ -251,15 +257,27 @@ def build_hero(s, data, th, idx):
     line2 = ' '.join(words[mid:]) if len(words) > 1 else ''
 
     fsz = 38 if len(title) > 50 else (44 if len(title) > 30 else 50)
-    T(s, line1, lx, 2.0, 5.6, 0.85, fsz, th.txt_dark, bold=True)
-    if line2:
-        y2 = 2.0 + fsz * 0.017 + 0.15
-        T(s, line2, lx, y2, 5.6, 0.85, fsz, th.hero_accent, bold=True)
+    title_y = 2.0
+    T(s, line1, lx, title_y, 5.6, 0.85, fsz, th.txt_dark, bold=True)
 
-    # Subtitle / date
+    # Calculate how many visual lines line2 will take
+    line2_y = title_y
+    if line2:
+        line2_y = title_y + fsz * 0.019 + 0.1
+        # Conservative: ~2.2 chars/inch at 44-50pt bold in 5.6" box
+        chars_per_inch = 2.0 if fsz >= 44 else 2.8
+        chars_per_line = max(8, int(5.6 * chars_per_inch))
+        num_wrap_lines = max(1, -(-len(line2) // chars_per_line))
+        line2_bottom = line2_y + num_wrap_lines * fsz * 0.022
+        T(s, line2, lx, line2_y, 5.6, (line2_bottom - line2_y) + 0.4, fsz, th.hero_accent, bold=True)
+        date_y = line2_bottom + 0.35
+    else:
+        date_y = title_y + fsz * 0.022 + 0.5
+
+    # Subtitle / date — positioned safely below title
     if subtitle:
-        sy = 2.0 + fsz * 0.034 + 0.55
-        T(s, '\u25A1  ' + subtitle, lx, sy, 5.5, 0.35, 13, th.txt_mid)
+        date_y = max(date_y, 4.2)  # safety floor
+        T(s, '\u25A1  ' + subtitle, lx, date_y, 5.5, 0.35, 13, th.txt_mid)
 
     # PREPARED BY block
     V(s, lx, SH - 1.8, 0.035, 0.75, th.txt_light)
@@ -385,9 +403,11 @@ def build_flowchart(s, data, th, idx):
     slot_w = (SW - 2*MX) / n
     cr = 0.38
 
-    # Connecting line
+    # Connecting line — spans from first circle center to last circle center
+    first_cx = MX + slot_w * 0.5
+    last_cx = MX + slot_w * (n - 1) + slot_w * 0.5
     line_c = RGBColor(200, 208, 220) if not th.is_dark else RGBColor(40, 55, 75)
-    H(s, MX + slot_w*0.5, circle_y - 0.02, (n-1)*slot_w, 0.04, line_c)
+    H(s, first_cx, circle_y - 0.02, last_cx - first_cx, 0.04, line_c)
 
     ik_flow = ['doc', 'code', 'gear', 'play', 'check', 'shield']
 
@@ -395,11 +415,17 @@ def build_flowchart(s, data, th, idx):
         cx = MX + slot_w*i + slot_w/2
         ac = th.accents[i % 4]
 
-        # Circle outline with icon inside
-        O_ring(s, cx, circle_y, cr, ac, 2.5)
+        # FILLED circle with white icon (matching timeline style)
+        O(s, cx, circle_y, cr, ac)
         sym = ICONS.get(ik_flow[i % len(ik_flow)], '\u2713')
-        T(s, sym, cx - cr, circle_y - cr*0.8, cr*2, cr*1.6, 18, ac,
-          bold=True, align=PP_ALIGN.CENTER, font='Segoe UI Symbol')
+        tb = s.shapes.add_textbox(_i(cx - cr), _i(circle_y - cr), _i(cr*2), _i(cr*2))
+        tf = tb.text_frame; tf.word_wrap = False
+        tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
+        try: tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        except: pass
+        p = tf.paragraphs[0]; p.text = sym
+        p.font.size = Pt(18); p.font.color.rgb = th.txt_white; p.font.bold = True
+        p.font.name = 'Segoe UI Symbol'; p.alignment = PP_ALIGN.CENTER
 
         # Label below circle
         step_title = str(step.get('title', f'Step {i+1}'))
@@ -527,11 +553,17 @@ def build_timeline(s, data, th, idx):
         mcx = ax_x + slot*i + slot/2
         ac = th.accents[i % 4]
 
-        # Filled circle icon
+        # Filled circle icon — centered
         O(s, mcx, ax_y + 0.02, 0.35, ac)
         sym = ICONS.get(tl_icons[i % 5], '\u2713')
-        T(s, sym, mcx - 0.35, ax_y + 0.02 - 0.32, 0.7, 0.64, 16, th.txt_white,
-          bold=True, align=PP_ALIGN.CENTER, font='Segoe UI Symbol')
+        tb = s.shapes.add_textbox(_i(mcx - 0.35), _i(ax_y + 0.02 - 0.35), _i(0.7), _i(0.7))
+        tf = tb.text_frame; tf.word_wrap = False
+        tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = Emu(0)
+        try: tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        except: pass
+        p = tf.paragraphs[0]; p.text = sym
+        p.font.size = Pt(16); p.font.color.rgb = th.txt_white; p.font.bold = True
+        p.font.name = 'Segoe UI Symbol'; p.alignment = PP_ALIGN.CENTER
 
         # Card below
         cx = ax_x + slot*i + 0.08
