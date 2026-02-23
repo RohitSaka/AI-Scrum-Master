@@ -795,6 +795,169 @@ def generate_sprint_deck(data):
 
 
 # ════════════════════════════════════════════
+#  THEMES & NATIVE EDITABLE PPTX (used by server.py)
+# ════════════════════════════════════════════
+
+THEMES = {
+    "sprint": {
+        "name": "Sprint (Dark Teal)",
+        "bg": RGBColor(0x0F, 0x17, 0x2A),
+        "accent": RGBColor(0x14, 0xB8, 0xA6),
+        "text": RGBColor(0xFF, 0xFF, 0xFF),
+        "card_bg": RGBColor(0x1E, 0x29, 0x3B),
+        "subtitle": RGBColor(0x94, 0xA3, 0xB8),
+    },
+    "weekly": {
+        "name": "Weekly (Light Corp)",
+        "bg": RGBColor(0xFF, 0xFF, 0xFF),
+        "accent": RGBColor(0x3B, 0x82, 0xF6),
+        "text": RGBColor(0x1E, 0x3A, 0x8A),
+        "card_bg": RGBColor(0xF1, 0xF5, 0xF9),
+        "subtitle": RGBColor(0x64, 0x74, 0x8B),
+    },
+    "monthly": {
+        "name": "Monthly (Executive)",
+        "bg": RGBColor(0x1E, 0x1B, 0x4B),
+        "accent": RGBColor(0xA7, 0x8B, 0xFA),
+        "text": RGBColor(0xFF, 0xFF, 0xFF),
+        "card_bg": RGBColor(0x2E, 0x28, 0x5E),
+        "subtitle": RGBColor(0xC4, 0xB5, 0xFD),
+    },
+    "quarterly": {
+        "name": "Quarterly (Premium Dark)",
+        "bg": RGBColor(0x0C, 0x0A, 0x09),
+        "accent": RGBColor(0xF5, 0x9E, 0x0B),
+        "text": RGBColor(0xFF, 0xFF, 0xFF),
+        "card_bg": RGBColor(0x1C, 0x1A, 0x17),
+        "subtitle": RGBColor(0xA8, 0xA2, 0x9E),
+    },
+}
+
+
+def generate_native_editable_pptx(slides_data, theme_name="sprint"):
+    """
+    Generate a native editable PPTX from AI-generated slide dicts.
+
+    Args:
+        slides_data: list of slide dicts with keys like layout, title, subtitle, content, items
+        theme_name: one of 'sprint', 'weekly', 'monthly', 'quarterly'
+
+    Returns:
+        BytesIO buffer with .pptx content
+    """
+    theme = THEMES.get(theme_name, THEMES["sprint"])
+    bg_color = theme["bg"]
+    accent = theme["accent"]
+    txt_color = theme["text"]
+    card_bg = theme["card_bg"]
+    sub_color = theme["subtitle"]
+
+    prs = Presentation()
+    prs.slide_width = _i(SW)
+    prs.slide_height = _i(SH)
+    blank_layout = prs.slide_layouts[6]
+
+    for slide_data in slides_data:
+        s = prs.slides.add_slide(blank_layout)
+        layout = slide_data.get("layout", "standard")
+
+        # Background
+        _rect(s, 0, 0, SW, SH, fill=bg_color)
+
+        if layout == "hero":
+            # Accent bar at bottom
+            _rect(s, 0, SH - 0.15, SW, 0.15, fill=accent)
+            # Title
+            title = slide_data.get("title", "")
+            _txt(s, title, 1.0, 2.2, 11, 1.2, 44, txt_color, bold=True, font=F_HEAD,
+                 align=PP_ALIGN.LEFT)
+            # Subtitle
+            sub = slide_data.get("subtitle", "")
+            _txt(s, sub, 1.0, 3.6, 8, 0.6, 20, sub_color, font=F_BODY)
+            # Accent line
+            _rect(s, 1.0, 3.3, 2.0, 0.06, fill=accent)
+
+        elif layout == "kpi_grid":
+            # Header
+            _rect(s, 0, 0, SW, 1.1, fill=accent)
+            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
+                 bold=True, font=F_HEAD)
+            # KPI cards
+            items = slide_data.get("items", [])
+            n = len(items) if items else 1
+            card_w = min(3.5, (SW - 1.6 - 0.3 * (n - 1)) / n)
+            start_x = (SW - (card_w * n + 0.3 * (n - 1))) / 2
+            for idx, item in enumerate(items):
+                cx = start_x + idx * (card_w + 0.3)
+                _rect(s, cx, 1.8, card_w, 2.8, fill=card_bg, border=accent, border_w=1)
+                _txt(s, str(item.get("value", "")), cx, 2.2, card_w, 1.0, 42, accent,
+                     bold=True, font=F_HEAD, align=PP_ALIGN.CENTER)
+                _txt(s, str(item.get("label", "")), cx, 3.4, card_w, 0.6, 14, sub_color,
+                     font=F_BODY, align=PP_ALIGN.CENTER)
+
+        elif layout == "icon_columns":
+            # Header
+            _rect(s, 0, 0, SW, 1.1, fill=accent)
+            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
+                 bold=True, font=F_HEAD)
+            items = slide_data.get("items", [])
+            iy = 1.6
+            for item in items[:5]:
+                _rect(s, 0.8, iy, 11.4, 0.06, fill=card_bg)
+                _txt(s, str(item.get("title", "")), 1.0, iy + 0.15, 10, 0.35, 16,
+                     txt_color, bold=True, font=F_HEAD)
+                _txt_multi(s, str(item.get("text", "")), 1.0, iy + 0.55, 10.5, 0.6, 12,
+                           sub_color, font=F_BODY)
+                iy += 1.3
+
+        elif layout == "flowchart":
+            # Header
+            _rect(s, 0, 0, SW, 1.1, fill=accent)
+            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
+                 bold=True, font=F_HEAD)
+            items = slide_data.get("items", [])
+            n = len(items) if items else 1
+            box_w = min(3.0, (SW - 1.6 - 0.6 * (n - 1)) / n)
+            start_x = (SW - (box_w * n + 0.6 * (n - 1))) / 2
+            for idx, item in enumerate(items[:6]):
+                bx = start_x + idx * (box_w + 0.6)
+                _rect(s, bx, 2.5, box_w, 1.8, fill=card_bg, border=accent, border_w=1)
+                # Step number
+                _labeled_shape(s, bx + box_w / 2 - 0.2, 2.1, 0.4, 0.4, accent,
+                               str(idx + 1), 14, C_WHITE, font=F_HEAD)
+                title = item.get("title", item) if isinstance(item, dict) else str(item)
+                _txt(s, title, bx + 0.15, 2.9, box_w - 0.3, 1.0, 13, txt_color,
+                     bold=True, font=F_BODY, align=PP_ALIGN.CENTER,
+                     v_anchor=MSO_ANCHOR.MIDDLE)
+                # Arrow between boxes
+                if idx < n - 1:
+                    ax = bx + box_w + 0.1
+                    _txt(s, "→", ax, 3.1, 0.4, 0.5, 24, accent, bold=True, font=F_BODY,
+                         align=PP_ALIGN.CENTER)
+
+        else:  # "standard" or any other layout
+            # Header
+            _rect(s, 0, 0, SW, 1.1, fill=accent)
+            _txt(s, slide_data.get("title", ""), 0.8, 0.25, 10, 0.6, 28, C_WHITE,
+                 bold=True, font=F_HEAD)
+            # Bullet content
+            content = slide_data.get("content", [])
+            if isinstance(content, str):
+                content = [content]
+            cy = 1.6
+            for bullet in content:
+                _txt(s, "●", 0.8, cy + 0.05, 0.2, 0.3, 8, accent, font=F_BODY)
+                _txt_multi(s, str(bullet), 1.2, cy, 10.5, 0.8, 14, txt_color, font=F_BODY)
+                lines_est = max(1, len(str(bullet)) // 80 + 1)
+                cy += 0.35 + lines_est * 0.25
+
+    buf = BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf
+
+
+# ════════════════════════════════════════════
 #  SAMPLE DATA (for testing)
 # ════════════════════════════════════════════
 SAMPLE_DATA = {
