@@ -12,6 +12,12 @@ import base64
 # --- NATIVE PPTX GENERATION (v5 Engine) ---
 from pptx_engine_v5 import generate_native_editable_pptx, THEMES
 
+# --- MEETING AGENT ---
+from meeting_agent import (
+    process_meeting_transcript, classify_meeting, fetch_sprint_history,
+    calculate_velocity, generate_capacity_report
+)
+
 # --- DATABASE (SQLAlchemy) ---
 from sqlalchemy import create_engine, Column, String, Boolean, DateTime, Integer, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -19,23 +25,16 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 load_dotenv()
 app = FastAPI()
 
-# ═══ SECURITY: Admin secret for license management ═══
-ADMIN_SECRET = os.getenv("ADMIN_SECRET", "")
-
-# ═══ RATE LIMITING: In-memory AI call tracker ═══
-AI_CALL_TRACKER = {}  # {license_key: {"count": N, "reset_at": timestamp}}
-AI_CALLS_PER_HOUR = int(os.getenv("AI_CALLS_PER_HOUR", "60"))
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 print("\n" + "="*60)
-print("\U0001f680 APP STARTING: V49 \u2014 SECURITY + REVENUE FOUNDATION")
-print("   PPTX v5 | Rate Limiting | License Tiers | Usage Tracking")
+print("\U0001f680 APP STARTING: V49 \u2014 MEETING AGENT + PPTX v6")
+print("   Meeting Agent | Auto Stories | Capacity Planning | 4 Themes")
 print("   Sprint=DarkTeal | Weekly=LightCorp | Monthly=Executive | Quarterly=PremiumDark")
 print("="*60 + "\n")
 
@@ -53,12 +52,6 @@ class License(Base):
     key = Column(String, primary_key=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    # ═══ REVENUE FIELDS ═══
-    plan = Column(String, default="trial")           # trial | starter | pro | enterprise
-    expires_at = Column(DateTime, nullable=True)      # NULL = never expires (enterprise)
-    ai_calls_used = Column(Integer, default=0)        # lifetime AI call counter
-    ai_calls_limit = Column(Integer, default=100)     # per-month limit (trial=100, starter=500, pro=2000, enterprise=unlimited)
-    company_name = Column(String, default="")
 
 class UserAuth(Base):
     __tablename__ = "user_auth"
@@ -77,6 +70,19 @@ class GuestLink(Base):
     license_key = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class MeetingSession(Base):
+    __tablename__ = "meeting_sessions"
+    id = Column(String, primary_key=True, index=True)
+    license_key = Column(String)
+    project_key = Column(String)
+    sprint_id = Column(String)
+    meeting_type = Column(String)       # planning/grooming/retro/capacity
+    transcript = Column(Text)
+    ai_results = Column(Text)           # JSON of extracted items
+    status = Column(String, default="pending")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    platform = Column(String)           # google_meet/teams/zoom/manual
+
 Base.metadata.create_all(bind=engine_db)
 
 def get_db():
@@ -90,46 +96,17 @@ CLIENT_SECRET = os.getenv("ATLASSIAN_CLIENT_SECRET", "").strip()
 APP_URL = os.getenv("APP_URL", "http://localhost:8000").strip()
 REDIRECT_URI = f"{APP_URL}/auth/callback"
 
-PLAN_LIMITS = {"trial": 100, "starter": 500, "pro": 2000, "enterprise": 999999}
-PLAN_EXPIRY_DAYS = {"trial": 14, "starter": 365, "pro": 365, "enterprise": None}
-
-@app.get("/health")
-def health_check():
-    """Health check for monitoring and uptime services."""
-    return {"status": "healthy", "version": "V49", "timestamp": datetime.utcnow().isoformat()}
-
 @app.post("/admin/generate_license")
-def generate_license(payload: dict = {}, db: Session = Depends(get_db)):
-    """Generate a new license key. REQUIRES ADMIN_SECRET."""
-    # ═══ SECURITY: Require admin secret ═══
-    admin_key = payload.get("admin_secret", "")
-    if not ADMIN_SECRET or admin_key != ADMIN_SECRET:
-        raise HTTPException(status_code=403, detail="Unauthorized. Valid admin_secret required.")
-    
-    plan = payload.get("plan", "trial")
-    if plan not in PLAN_LIMITS:
-        raise HTTPException(status_code=400, detail=f"Invalid plan. Options: {list(PLAN_LIMITS.keys())}")
-    
-    new_key = f"IG-{plan.upper()[:3]}-{str(uuid.uuid4())[:8].upper()}"
-    expiry_days = PLAN_EXPIRY_DAYS.get(plan)
-    expires_at = datetime.utcnow() + timedelta(days=expiry_days) if expiry_days else None
-    
-    db.add(License(
-        key=new_key, plan=plan,
-        ai_calls_limit=PLAN_LIMITS[plan],
-        expires_at=expires_at,
-        company_name=payload.get("company", "")
-    ))
+def generate_license(db: Session = Depends(get_db)):
+    new_key = f"IG-ENT-{str(uuid.uuid4())[:8].upper()}"
+    db.add(License(key=new_key))
     db.commit()
-    return {"license_key": new_key, "plan": plan, "expires_at": str(expires_at) if expires_at else "never", "ai_calls_limit": PLAN_LIMITS[plan]}
+    return {"license_key": new_key, "status": "active"}
 
 @app.get("/auth/login")
 def login(license_key: str, db: Session = Depends(get_db)):
     lic = db.query(License).filter(License.key == license_key).first()
     if not lic or not lic.is_active: raise HTTPException(status_code=403, detail="Invalid License Key")
-    # ═══ REVENUE: Check license expiry ═══
-    if lic.expires_at and datetime.utcnow() > lic.expires_at:
-        raise HTTPException(status_code=403, detail=f"License expired on {lic.expires_at.strftime('%Y-%m-%d')}. Please renew your {lic.plan} plan.")
     params = {"audience": "api.atlassian.com", "client_id": CLIENT_ID, "scope": "read:jira-work manage:jira-project manage:jira-configuration write:jira-work offline_access", "redirect_uri": REDIRECT_URI, "state": license_key, "response_type": "code", "prompt": "consent"}
     return RedirectResponse(f"https://auth.atlassian.com/authorize?{urllib.parse.urlencode(params, quote_via=urllib.parse.quote)}")
 
@@ -164,7 +141,7 @@ async def get_jira_creds(x_jira_domain: str = Header(None), x_jira_email: str = 
     if x_license_key:
         user = get_valid_oauth_session(db=db, license_key=x_license_key)
         if not user: raise HTTPException(status_code=401, detail="Invalid License")
-        return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token, "license_key": x_license_key}
+        return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
     if x_jira_domain and x_jira_email and x_jira_token:
         return {"auth_type": "basic", "domain": x_jira_domain.replace("https://", "").replace("http://", "").strip("/"), "email": x_jira_email, "token": x_jira_token}
     raise HTTPException(status_code=401, detail="Missing Auth")
@@ -311,60 +288,12 @@ def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data
     if force_openai or image_data: return call_openai(prompt, temperature, image_data, json_mode)
     return call_gemini(prompt, temperature, image_data, json_mode)
 
-def check_ai_rate_limit(license_key, db):
-    """Check if license has remaining AI calls. Returns (allowed, message)."""
-    if not license_key:
-        return True, ""  # Basic auth users (legacy) — no limit for now
-    
-    lic = db.query(License).filter(License.key == license_key).first()
-    if not lic:
-        return False, "Invalid license"
-    
-    # Check expiry
-    if lic.expires_at and datetime.utcnow() > lic.expires_at:
-        return False, f"License expired. Please renew your {lic.plan} plan."
-    
-    # In-memory hourly rate limit
-    now = time.time()
-    tracker = AI_CALL_TRACKER.get(license_key, {"count": 0, "reset_at": now + 3600})
-    if now > tracker["reset_at"]:
-        tracker = {"count": 0, "reset_at": now + 3600}
-    
-    if tracker["count"] >= AI_CALLS_PER_HOUR:
-        return False, f"Hourly rate limit reached ({AI_CALLS_PER_HOUR}/hr). Please wait."
-    
-    tracker["count"] += 1
-    AI_CALL_TRACKER[license_key] = tracker
-    
-    # Increment lifetime counter
-    lic.ai_calls_used = (lic.ai_calls_used or 0) + 1
-    db.commit()
-    
-    return True, ""
-
-@app.get("/license/usage")
-def get_license_usage(creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
-    """Return current license usage stats (for frontend dashboard)."""
-    license_key = creds.get("license_key") if creds.get("auth_type") == "oauth" else None
-    if not license_key:
-        return {"plan": "basic", "ai_calls_used": 0, "ai_calls_limit": 999999}
-    lic = db.query(License).filter(License.key == license_key).first()
-    if not lic:
-        return {"plan": "unknown", "ai_calls_used": 0, "ai_calls_limit": 0}
-    return {
-        "plan": lic.plan or "trial",
-        "ai_calls_used": lic.ai_calls_used or 0,
-        "ai_calls_limit": lic.ai_calls_limit or 100,
-        "expires_at": lic.expires_at.isoformat() if lic.expires_at else None,
-        "company": lic.company_name or ""
-    }
-
 
 # ================= APP ENDPOINTS =================
 @app.get("/")
 def home():
     if os.path.exists("index.html"): return FileResponse("index.html")
-    return {"status": "Backend running — V49 Security + Revenue Foundation"}
+    return {"status": "Backend running — V48 PPTX Engine v5 + Roles & Team"}
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -680,9 +609,6 @@ def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db
 def get_guest_retro(token: str, db: Session = Depends(get_db)):
     link = db.query(GuestLink).filter(GuestLink.token == token).first()
     if not link: raise HTTPException(status_code=404, detail="Invalid or expired link")
-    # ═══ SECURITY: Guest links expire after 24 hours ═══
-    if link.created_at and (datetime.utcnow() - link.created_at).total_seconds() > 86400:
-        raise HTTPException(status_code=410, detail="This invite link has expired (24hr limit). Please ask the Scrum Master to generate a new one.")
     user = get_valid_oauth_session(db=db, license_key=link.license_key)
     if not user: raise HTTPException(status_code=401, detail="Host session expired. Please ask the Scrum Master to generate a new link.")
     creds = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
@@ -789,115 +715,77 @@ Return STRICT JSON: {{"subject": "Clear subject line", "body": "Professional ema
 
 @app.post("/team/send_email")
 def send_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
-    """Send email via best available provider. Auto-detects: Resend API → SendGrid API → SMTP fallback."""
+    """Send email directly via SMTP. Credentials come from server environment variables — customers never see them."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    # SMTP credentials from environment (admin-configured, not customer-facing)
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_email = os.getenv("SMTP_EMAIL", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    sender_name = os.getenv("SMTP_SENDER_NAME", "IG Agile Scrum")
     
     recipients = payload.get("recipients", [])
     subject = payload.get("subject", "")
     body = payload.get("body", "")
     project = payload.get("project", "")
     
+    if not smtp_email or not smtp_password:
+        return {"status": "error", "message": "Email service not configured. Please ask your administrator to set SMTP_EMAIL and SMTP_PASSWORD environment variables."}
     if not recipients:
         return {"status": "error", "message": "No recipients specified."}
     if not subject and not body:
         return {"status": "error", "message": "Email subject and body are both empty."}
     
-    # Build branded HTML email
-    html_body = f"""<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;">
-        <div style="border-bottom: 3px solid #3B82F6; padding-bottom: 16px; margin-bottom: 24px;">
-            <strong style="color: #3B82F6; font-size: 13px; letter-spacing: 1px;">IG AGILE SCRUM</strong>
-        </div>
-        {''.join(f'<p style="margin: 0 0 12px 0; line-height: 1.7; font-size: 15px;">{line}</p>' for line in body.split(chr(10)) if line.strip())}
-        <div style="border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 16px;">
-            <small style="color: #6b7280; font-size: 11px;">Sent via IG Agile Scrum — Enterprise Agile Intelligence Platform</small>
-        </div>
-    </div>"""
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['From'] = f"{sender_name} <{smtp_email}>"
+        msg['To'] = ', '.join(recipients)
+        msg['Subject'] = subject
+        msg['Reply-To'] = smtp_email
+        
+        # Plain text version
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # HTML version with professional formatting
+        html_body = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; color: #1a1a2e;">
+            <div style="border-bottom: 3px solid #3B82F6; padding-bottom: 16px; margin-bottom: 24px;">
+                <strong style="color: #3B82F6; font-size: 13px; letter-spacing: 1px;">IG AGILE SCRUM</strong>
+            </div>
+            {''.join(f'<p style="margin: 0 0 12px 0; line-height: 1.7; font-size: 15px;">{line}</p>' for line in body.split(chr(10)) if line.strip())}
+            <div style="border-top: 1px solid #e5e7eb; margin-top: 32px; padding-top: 16px;">
+                <small style="color: #6b7280; font-size: 11px;">Sent via IG Agile Scrum — Enterprise Agile Intelligence Platform</small>
+            </div>
+        </div>"""
+        msg.attach(MIMEText(html_body, 'html'))
+        
+        # Connect and send
+        print(f"[EMAIL] Connecting to {smtp_host}:{smtp_port}...", flush=True)
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(smtp_email, smtp_password)
+            server.sendmail(smtp_email, recipients, msg.as_string())
+        
+        print(f"[EMAIL] ✅ Sent to {len(recipients)} recipients: {', '.join(recipients)}", flush=True)
+        return {"status": "sent", "recipients_count": len(recipients)}
     
-    sender_name = os.getenv("SMTP_SENDER_NAME", "IG Agile Scrum")
-    
-    # ── STRATEGY 1: Resend API (HTTPS, works on all cloud platforms) ──
-    resend_key = os.getenv("RESEND_API_KEY", "")
-    resend_from = os.getenv("RESEND_FROM_EMAIL", "")
-    if resend_key:
-        try:
-            from_addr = resend_from or "IG Agile Scrum <onboarding@resend.dev>"
-            print(f"[EMAIL] Sending via Resend API to {len(recipients)} recipients...", flush=True)
-            resp = requests.post("https://api.resend.com/emails", 
-                headers={"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"},
-                json={"from": from_addr, "to": recipients, "subject": subject, "text": body, "html": html_body},
-                timeout=15
-            )
-            if resp.status_code in (200, 201):
-                data = resp.json()
-                print(f"[EMAIL] ✅ Resend sent! ID: {data.get('id', 'N/A')}", flush=True)
-                return {"status": "sent", "recipients_count": len(recipients), "provider": "resend"}
-            else:
-                err = resp.json().get("message", resp.text)
-                print(f"[EMAIL] ❌ Resend error ({resp.status_code}): {err}", flush=True)
-                return {"status": "error", "message": f"Resend: {err}"}
-        except Exception as e:
-            print(f"[EMAIL] ❌ Resend exception: {e}", flush=True)
-            return {"status": "error", "message": f"Resend error: {str(e)}"}
-    
-    # ── STRATEGY 2: SendGrid API (HTTPS, works on all cloud platforms) ──
-    sendgrid_key = os.getenv("SENDGRID_API_KEY", "")
-    sendgrid_from = os.getenv("SENDGRID_FROM_EMAIL", "")
-    if sendgrid_key and sendgrid_from:
-        try:
-            print(f"[EMAIL] Sending via SendGrid API to {len(recipients)} recipients...", flush=True)
-            resp = requests.post("https://api.sendgrid.com/v3/mail/send",
-                headers={"Authorization": f"Bearer {sendgrid_key}", "Content-Type": "application/json"},
-                json={
-                    "personalizations": [{"to": [{"email": r} for r in recipients]}],
-                    "from": {"email": sendgrid_from, "name": sender_name},
-                    "subject": subject,
-                    "content": [{"type": "text/plain", "value": body}, {"type": "text/html", "value": html_body}]
-                },
-                timeout=15
-            )
-            if resp.status_code in (200, 201, 202):
-                print(f"[EMAIL] ✅ SendGrid sent!", flush=True)
-                return {"status": "sent", "recipients_count": len(recipients), "provider": "sendgrid"}
-            else:
-                err = resp.text
-                print(f"[EMAIL] ❌ SendGrid error ({resp.status_code}): {err}", flush=True)
-                return {"status": "error", "message": f"SendGrid error: {err}"}
-        except Exception as e:
-            print(f"[EMAIL] ❌ SendGrid exception: {e}", flush=True)
-            return {"status": "error", "message": f"SendGrid error: {str(e)}"}
-    
-    # ── STRATEGY 3: SMTP fallback (works locally or on platforms allowing port 587) ──
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_email = os.getenv("SMTP_EMAIL", "")
-    smtp_password = os.getenv("SMTP_PASSWORD", "")
-    if smtp_email and smtp_password:
-        try:
-            import smtplib
-            from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-            
-            msg = MIMEMultipart('alternative')
-            msg['From'] = f"{sender_name} <{smtp_email}>"
-            msg['To'] = ', '.join(recipients)
-            msg['Subject'] = subject
-            msg['Reply-To'] = smtp_email
-            msg.attach(MIMEText(body, 'plain'))
-            msg.attach(MIMEText(html_body, 'html'))
-            
-            print(f"[EMAIL] Sending via SMTP {smtp_host}:{smtp_port}...", flush=True)
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
-                server.ehlo(); server.starttls(); server.ehlo()
-                server.login(smtp_email, smtp_password)
-                server.sendmail(smtp_email, recipients, msg.as_string())
-            
-            print(f"[EMAIL] ✅ SMTP sent to {len(recipients)} recipients!", flush=True)
-            return {"status": "sent", "recipients_count": len(recipients), "provider": "smtp"}
-        except Exception as e:
-            print(f"[EMAIL] ❌ SMTP error: {e}", flush=True)
-            return {"status": "error", "message": f"SMTP failed: {str(e)}. Note: Most cloud platforms block SMTP ports. Use Resend or SendGrid instead (set RESEND_API_KEY env var)."}
-    
-    # ── No provider configured ──
-    return {"status": "error", "message": "No email provider configured. Set one of: RESEND_API_KEY, SENDGRID_API_KEY, or SMTP_EMAIL + SMTP_PASSWORD as environment variables."}
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[EMAIL] ❌ Auth failed: {e}", flush=True)
+        return {"status": "error", "message": "Email authentication failed. Please contact your administrator to verify SMTP credentials."}
+    except smtplib.SMTPRecipientsRefused as e:
+        print(f"[EMAIL] ❌ Recipients refused: {e}", flush=True)
+        return {"status": "error", "message": "One or more recipient addresses were rejected by the mail server."}
+    except smtplib.SMTPException as e:
+        print(f"[EMAIL] ❌ SMTP Error: {e}", flush=True)
+        return {"status": "error", "message": f"Mail server error: {str(e)}"}
+    except Exception as e:
+        print(f"[EMAIL] ❌ General Error: {e}", flush=True)
+        return {"status": "error", "message": f"Failed to send: {str(e)}"}
 
 def process_silent_webhook(issue_key, summary, desc_text, project_key, creds_dict):
     try:
@@ -961,3 +849,370 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
         if creds_dict: background_tasks.add_task(process_silent_webhook, key, summary, desc, project_key, creds_dict)
         return {"status": "processing_in_background"}
     except Exception as e: return {"status": "error", "message": str(e)}
+
+
+# ================= MEETING AGENT ENDPOINTS =================
+
+@app.post("/meeting/upload")
+async def meeting_upload(payload: dict, background_tasks: BackgroundTasks, creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
+    """Upload/paste a meeting transcript for AI processing."""
+    transcript = payload.get("transcript", "")
+    project_key = payload.get("project", "")
+    sprint_id = payload.get("sprint_id") or payload.get("sprint", "")
+    meeting_type = payload.get("meeting_type")  # Optional — auto-detect if not provided
+    platform = payload.get("platform", "manual")
+
+    if not transcript or len(transcript.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Transcript is too short. Please provide at least 50 characters.")
+    if not project_key:
+        raise HTTPException(status_code=400, detail="Project key is required.")
+
+    session_id = str(uuid.uuid4())
+    session = MeetingSession(
+        id=session_id, license_key=payload.get("license_key", ""),
+        project_key=project_key, sprint_id=str(sprint_id) if sprint_id else "",
+        meeting_type=meeting_type or "auto", transcript=transcript,
+        status="processing", platform=platform
+    )
+    db.add(session); db.commit()
+
+    # Get team roster for smart assignment
+    sp_field = get_story_point_field(creds)
+    roster, assignable_map = build_team_roster(project_key, creds, sp_field)
+    team_roster = roster  # {name: points} dict
+
+    # Process transcript (this can take 30-60s, so we do it synchronously for now
+    # since the frontend shows a loading state)
+    try:
+        results = process_meeting_transcript(
+            transcript=transcript,
+            project_key=project_key,
+            sprint_id=sprint_id,
+            meeting_type=meeting_type,
+            jira_request_fn=jira_request,
+            creds=creds,
+            team_roster=team_roster
+        )
+
+        # Update session with results
+        session = db.query(MeetingSession).filter(MeetingSession.id == session_id).first()
+        if session:
+            session.status = "completed"
+            session.meeting_type = results.get("meeting_type", meeting_type or "unknown")
+            session.ai_results = json.dumps(results, default=str)
+            db.commit()
+
+        return {"status": "success", "session_id": session_id, "results": results}
+
+    except Exception as e:
+        print(f"Meeting Agent Error: {e}", flush=True)
+        traceback.print_exc()
+        session = db.query(MeetingSession).filter(MeetingSession.id == session_id).first()
+        if session:
+            session.status = "error"
+            session.ai_results = json.dumps({"error": str(e)})
+            db.commit()
+        return {"status": "error", "session_id": session_id, "message": str(e)}
+
+
+@app.get("/meeting/sessions/{project_key}")
+def list_meeting_sessions(project_key: str, creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
+    """List past meeting sessions for a project."""
+    sessions = db.query(MeetingSession).filter(
+        MeetingSession.project_key == project_key
+    ).order_by(MeetingSession.created_at.desc()).limit(20).all()
+    return [{"id": s.id, "meeting_type": s.meeting_type, "status": s.status,
+             "platform": s.platform, "created_at": s.created_at.isoformat() if s.created_at else "",
+             "transcript_preview": (s.transcript or "")[:200]} for s in sessions]
+
+
+@app.get("/meeting/session/{session_id}")
+def get_meeting_session(session_id: str, creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
+    """Get full session details and AI results."""
+    session = db.query(MeetingSession).filter(MeetingSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    results = None
+    try:
+        results = json.loads(session.ai_results) if session.ai_results else None
+    except: pass
+    return {
+        "id": session.id, "project_key": session.project_key, "sprint_id": session.sprint_id,
+        "meeting_type": session.meeting_type, "status": session.status,
+        "platform": session.platform, "transcript": session.transcript,
+        "results": results, "created_at": session.created_at.isoformat() if session.created_at else ""
+    }
+
+
+@app.post("/meeting/session/{session_id}/approve")
+async def approve_meeting_stories(session_id: str, payload: dict, creds: dict = Depends(get_jira_creds), db: Session = Depends(get_db)):
+    """Approve AI-generated stories and create them in Jira."""
+    session = db.query(MeetingSession).filter(MeetingSession.id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        results = json.loads(session.ai_results) if session.ai_results else {}
+    except:
+        raise HTTPException(status_code=400, detail="No AI results available")
+
+    story_indices = payload.get("story_indices", [])  # Which stories to create
+    epic_indices = payload.get("epic_indices", [])     # Which epics to create
+    auto_assign = payload.get("auto_assign", True)
+    stories = results.get("extracted", {}).get("stories", [])
+    epics = results.get("extracted", {}).get("epics", [])
+    project_key = session.project_key
+    sp_field = get_story_point_field(creds)
+    roster, assignable_map = build_team_roster(project_key, creds, sp_field)
+
+    # Get base URL for issue links
+    base_url = ""
+    if creds.get("auth_type") == "basic":
+        base_url = f"https://{creds['domain']}"
+    else:
+        server_info = jira_request("GET", "serverInfo", creds)
+        if server_info and server_info.status_code == 200:
+            base_url = server_info.json().get("baseUrl", "")
+
+    created_issues = []
+    errors = []
+
+    # Create epics first
+    epic_key_map = {}  # index -> jira key
+    for idx in epic_indices:
+        if idx < len(epics):
+            epic = epics[idx]
+            desc_text = f"Motivation:\n{epic.get('motivation', '')}\n\nDescription:\n{epic.get('description', '')}"
+            issue_data = {
+                "fields": {
+                    "project": {"key": project_key},
+                    "summary": epic.get("title", "AI Generated Epic"),
+                    "description": create_adf_doc(desc_text),
+                    "issuetype": {"name": "Epic"}
+                }
+            }
+            res = jira_request("POST", "issue", creds, issue_data)
+            if res and res.status_code == 201:
+                ek = res.json().get("key")
+                epic_key_map[idx] = ek
+                url = f"{base_url}/browse/{ek}" if base_url else ""
+                created_issues.append({"type": "Epic", "key": ek, "title": epic.get("title"), "url": url})
+            else:
+                errors.append(f"Failed to create epic: {epic.get('title')}")
+
+    # Create stories
+    for idx in story_indices:
+        if idx < len(stories):
+            story = stories[idx]
+            desc_text = story.get("description", "AI Generated Story")
+            ac_list = story.get("acceptance_criteria", [])
+            issue_data = {
+                "fields": {
+                    "project": {"key": project_key},
+                    "summary": story.get("title", "AI Generated Story"),
+                    "description": create_adf_doc(desc_text, ac_list),
+                    "issuetype": {"name": "Story"}
+                }
+            }
+            res = jira_request("POST", "issue", creds, issue_data)
+            if res is None or res.status_code != 201:
+                # Fallback to Task
+                issue_data["fields"]["issuetype"]["name"] = "Task"
+                res = jira_request("POST", "issue", creds, issue_data)
+
+            if res and res.status_code == 201:
+                new_key = res.json().get("key")
+
+                # Set story points
+                points = safe_float(story.get("suggested_points", 0))
+                if points > 0:
+                    jira_request("PUT", f"issue/{new_key}", creds, {"fields": {sp_field: points}})
+
+                # Assign
+                if auto_assign and story.get("suggested_assignee") and story["suggested_assignee"].lower() != "unassigned":
+                    aid = assignable_map.get(story["suggested_assignee"])
+                    if not aid:
+                        aid = get_jira_account_id(story["suggested_assignee"], creds)
+                    if aid:
+                        jira_request("PUT", f"issue/{new_key}", creds, {"fields": {"assignee": {"accountId": aid}}})
+
+                # Add AI insights comment
+                comment = (f"🤖 IG Agile Meeting Agent — Auto-Generated\n"
+                           f"- Estimated: {points} pts\n"
+                           f"- Sprint Fit: {story.get('sprint_fit', 'unknown')}\n"
+                           f"- Reasoning: {story.get('estimation_reasoning', '')}\n"
+                           f"- Capacity: {story.get('capacity_reasoning', '')}")
+                jira_request("POST", f"issue/{new_key}/comment", creds,
+                             {"body": create_adf_doc(comment)})
+
+                url = f"{base_url}/browse/{new_key}" if base_url else ""
+                created_issues.append({"type": "Story", "key": new_key, "title": story.get("title"),
+                                        "points": points, "assignee": story.get("suggested_assignee"), "url": url})
+            else:
+                errors.append(f"Failed to create: {story.get('title')} — {extract_jira_error(res)}")
+
+    return {"status": "success", "created": created_issues, "errors": errors,
+            "total_created": len(created_issues)}
+
+
+@app.get("/meeting/history/{project_key}")
+def get_sprint_history(project_key: str, num_sprints: int = 5, creds: dict = Depends(get_jira_creds)):
+    """Get sprint history and velocity data for capacity planning."""
+    history = fetch_sprint_history(jira_request, creds, project_key, num_sprints)
+    velocity = calculate_velocity(history)
+    return {"sprint_history": [{"name": h["sprint"]["name"], "velocity": h["completed_points"],
+             "completion_rate": h["completion_rate"], "total_issues": h["total_issues"],
+             "completed_issues": h["completed_issues"],
+             "person_stats": h["person_stats"]} for h in history],
+            "velocity": velocity}
+
+
+@app.get("/meeting/capacity/{project_key}")
+def get_capacity_analysis(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
+    """Full capacity analysis for current sprint."""
+    sp_field = get_story_point_field(creds)
+    history = fetch_sprint_history(jira_request, creds, project_key)
+    velocity = calculate_velocity(history)
+
+    # Get current sprint issues
+    jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
+    res = jira_request("POST", "search/jql", creds, {
+        "jql": jql, "maxResults": 100,
+        "fields": ["summary", "status", "assignee", sp_field, "customfield_10016", "customfield_10026"]
+    })
+    current_issues = []
+    if res and res.status_code == 200:
+        for iss in res.json().get('issues', []):
+            f = iss.get('fields') or {}
+            pts = extract_story_points(f, sp_field)
+            status_name = (f.get('status') or {}).get('name', 'To Do')
+            assignee_name = (f.get('assignee') or {}).get('displayName', 'Unassigned')
+            current_issues.append({"key": iss.get('key'), "summary": f.get('summary', ''),
+                                    "assignee": assignee_name, "points": pts, "status": status_name})
+
+    report = generate_capacity_report(history, velocity, current_issues)
+    report["current_sprint_issues"] = current_issues
+    return report
+
+
+@app.post("/meeting/webhook/transcript")
+async def meeting_transcript_webhook(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Webhook receiver for Recall.ai / MeetingBaaS transcript delivery."""
+    try:
+        payload = await request.json()
+        transcript = payload.get("transcript", "")
+        meeting_url = payload.get("meeting_url", "")
+        platform = payload.get("platform", "recall_ai")
+        project_key = payload.get("project_key", "")
+        sprint_id = payload.get("sprint_id", "")
+        license_key = payload.get("license_key", "")
+
+        if not transcript or not project_key:
+            return {"status": "error", "message": "Missing transcript or project_key"}
+
+        session_id = str(uuid.uuid4())
+        session = MeetingSession(
+            id=session_id, license_key=license_key,
+            project_key=project_key, sprint_id=sprint_id,
+            meeting_type="auto", transcript=transcript,
+            status="received", platform=platform
+        )
+        db.add(session); db.commit()
+
+        # Process in background
+        creds_dict = None
+        if license_key:
+            user = get_valid_oauth_session(db=db, license_key=license_key)
+            if user:
+                creds_dict = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
+
+        if creds_dict:
+            background_tasks.add_task(
+                _process_webhook_transcript, session_id, transcript,
+                project_key, sprint_id, creds_dict
+            )
+
+        return {"status": "accepted", "session_id": session_id}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+def _process_webhook_transcript(session_id, transcript, project_key, sprint_id, creds):
+    """Background task to process a webhook-delivered transcript."""
+    try:
+        sp_field = get_story_point_field(creds)
+        roster, _ = build_team_roster(project_key, creds, sp_field)
+
+        results = process_meeting_transcript(
+            transcript=transcript, project_key=project_key,
+            sprint_id=sprint_id, jira_request_fn=jira_request,
+            creds=creds, team_roster=roster
+        )
+
+        db = SessionLocal()
+        session = db.query(MeetingSession).filter(MeetingSession.id == session_id).first()
+        if session:
+            session.status = "completed"
+            session.meeting_type = results.get("meeting_type", "unknown")
+            session.ai_results = json.dumps(results, default=str)
+            db.commit()
+        db.close()
+        print(f"Webhook transcript processed: {session_id}", flush=True)
+    except Exception as e:
+        print(f"Webhook transcript error: {e}", flush=True)
+        db = SessionLocal()
+        session = db.query(MeetingSession).filter(MeetingSession.id == session_id).first()
+        if session:
+            session.status = "error"
+            session.ai_results = json.dumps({"error": str(e)})
+            db.commit()
+        db.close()
+
+
+@app.post("/meeting/analyze_capacity")
+async def analyze_capacity_on_demand(payload: dict, creds: dict = Depends(get_jira_creds)):
+    """On-demand capacity planning from sprint data (no transcript needed)."""
+    project_key = payload.get("project", "")
+    sprint_id = payload.get("sprint_id", "")
+    if not project_key:
+        raise HTTPException(status_code=400, detail="Project key required")
+
+    sp_field = get_story_point_field(creds)
+    history = fetch_sprint_history(jira_request, creds, project_key)
+    velocity = calculate_velocity(history)
+
+    # Current sprint load
+    jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
+    res = jira_request("POST", "search/jql", creds, {
+        "jql": jql, "maxResults": 100,
+        "fields": ["summary", "status", "assignee", sp_field, "customfield_10016", "customfield_10026"]
+    })
+    current_issues = []
+    if res and res.status_code == 200:
+        for iss in res.json().get('issues', []):
+            f = iss.get('fields') or {}
+            pts = extract_story_points(f, sp_field)
+            status_name = (f.get('status') or {}).get('name', 'To Do')
+            assignee_name = (f.get('assignee') or {}).get('displayName', 'Unassigned')
+            current_issues.append({"key": iss.get('key'), "summary": f.get('summary', ''),
+                                    "assignee": assignee_name, "points": pts, "status": status_name})
+
+    report = generate_capacity_report(history, velocity, current_issues)
+
+    # AI-powered recommendations
+    prompt = f"""You are an Agile capacity planning expert. Analyze this data and provide recommendations.
+
+Team Velocity (last {velocity.get('sprints_analyzed', 0)} sprints): {json.dumps(velocity)}
+Current Sprint Issues: {json.dumps(current_issues[:20])}
+Team Capacity: {json.dumps(report.get('team_capacity', {}))}
+
+Return JSON: {{"capacity_summary": "2-3 sentence executive summary", "risk_level": "low|medium|high", "recommendations": ["Actionable recommendation 1", "Rec 2"], "team_health": "Brief assessment"}}"""
+
+    try:
+        raw = generate_ai_response(prompt, temperature=0.3)
+        ai_analysis = json.loads(raw.replace('```json', '').replace('```', '').strip()) if raw else {}
+    except: ai_analysis = {}
+
+    report["ai_analysis"] = ai_analysis
+    report["current_sprint_issues"] = current_issues
+    return report

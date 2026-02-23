@@ -17,8 +17,11 @@
     <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=DM+Sans:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
 
     <style>
         :root {
@@ -47,7 +50,7 @@
             --accent-gradient-2: linear-gradient(135deg, #06B6D4, #3B82F6);
             --accent-gradient-warm: linear-gradient(135deg, #F59E0B, #F43F5E);
             --surface-elevated: rgba(30, 41, 59, 0.5);
-            --surface-glossy: linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(139,92,246,0.04) 100%);
+            --surface-glossy: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(139, 92, 246, 0.04) 100%);
             --glow-primary: rgba(59, 130, 246, 0.25);
             --glow-accent: rgba(139, 92, 246, 0.2);
             /* Slide-specific */
@@ -86,7 +89,7 @@
             --accent-gradient-2: linear-gradient(135deg, #0891B2, #2563EB);
             --accent-gradient-warm: linear-gradient(135deg, #D97706, #E11D48);
             --surface-elevated: rgba(255, 255, 255, 0.8);
-            --surface-glossy: linear-gradient(135deg, rgba(37,99,235,0.04) 0%, rgba(124,58,237,0.02) 100%);
+            --surface-glossy: linear-gradient(135deg, rgba(37, 99, 235, 0.04) 0%, rgba(124, 58, 237, 0.02) 100%);
             --glow-primary: rgba(37, 99, 235, 0.1);
             --glow-accent: rgba(124, 58, 237, 0.08);
             /* Slide-specific */
@@ -158,17 +161,41 @@
             box-shadow: 0 0 0 3px var(--primary-dim);
         }
 
-        .prose strong { color: var(--text-main); font-weight: 700; }
-        .prose ul { list-style-type: disc; padding-left: 1.2rem; }
-        .prose li { margin-bottom: 0.25rem; }
+        .prose strong {
+            color: var(--text-main);
+            font-weight: 700;
+        }
 
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+        .prose ul {
+            list-style-type: disc;
+            padding-left: 1.2rem;
+        }
+
+        .prose li {
+            margin-bottom: 0.25rem;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
 
         .loader {
-            width: 20px; height: 20px;
+            width: 20px;
+            height: 20px;
             border: 2px solid currentColor;
             border-bottom-color: transparent;
             border-radius: 50%;
@@ -176,58 +203,172 @@
             animation: rotation 0.8s linear infinite;
         }
 
-        @keyframes rotation { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes rotation {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
 
         .retro-col {
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
-            display: flex; flex-direction: column;
-            height: 100%; overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            overflow: hidden;
             backdrop-filter: blur(10px);
         }
+
         .retro-col-header {
-            padding: 1rem; font-size: 0.75rem; font-weight: 800;
-            text-transform: uppercase; letter-spacing: 0.05em;
+            padding: 1rem;
+            font-size: 0.75rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
             border-bottom: 1px solid var(--glass-border);
-            display: flex; justify-content: space-between; align-items: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             color: var(--text-muted);
         }
-        .retro-col-body { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+
+        .retro-col-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
         .retro-card {
-            background: var(--bg-card); border: 1px solid var(--border);
-            border-radius: 8px; padding: 1rem; font-size: 0.875rem;
-            line-height: 1.5; color: var(--text-main);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: all 0.2s;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 0.875rem;
+            line-height: 1.5;
+            color: var(--text-main);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s;
         }
-        .retro-card:hover { transform: translateY(-2px); border-color: var(--primary); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
 
-        .hide-scroll::-webkit-scrollbar { display: none; }
-        .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+        .retro-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--primary);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
 
-        .roadmap-grid { display: grid; grid-template-columns: 250px repeat(12, 1fr); background: transparent; }
-        .roadmap-header { font-weight: 700; font-size: 10px; text-transform: uppercase; color: var(--text-muted); padding: 12px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); text-align: center; background: var(--bg-card); }
-        .roadmap-cell { border-right: 1px solid var(--border); opacity: 0.2; }
+        .hide-scroll::-webkit-scrollbar {
+            display: none;
+        }
+
+        .hide-scroll {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .roadmap-grid {
+            display: grid;
+            grid-template-columns: 250px repeat(12, 1fr);
+            background: transparent;
+        }
+
+        .roadmap-header {
+            font-weight: 700;
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            text-align: center;
+            background: var(--bg-card);
+        }
+
+        .roadmap-cell {
+            border-right: 1px solid var(--border);
+            opacity: 0.2;
+        }
+
         .roadmap-item {
-            position: absolute; border-radius: 6px; padding: 8px 12px;
-            font-size: 11px; font-weight: 600; color: white;
-            display: flex; align-items: center; white-space: nowrap;
-            overflow: hidden; text-overflow: ellipsis;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3); cursor: pointer;
-            z-index: 10; transition: transform 0.2s, z-index 0s;
+            position: absolute;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            color: white;
+            display: flex;
+            align-items: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            z-index: 10;
+            transition: transform 0.2s, z-index 0s;
         }
-        .roadmap-item:hover { z-index: 20; transform: translateY(-2px) scale(1.01); }
+
+        .roadmap-item:hover {
+            z-index: 20;
+            transform: translateY(-2px) scale(1.01);
+        }
 
         /* ===== SLIDE DECK PREMIUM STYLES ===== */
-        .deck-wrapper { font-family: 'Outfit', 'DM Sans', -apple-system, sans-serif; }
-        .slide-root { font-family: 'Outfit', 'DM Sans', -apple-system, sans-serif; }
+        .deck-wrapper {
+            font-family: 'Outfit', 'DM Sans', -apple-system, sans-serif;
+        }
 
-        @keyframes orbFloat { 0%,100% { transform: translateY(0px) scale(1); } 50% { transform: translateY(-18px) scale(1.02); } }
-        @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-        @keyframes pulse-glow { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+        .slide-root {
+            font-family: 'Outfit', 'DM Sans', -apple-system, sans-serif;
+        }
 
-        .orb-float { animation: orbFloat 8s ease-in-out infinite; }
-        .orb-float-delay { animation: orbFloat 11s ease-in-out infinite 2s; }
+        @keyframes orbFloat {
+
+            0%,
+            100% {
+                transform: translateY(0px) scale(1);
+            }
+
+            50% {
+                transform: translateY(-18px) scale(1.02);
+            }
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        @keyframes pulse-glow {
+
+            0%,
+            100% {
+                opacity: 0.6;
+            }
+
+            50% {
+                opacity: 1;
+            }
+        }
+
+        .orb-float {
+            animation: orbFloat 8s ease-in-out infinite;
+        }
+
+        .orb-float-delay {
+            animation: orbFloat 11s ease-in-out infinite 2s;
+        }
 
         .shimmer-line {
             background: linear-gradient(90deg, transparent, var(--slide-accent), transparent);
@@ -236,12 +377,50 @@
         }
 
         @media print {
-            html, body, #root, div { height: auto !important; overflow: visible !important; position: static !important; }
-            body * { visibility: hidden; }
-            #print-engine-container, #print-engine-container * { visibility: visible; }
-            #print-engine-container { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; display: block !important; opacity: 1 !important; z-index: 99999 !important; }
-            .print-slide { width: 1280px !important; height: 720px !important; page-break-after: always !important; break-after: page !important; background: #0B1121 !important; margin: 0 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            @page { size: landscape; margin: 0; }
+
+            html,
+            body,
+            #root,
+            div {
+                height: auto !important;
+                overflow: visible !important;
+                position: static !important;
+            }
+
+            body * {
+                visibility: hidden;
+            }
+
+            #print-engine-container,
+            #print-engine-container * {
+                visibility: visible;
+            }
+
+            #print-engine-container {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                display: block !important;
+                opacity: 1 !important;
+                z-index: 99999 !important;
+            }
+
+            .print-slide {
+                width: 1280px !important;
+                height: 720px !important;
+                page-break-after: always !important;
+                break-after: page !important;
+                background: #0B1121 !important;
+                margin: 0 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            @page {
+                size: landscape;
+                margin: 0;
+            }
         }
     </style>
     <script>
@@ -474,7 +653,7 @@
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="timeline" icon="Zap" label="Sprint Dynamics & Build" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="roadmap" icon="Map" label="Strategic Roadmap" active={view} set={setView} disabled={isGlobalLoading} />
-                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="reports" icon="FileText" label="Artifacts" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="roles" icon="Users" label="Roles & Team" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /></>}
+                                {(userRole === 'scrum_master' || userRole === 'leadership') && <><NavBtn id="meeting_agent" icon="MessageSquare" label="Meeting Agent" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="reports" icon="FileText" label="Artifacts" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="roles" icon="Users" label="Roles & Team" active={view} set={setView} disabled={isGlobalLoading} /><NavBtn id="retro" icon="RefreshCcw" label="Retrospective" active={view} set={setView} disabled={isGlobalLoading} /></>}
                             </nav>
                         </div>
                         <div className="p-6 border-t border-border space-y-6">
@@ -495,6 +674,7 @@
                                 {view === 'retro' && <RetroView project={activeProject} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                                 {view === 'roles' && <RolesView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'reports' && <ReportsView project={activeProject} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
+                                {view === 'meeting_agent' && <MeetingAgentView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                             </div>
                         ) : <LoadingScreen msg="Authenticating with Atlassian..." />}
                     </main>
@@ -715,13 +895,13 @@
                 </svg>
                 {/* Corner accent arcs */}
                 <svg style={{ position: 'absolute', top: 0, right: 0, width: '400px', height: '400px', opacity: 0.06 }} viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="400" cy="0" r="300" stroke="var(--slide-accent)" strokeWidth="1"/>
-                    <circle cx="400" cy="0" r="200" stroke="var(--slide-accent-2)" strokeWidth="0.5"/>
-                    <circle cx="400" cy="0" r="100" stroke="var(--slide-accent)" strokeWidth="0.3"/>
+                    <circle cx="400" cy="0" r="300" stroke="var(--slide-accent)" strokeWidth="1" />
+                    <circle cx="400" cy="0" r="200" stroke="var(--slide-accent-2)" strokeWidth="0.5" />
+                    <circle cx="400" cy="0" r="100" stroke="var(--slide-accent)" strokeWidth="0.3" />
                 </svg>
                 <svg style={{ position: 'absolute', bottom: 0, left: 0, width: '300px', height: '300px', opacity: 0.04 }} viewBox="0 0 300 300" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="0" cy="300" r="250" stroke="var(--slide-accent-2)" strokeWidth="1"/>
-                    <circle cx="0" cy="300" r="150" stroke="var(--slide-accent)" strokeWidth="0.5"/>
+                    <circle cx="0" cy="300" r="250" stroke="var(--slide-accent-2)" strokeWidth="1" />
+                    <circle cx="0" cy="300" r="150" stroke="var(--slide-accent)" strokeWidth="0.5" />
                 </svg>
             </div>
         );
@@ -1096,7 +1276,7 @@
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: 'var(--primary-dim)', border: '1px solid var(--slide-border)', borderRadius: '100px', padding: '4px 12px' }}>
                                 <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: 'var(--slide-accent)', boxShadow: '0 0 8px var(--slide-glow)', flexShrink: 0 }} />
-                                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--slide-accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{{'sprint': 'AI Sprint Deck', 'weekly': 'Weekly Report', 'monthly': 'Monthly Review', 'quarterly': 'Quarterly QBR'}[deckTheme] || 'AI Deck'}</span>
+                                <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--slide-accent)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{{ 'sprint': 'AI Sprint Deck', 'weekly': 'Weekly Report', 'monthly': 'Monthly Review', 'quarterly': 'Quarterly QBR' }[deckTheme] || 'AI Deck'}</span>
                             </div>
                             <span style={{ fontSize: '12px', color: 'var(--slide-text-dim)', fontWeight: 500 }}>
                                 <span style={{ color: 'var(--slide-text)', fontWeight: 700 }}>{activeIdx + 1}</span> / {slides.length}
@@ -2119,6 +2299,533 @@
                                 </button>
                             </div>
                         </motion.div>
+                    )}
+                </div>
+            );
+        }
+
+        /* ================================================================
+           MEETING AGENT VIEW — AI Meeting Transcript Processor
+           ================================================================ */
+        function MeetingAgentView({ project, setIsLoading }) {
+            const [subView, setSubView] = useState('input'); // input | results | history | capacity
+            const [transcript, setTranscript] = useState('');
+            const [meetingType, setMeetingType] = useState('');
+            const [processing, setProcessing] = useState(false);
+            const [results, setResults] = useState(null);
+            const [sessionId, setSessionId] = useState(null);
+            const [selectedStories, setSelectedStories] = useState(new Set());
+            const [selectedEpics, setSelectedEpics] = useState(new Set());
+            const [creating, setCreating] = useState(false);
+            const [createdIssues, setCreatedIssues] = useState([]);
+            const [history, setHistory] = useState([]);
+            const [capacityData, setCapacityData] = useState(null);
+            const [sprintHistory, setSprintHistory] = useState(null);
+            const [loadingCapacity, setLoadingCapacity] = useState(false);
+            const [error, setError] = useState(null);
+
+            // Load meeting history on mount
+            useEffect(() => {
+                if (project) {
+                    secureFetch(`/meeting/sessions/${project}`).then(r => r?.json()).then(d => { if (Array.isArray(d)) setHistory(d); });
+                }
+            }, [project]);
+
+            const processTranscript = async () => {
+                if (!transcript.trim() || transcript.trim().length < 50) {
+                    setError('Please paste a transcript with at least 50 characters.');
+                    return;
+                }
+                setProcessing(true); setError(null); setResults(null);
+                try {
+                    const body = { transcript, project, meeting_type: meetingType || undefined, platform: 'manual' };
+                    const res = await secureFetch('/meeting/upload', { method: 'POST', body: JSON.stringify(body) });
+                    const data = await res?.json();
+                    if (data?.status === 'success') {
+                        setResults(data.results);
+                        setSessionId(data.session_id);
+                        // Auto-select all stories
+                        const stories = data.results?.extracted?.stories || [];
+                        setSelectedStories(new Set(stories.map((_, i) => i)));
+                        const epics = data.results?.extracted?.epics || [];
+                        setSelectedEpics(new Set(epics.map((_, i) => i)));
+                        setSubView('results');
+                    } else {
+                        setError(data?.message || 'Processing failed. Please try again.');
+                    }
+                } catch (e) { setError('Network error. Please check your connection.'); }
+                setProcessing(false);
+            };
+
+            const approveAndCreate = async () => {
+                if (!sessionId || selectedStories.size === 0) return;
+                setCreating(true);
+                try {
+                    const body = { story_indices: [...selectedStories], epic_indices: [...selectedEpics], auto_assign: true };
+                    const res = await secureFetch(`/meeting/session/${sessionId}/approve`, { method: 'POST', body: JSON.stringify(body) });
+                    const data = await res?.json();
+                    if (data?.status === 'success') {
+                        setCreatedIssues(data.created || []);
+                    } else {
+                        setError(data?.message || 'Failed to create issues.');
+                    }
+                } catch (e) { setError('Network error during creation.'); }
+                setCreating(false);
+            };
+
+            const loadCapacity = async () => {
+                setLoadingCapacity(true);
+                try {
+                    const [capRes, histRes] = await Promise.all([
+                        secureFetch(`/meeting/capacity/${project}`).then(r => r?.json()),
+                        secureFetch(`/meeting/history/${project}`).then(r => r?.json())
+                    ]);
+                    if (capRes) setCapacityData(capRes);
+                    if (histRes) setSprintHistory(histRes);
+                } catch (e) { setError('Could not load capacity data.'); }
+                setLoadingCapacity(false);
+            };
+
+            const loadSession = async (sid) => {
+                try {
+                    const res = await secureFetch(`/meeting/session/${sid}`);
+                    const data = await res?.json();
+                    if (data?.results) {
+                        setResults(data.results);
+                        setSessionId(sid);
+                        const stories = data.results?.extracted?.stories || [];
+                        setSelectedStories(new Set(stories.map((_, i) => i)));
+                        setSubView('results');
+                    }
+                } catch (e) { setError('Could not load session.'); }
+            };
+
+            const stories = results?.extracted?.stories || [];
+            const epics = results?.extracted?.epics || [];
+            const summary = results?.extracted?.discussion_summary || '';
+            const capacityConcerns = results?.extracted?.capacity_concerns || [];
+            const actionItems = results?.extracted?.action_items || [];
+            const velocity = results?.velocity || {};
+            const capacityReport = results?.capacity_report || {};
+
+            const fitBadge = (fit) => {
+                if (fit === 'fits') return { bg: 'var(--success)', text: '✅ Fits' };
+                if (fit === 'tight') return { bg: 'var(--warning)', text: '⚠️ Tight' };
+                if (fit === 'wont_fit') return { bg: 'var(--danger)', text: '❌ Over' };
+                return { bg: 'var(--border)', text: '❓ Unknown' };
+            };
+
+            const meetingTypeLabel = (t) => {
+                const labels = { sprint_planning: 'Sprint Planning', backlog_grooming: 'Backlog Grooming', retrospective: 'Retrospective', capacity_planning: 'Capacity Planning', daily_standup: 'Daily Standup', sprint_review: 'Sprint Review' };
+                return labels[t] || t || 'Auto-detect';
+            };
+
+            return (
+                <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4 space-y-8">
+                    {/* Header */}
+                    <header className="flex justify-between items-end pb-6 border-b border-border">
+                        <div>
+                            <h2 className="text-4xl font-extrabold tracking-tight text-text-main flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'var(--accent-gradient)', color: 'white' }}><Icon name="MessageSquare" size={24} /></div>
+                                Meeting Agent
+                            </h2>
+                            <p className="text-base font-medium mt-2 text-text-muted">AI-Powered Agile Ceremony Processor · Project <span className="text-primary font-black">{project}</span></p>
+                        </div>
+                        <div className="flex gap-2">
+                            {['input', 'results', 'capacity', 'history'].map(v => (
+                                <button key={v} onClick={() => { if (v === 'capacity' && !capacityData) loadCapacity(); setSubView(v); }}
+                                    className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${subView === v ? 'bg-primary text-white' : 'bg-bg-card text-text-muted border border-border hover:border-primary'}`}>
+                                    {v === 'input' ? 'New Session' : v === 'results' ? 'Results' : v === 'capacity' ? 'Capacity' : 'History'}
+                                </button>
+                            ))}
+                        </div>
+                    </header>
+
+                    {error && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-danger text-sm font-bold flex justify-between items-center">
+                            <span>{error}</span>
+                            <button onClick={() => setError(null)} className="hover:opacity-70"><Icon name="X" size={16} /></button>
+                        </motion.div>
+                    )}
+
+                    {/* ——— INPUT SUB-VIEW ——— */}
+                    {subView === 'input' && (
+                        <div className="space-y-6">
+                            <div className="glass-card p-8 space-y-6 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none opacity-50" style={{ background: 'var(--glow-primary)' }} />
+                                <div className="relative z-10">
+                                    <h3 className="text-lg font-extrabold text-text-main mb-1 flex items-center gap-2"><Icon name="Upload" size={20} className="text-primary" /> Paste Meeting Transcript</h3>
+                                    <p className="text-sm text-text-muted font-medium mb-4">Paste your Sprint Planning, Grooming, Retrospective, or Capacity Planning transcript below.</p>
+
+                                    <div className="flex gap-4 mb-4">
+                                        <div className="flex-1">
+                                            <label className="text-xs font-bold uppercase tracking-wider text-text-muted mb-2 block">Meeting Type</label>
+                                            <select value={meetingType} onChange={e => setMeetingType(e.target.value)} className="w-full p-3 rounded-lg text-sm input-field font-semibold">
+                                                <option value="">Auto-detect from transcript</option>
+                                                <option value="sprint_planning">Sprint Planning</option>
+                                                <option value="backlog_grooming">Backlog Grooming / Refinement</option>
+                                                <option value="retrospective">Retrospective</option>
+                                                <option value="capacity_planning">Capacity Planning</option>
+                                                <option value="daily_standup">Daily Standup</option>
+                                                <option value="sprint_review">Sprint Review / Demo</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <textarea value={transcript} onChange={e => setTranscript(e.target.value)}
+                                        placeholder={"Paste your meeting transcript here...\n\nExample:\nSarah: Let's discuss the user authentication story. We need SSO integration with Google and Microsoft.\nJohn: I think that's about 8 points. The OAuth flow is complex.\nSarah: Agreed. Let's also add a password reset feature.\nMike: That's simpler, maybe 3 points. I can take that one.\n..."}
+                                        className="w-full h-64 p-4 rounded-xl input-field font-mono text-sm resize-none leading-relaxed"
+                                        style={{ minHeight: '250px' }} />
+
+                                    <div className="flex justify-between items-center mt-4">
+                                        <span className="text-xs text-text-muted font-medium">{transcript.length} characters · {transcript.split(/\s+/).filter(w => w).length} words</span>
+                                        <button onClick={processTranscript} disabled={processing || transcript.trim().length < 50}
+                                            className="px-8 py-3 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-3 text-sm disabled:opacity-50 disabled:hover:scale-100"
+                                            style={{ background: 'var(--accent-gradient)' }}>
+                                            {processing ? <><span className="loader w-5 h-5 border-2" /> Analyzing with AI...</> : <><Icon name="Sparkles" size={18} /> Process Transcript</>}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Quick Tips */}
+                            <div className="grid grid-cols-3 gap-4">
+                                {[
+                                    { icon: 'Zap', title: 'Sprint Planning', desc: 'Auto-generates user stories with acceptance criteria and point estimates' },
+                                    { icon: 'RefreshCcw', title: 'Retrospective', desc: 'Extracts what went well, improvements, and action items' },
+                                    { icon: 'BarChart', title: 'Capacity Planning', desc: 'Analyzes team velocity and sprint fit for each story' }
+                                ].map((tip, i) => (
+                                    <div key={i} className="glass-card p-5 flex gap-4 items-start hover:border-primary transition-colors">
+                                        <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--primary-dim)', color: 'var(--primary)' }}><Icon name={tip.icon} size={20} /></div>
+                                        <div><h4 className="font-bold text-text-main text-sm">{tip.title}</h4><p className="text-xs text-text-muted mt-1 leading-relaxed">{tip.desc}</p></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ——— RESULTS SUB-VIEW ——— */}
+                    {subView === 'results' && results && (
+                        <div className="space-y-6">
+                            {/* Summary Card */}
+                            <div className="glass-card p-8 border-t-4 border-primary relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none opacity-30" style={{ background: 'var(--glow-primary)' }} />
+                                <div className="relative z-10">
+                                    <div className="flex items-center gap-3 mb-4">
+                                        <span className="px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'var(--primary-dim)', color: 'var(--primary)' }}>
+                                            {meetingTypeLabel(results.meeting_type)}
+                                        </span>
+                                        <span className="text-xs font-bold text-text-muted">{stories.length} stories · {epics.length} epics · {results?.extracted?.total_estimated_points || 0} total points</span>
+                                    </div>
+                                    <p className="text-base font-semibold text-text-main leading-relaxed">{summary}</p>
+                                </div>
+                            </div>
+
+                            {/* Metric Cards */}
+                            <div className="grid grid-cols-4 gap-4">
+                                <MetricCard label="Stories Found" value={stories.length} color="primary" />
+                                <MetricCard label="Total Points" value={results?.extracted?.total_estimated_points || 0} color="success" />
+                                <MetricCard label="Team Velocity" value={velocity?.avg_velocity || '—'} color="primary" />
+                                <MetricCard label="Trend" value={velocity?.trend === 'improving' ? '📈 Up' : velocity?.trend === 'declining' ? '📉 Down' : velocity?.trend === 'stable' ? '→ Stable' : '—'} color="warning" />
+                            </div>
+
+                            {/* Stories List with Checkboxes */}
+                            {stories.length > 0 && (
+                                <div className="glass-card p-8">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h3 className="text-sm font-black uppercase tracking-widest text-text-muted flex items-center gap-2"><Icon name="AlignLeft" size={16} /> AI-Generated Stories</h3>
+                                        <div className="flex gap-3">
+                                            <button onClick={() => setSelectedStories(new Set(stories.map((_, i) => i)))} className="text-xs font-bold text-primary hover:underline">Select All</button>
+                                            <button onClick={() => setSelectedStories(new Set())} className="text-xs font-bold text-text-muted hover:underline">Deselect All</button>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        {stories.map((story, idx) => {
+                                            const fit = fitBadge(story.sprint_fit);
+                                            const isSelected = selectedStories.has(idx);
+                                            return (
+                                                <motion.div key={idx} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.05 }}
+                                                    className={`p-5 bg-bg-body rounded-xl border transition-all cursor-pointer hover:shadow-md ${isSelected ? 'border-primary shadow-sm' : 'border-border'}`}
+                                                    onClick={() => { const s = new Set(selectedStories); s.has(idx) ? s.delete(idx) : s.add(idx); setSelectedStories(s); }}>
+                                                    <div className="flex items-start gap-4">
+                                                        <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${isSelected ? 'bg-primary border-primary' : 'border-border'}`}>
+                                                            {isSelected && <Icon name="CheckCircle" size={14} className="text-white" />}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-3 flex-wrap mb-2">
+                                                                <span className="font-bold text-text-main text-sm">{story.title}</span>
+                                                                <span className="px-2 py-0.5 rounded-full text-xs font-black" style={{ background: `${fit.bg}22`, color: fit.bg, border: `1px solid ${fit.bg}44` }}>{fit.text}</span>
+                                                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-primary-dim text-primary">{story.suggested_points || 0} pts</span>
+                                                                {story.priority && <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${story.priority === 'High' ? 'bg-danger/10 text-danger' : story.priority === 'Low' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>{story.priority}</span>}
+                                                            </div>
+                                                            <p className="text-xs text-text-muted leading-relaxed mb-2">{story.description}</p>
+                                                            {story.acceptance_criteria?.length > 0 && (
+                                                                <div className="mt-2">
+                                                                    <span className="text-xs font-bold text-text-muted uppercase tracking-wider">Acceptance Criteria:</span>
+                                                                    <ul className="mt-1 space-y-1">
+                                                                        {story.acceptance_criteria.map((ac, ai) => (
+                                                                            <li key={ai} className="text-xs text-text-muted flex items-start gap-2"><Icon name="CheckCircle" size={12} className="text-success shrink-0 mt-0.5" />{ac}</li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </div>
+                                                            )}
+                                                            <div className="flex gap-6 mt-3 text-xs text-text-muted font-medium">
+                                                                {story.suggested_assignee && story.suggested_assignee !== 'Unassigned' && <span className="flex items-center gap-1"><Icon name="Users" size={12} className="text-primary" /> {story.suggested_assignee}</span>}
+                                                                {story.estimated_days > 0 && <span className="flex items-center gap-1"><Icon name="Clock" size={12} /> ~{story.estimated_days} days</span>}
+                                                                {story.estimation_reasoning && <span className="truncate max-w-xs" title={story.estimation_reasoning}>{story.estimation_reasoning}</span>}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Epics */}
+                            {epics.length > 0 && (
+                                <div className="glass-card p-8">
+                                    <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2"><Icon name="Layers" size={16} /> AI-Generated Epics</h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {epics.map((epic, idx) => (
+                                            <div key={idx} className={`p-5 bg-bg-body rounded-xl border transition-all cursor-pointer ${selectedEpics.has(idx) ? 'border-primary shadow-sm' : 'border-border'}`}
+                                                onClick={() => { const s = new Set(selectedEpics); s.has(idx) ? s.delete(idx) : s.add(idx); setSelectedEpics(s); }}>
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${selectedEpics.has(idx) ? 'bg-primary border-primary' : 'border-border'}`}>
+                                                        {selectedEpics.has(idx) && <Icon name="CheckCircle" size={12} className="text-white" />}
+                                                    </div>
+                                                    <span className="font-bold text-text-main text-sm">{epic.title}</span>
+                                                </div>
+                                                <p className="text-xs text-text-muted leading-relaxed">{epic.motivation}</p>
+                                                {epic.child_story_indices?.length > 0 && <p className="text-xs text-primary font-bold mt-2">{epic.child_story_indices.length} linked stories</p>}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Action Items / Concerns */}
+                            {(actionItems.length > 0 || capacityConcerns.length > 0) && (
+                                <div className="grid grid-cols-2 gap-4">
+                                    {actionItems.length > 0 && (
+                                        <div className="glass-card p-6">
+                                            <h4 className="text-xs font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2"><Icon name="Target" size={14} /> Action Items</h4>
+                                            <ul className="space-y-2">{actionItems.map((item, i) => <li key={i} className="text-sm text-text-main font-medium flex items-start gap-2"><Icon name="ArrowRight" size={14} className="text-primary shrink-0 mt-0.5" />{item}</li>)}</ul>
+                                        </div>
+                                    )}
+                                    {capacityConcerns.length > 0 && (
+                                        <div className="glass-card p-6">
+                                            <h4 className="text-xs font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2"><Icon name="AlertTriangle" size={14} className="text-warning" /> Capacity Concerns</h4>
+                                            <ul className="space-y-2">{capacityConcerns.map((item, i) => <li key={i} className="text-sm text-text-main font-medium flex items-start gap-2"><Icon name="AlertTriangle" size={14} className="text-warning shrink-0 mt-0.5" />{item}</li>)}</ul>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Retro Items (if retrospective) */}
+                            {results?.extracted?.retro_items && (
+                                <div className="grid grid-cols-3 gap-4">
+                                    {['well', 'improve', 'actions'].map(col => {
+                                        const items = results.extracted.retro_items[col] || [];
+                                        const colors = { well: 'var(--success)', improve: 'var(--danger)', actions: 'var(--primary)' };
+                                        const labels = { well: 'What Went Well', improve: 'Needs Improvement', actions: 'Action Items' };
+                                        return (
+                                            <div key={col} className="glass-card overflow-hidden">
+                                                <div className="p-4 border-b border-border text-xs font-black uppercase tracking-wider" style={{ color: colors[col], borderTopWidth: '3px', borderTopColor: colors[col] }}>{labels[col]}</div>
+                                                <div className="p-4 space-y-3">
+                                                    {items.map((item, i) => (
+                                                        <div key={i} className="p-3 bg-bg-body rounded-lg border border-border text-sm text-text-main">
+                                                            {item.text || item}
+                                                            {item.owner && <span className="block text-xs text-primary font-bold mt-1">Owner: {item.owner}</span>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {/* Create in Jira Button */}
+                            {stories.length > 0 && (
+                                <div className="glass-card p-6 flex justify-between items-center">
+                                    <div>
+                                        <span className="text-sm font-bold text-text-main">{selectedStories.size} stories and {selectedEpics.size} epics selected</span>
+                                        <span className="text-xs text-text-muted ml-3">Will be created in Jira project <span className="text-primary font-bold">{project}</span></span>
+                                    </div>
+                                    {createdIssues.length > 0 ? (
+                                        <div className="flex items-center gap-3">
+                                            <Icon name="CheckCircle" size={20} className="text-success" />
+                                            <div>
+                                                <span className="text-sm font-bold text-success">{createdIssues.length} issues created!</span>
+                                                <div className="flex gap-2 mt-1 flex-wrap">
+                                                    {createdIssues.map((iss, i) => (
+                                                        <a key={i} href={iss.url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-primary hover:underline">{iss.key}</a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <button onClick={approveAndCreate} disabled={creating || selectedStories.size === 0}
+                                            className="px-8 py-3 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-3 text-sm disabled:opacity-50"
+                                            style={{ background: 'var(--accent-gradient)' }}>
+                                            {creating ? <><span className="loader w-5 h-5 border-2" /> Creating in Jira...</> : <><Icon name="Zap" size={18} /> Create in Jira</>}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {subView === 'results' && !results && (
+                        <div className="glass-card p-16 flex flex-col items-center justify-center text-center">
+                            <Icon name="MessageSquare" size={56} className="text-text-muted mb-6 opacity-40" />
+                            <h3 className="text-2xl font-extrabold text-text-main mb-3">No Results Yet</h3>
+                            <p className="text-text-muted font-medium max-w-md">Process a meeting transcript first, or load a past session from History.</p>
+                            <button onClick={() => setSubView('input')} className="mt-6 px-6 py-3 text-white font-bold rounded-xl text-sm" style={{ background: 'var(--accent-gradient)' }}>Go to Input</button>
+                        </div>
+                    )}
+
+                    {/* ——— CAPACITY SUB-VIEW ——— */}
+                    {subView === 'capacity' && (
+                        <div className="space-y-6">
+                            {loadingCapacity ? <LoadingScreen msg="Loading Capacity Analysis..." /> : !capacityData ? (
+                                <div className="glass-card p-16 text-center">
+                                    <Icon name="BarChart" size={56} className="text-text-muted mb-6 opacity-40 mx-auto" />
+                                    <h3 className="text-2xl font-extrabold text-text-main mb-3">Capacity Analysis</h3>
+                                    <button onClick={loadCapacity} className="mt-4 px-6 py-3 text-white font-bold rounded-xl text-sm" style={{ background: 'var(--accent-gradient)' }}>Load Capacity Data</button>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* Velocity Chart */}
+                                    {sprintHistory?.velocity && (
+                                        <div className="glass-card p-8">
+                                            <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2"><Icon name="TrendingUp" size={16} /> Team Velocity</h3>
+                                            <div className="grid grid-cols-4 gap-4 mb-6">
+                                                <MetricCard label="Avg Velocity" value={sprintHistory.velocity.avg_velocity} color="primary" />
+                                                <MetricCard label="Trend" value={sprintHistory.velocity.trend === 'improving' ? '📈 Improving' : sprintHistory.velocity.trend === 'declining' ? '📉 Declining' : '→ Stable'} color={sprintHistory.velocity.trend === 'improving' ? 'success' : sprintHistory.velocity.trend === 'declining' ? 'danger' : 'warning'} />
+                                                <MetricCard label="Min" value={sprintHistory.velocity.min} color="warning" />
+                                                <MetricCard label="Max" value={sprintHistory.velocity.max} color="success" />
+                                            </div>
+                                            {/* Velocity Bar Chart */}
+                                            {sprintHistory.sprint_history?.length > 0 && (
+                                                <div className="mt-4">
+                                                    <div className="flex items-end gap-3 h-40">
+                                                        {sprintHistory.sprint_history.map((s, i) => {
+                                                            const maxV = Math.max(1, ...sprintHistory.sprint_history.map(x => x.velocity));
+                                                            const pct = (s.velocity / maxV) * 100;
+                                                            return (
+                                                                <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
+                                                                    <span className="text-xs font-black text-primary opacity-0 group-hover:opacity-100 transition-opacity">{s.velocity} pts</span>
+                                                                    <div className="w-full rounded-t-lg transition-all hover:opacity-80" style={{ height: `${pct}%`, background: 'var(--accent-gradient)', minHeight: '4px' }} />
+                                                                    <span className="text-xs text-text-muted font-medium truncate w-full text-center" title={s.name}>{s.name?.replace('Sprint ', 'S')}</span>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Team Workload */}
+                                    {capacityData.team_capacity && Object.keys(capacityData.team_capacity).length > 0 && (
+                                        <div className="glass-card p-8">
+                                            <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2"><Icon name="Users" size={16} /> Current Sprint Workload</h3>
+                                            <div className="space-y-3">
+                                                {Object.entries(capacityData.team_capacity).map(([name, load]) => (
+                                                    <div key={name} className="p-4 bg-bg-body rounded-xl border border-border flex items-center gap-4">
+                                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style={{ background: 'var(--accent-gradient)' }}>{name.charAt(0)}</div>
+                                                        <div className="flex-1">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <span className="font-bold text-text-main text-sm">{name}</span>
+                                                                <span className={`text-xs font-black px-2 py-0.5 rounded-full ${load.utilization_pct > 120 ? 'bg-danger/10 text-danger' : load.utilization_pct < 60 ? 'bg-success/10 text-success' : 'bg-primary/10 text-primary'}`}>{load.utilization_pct}%</span>
+                                                            </div>
+                                                            <div className="w-full h-2 bg-border rounded-full overflow-hidden">
+                                                                <div className="h-full rounded-full transition-all" style={{
+                                                                    width: `${Math.min(100, load.utilization_pct)}%`,
+                                                                    background: load.utilization_pct > 120 ? 'var(--danger)' : load.utilization_pct < 60 ? 'var(--success)' : 'var(--primary)'
+                                                                }} />
+                                                            </div>
+                                                            <div className="flex gap-4 mt-1 text-xs text-text-muted">
+                                                                <span>Committed: {load.committed} pts</span>
+                                                                <span>Completed: {load.completed} pts</span>
+                                                                <span>Avg: {load.historical_avg} pts</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Recommendations */}
+                                    {capacityData.recommendations?.length > 0 && (
+                                        <div className="glass-card p-8">
+                                            <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2"><Icon name="Sparkles" size={16} className="text-primary" /> AI Recommendations</h3>
+                                            <ul className="space-y-3">
+                                                {capacityData.recommendations.map((rec, i) => (
+                                                    <li key={i} className="text-sm font-medium text-text-main p-3 bg-bg-body rounded-lg border border-border">{rec}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+
+                                    {/* AI Analysis */}
+                                    {capacityData.ai_analysis?.capacity_summary && (
+                                        <div className="glass-card p-8 border-t-4 border-primary">
+                                            <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2"><Icon name="Sparkles" size={16} /> AI Capacity Summary</h3>
+                                            <p className="text-base font-semibold text-text-main leading-relaxed">{capacityData.ai_analysis.capacity_summary}</p>
+                                            {capacityData.ai_analysis.risk_level && (
+                                                <span className={`mt-4 inline-block px-3 py-1 rounded-full text-xs font-bold ${capacityData.ai_analysis.risk_level === 'high' ? 'bg-danger/10 text-danger' : capacityData.ai_analysis.risk_level === 'medium' ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'}`}>
+                                                    Risk: {capacityData.ai_analysis.risk_level.toUpperCase()}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ——— HISTORY SUB-VIEW ——— */}
+                    {subView === 'history' && (
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-lg font-extrabold text-text-main">Meeting History</h3>
+                                <button onClick={() => secureFetch(`/meeting/sessions/${project}`).then(r => r?.json()).then(d => { if (Array.isArray(d)) setHistory(d); })} className="text-xs font-bold text-primary hover:underline flex items-center gap-1"><Icon name="RefreshCcw" size={14} /> Refresh</button>
+                            </div>
+                            {history.length === 0 ? (
+                                <div className="glass-card p-16 text-center">
+                                    <Icon name="Clock" size={56} className="text-text-muted mb-6 opacity-40 mx-auto" />
+                                    <h3 className="text-xl font-extrabold text-text-main mb-3">No Sessions Yet</h3>
+                                    <p className="text-text-muted font-medium">Process your first meeting transcript to get started.</p>
+                                </div>
+                            ) : (
+                                history.map(sess => (
+                                    <div key={sess.id} onClick={() => loadSession(sess.id)} className="glass-card p-5 flex justify-between items-center cursor-pointer hover:border-primary transition-all group">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'var(--primary-dim)', color: 'var(--primary)' }}>
+                                                <Icon name="MessageSquare" size={20} />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-bold text-text-main text-sm">{meetingTypeLabel(sess.meeting_type)}</span>
+                                                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${sess.status === 'completed' ? 'bg-success/10 text-success' : sess.status === 'error' ? 'bg-danger/10 text-danger' : 'bg-warning/10 text-warning'}`}>{sess.status}</span>
+                                                    <span className="text-xs text-text-muted">via {sess.platform}</span>
+                                                </div>
+                                                <p className="text-xs text-text-muted mt-1 truncate max-w-lg">{sess.transcript_preview}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-xs text-text-muted">{new Date(sess.created_at).toLocaleDateString()}</span>
+                                            <Icon name="ChevronRight" size={16} className="text-text-muted group-hover:text-primary transition-colors" />
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     )}
                 </div>
             );
