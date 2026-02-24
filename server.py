@@ -1305,7 +1305,8 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
     # ── CHOOSE MODEL: Premium for roadmap accuracy ──
     # o3-mini for deep reasoning, gpt-4o as fallback
     ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-2.5-pro")
-    ROADMAP_TIMEOUT = 120  # seconds per AI call
+    ROADMAP_TIMEOUT = 300  # seconds per AI call
+    FEATURE_BATCH_SIZE = 20
 
     # ── CHUNKING STRATEGY ──
     # Small (≤20): single call — everything in one shot
@@ -1325,13 +1326,12 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
             ROADMAP_MODEL, ROADMAP_TIMEOUT
         )
     else:
-        # ═══ CHUNKED MODE (>20 features) ═══
-        print(f"🔀 Chunked mode ({num_features} features → Phase 1 + {math.ceil(num_features/EPIC_BATCH_SIZE)} epic batches)", flush=True)
-        return _roadmap_chunked(
-            req, features_text, num_features, start_date,
-            target_working_days, target_months, target_sprints,
-            ROADMAP_MODEL, ROADMAP_TIMEOUT, EPIC_BATCH_SIZE
-        )
+         print(f"🔀 Chunked mode ({num_features} features → {math.ceil(num_features/FEATURE_BATCH_SIZE)} structure batches + {math.ceil(num_features/EPIC_BATCH_SIZE)} epic batches)", flush=True)
+         return _roadmap_chunked(
+             req, features_text, num_features, start_date,
+             target_working_days, target_months, target_sprints,
+             ROADMAP_MODEL, ROADMAP_TIMEOUT, EPIC_BATCH_SIZE, FEATURE_BATCH_SIZE
+         )
 
 
 def _roadmap_single_call(req, features_text, num_features, start_date,
@@ -1359,41 +1359,142 @@ def _roadmap_single_call(req, features_text, num_features, start_date,
         print(f"Feature Roadmap Error: {e}", flush=True)
         return {"error": str(e)}
 
-
 def _roadmap_chunked(req, features_text, num_features, start_date,
                       target_working_days, target_months, target_sprints,
-                      model, timeout, epic_batch_size):
-    """Chunked approach for >20 features — splits into Phase 1 (structure) + Phase 2 (epics)."""
+                      model, timeout, epic_batch_size, feature_batch_size=20):
+    """
+    3-Phase chunked approach for >20 features:
+      Phase 1A: Feature analysis in batches of ~20
+      Phase 1B: Project structure (team, timeline, gantt, sprint_map) from aggregated features
+      Phase 2:  Epics & stories in batches of ~15
+    """
 
-    # ═══ PHASE 1: Core Structure (feature_analysis, team, timeline, gantt, sprint_map) ═══
-    print(f"  ⚡ Phase 1: Core structure for all {num_features} features...", flush=True)
+    features_list = req.features
 
-    phase1_prompt = f"""You are a world-class Technical Project Manager with 20+ years of experience.
+    # ═══════════════════════════════════════════════════════════
+    # PHASE 1A: Feature Analysis in batches
+    # ═══════════════════════════════════════════════════════════
+    all_feature_analysis = []
+    total_fa_batches = math.ceil(num_features / feature_batch_size)
+
+    for batch_idx in range(total_fa_batches):
+        batch_start = batch_idx * feature_batch_size
+        batch_end = min(batch_start + feature_batch_size, num_features)
+        batch_features = features_list[batch_start:batch_end]
+        batch_count = len(batch_features)
+
+        batch_text = "\n".join([f"{batch_start + i + 1}. {f}" for i, f in enumerate(batch_features)])
+
+        print(f"  ⚡ Phase 1A Batch {batch_idx+1}/{total_fa_batches}: Analyzing features {batch_start+1}-{batch_end}...", flush=True)
+
+        fa_prompt = f"""You are a world-class Technical Project Manager with 20+ years experience.
 
 CONTEXT:
 - Tech Stack: {req.tech_stack}
-- Number of Features: {num_features}
-- Client Target Deadline: {target_working_days} working days ({target_months} months, ~{target_sprints} sprints)
+- These are features {batch_start+1} to {batch_end} out of {num_features} total features
 - Project Start Date: {start_date}
 
-FEATURES TO BUILD:
-{features_text}
+FEATURES TO ANALYZE:
+{batch_text}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TASK: Analyze ALL {num_features} features and produce the project structure.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-TARGET DURATION RESOURCE SCALING LOGIC:
-The client wants this done in {target_months} months.
-- First estimate total story points WITHOUT time constraint
-- Then calculate parallel streams needed to fit within {target_working_days} working days
-- Each stream needs its own roles (dev, QA, BA minimum)
-- Maximum practical parallel streams: 4
-
-SIZING: T-Shirt → Fibonacci: XXS=1, SMALL=2, MEDIUM=3, LARGE=5, XL=8, XXL=13, XXXL=21
+SIZING RULES: T-Shirt → Fibonacci ONLY: XXS=1, SMALL=2, MEDIUM=3, LARGE=5, XL=8, XXL=13, XXXL=21
 Feature types: "Application (UI)", "Systems Integration", "Reporting", "Process Automation", "Data & Backend"
 
-Return ONLY valid JSON (no markdown) with this structure:
+For EACH feature, provide detailed analysis. Return ONLY valid JSON (no markdown):
+{{
+    "feature_analysis": [
+        {{
+            "id": {batch_start + 1},
+            "feature": "Exact feature name",
+            "feature_type": "Application (UI)",
+            "technical_scope": "Detailed technical scope for {req.tech_stack} (2-3 sentences)",
+            "size": "XL",
+            "story_points": 8,
+            "days": 8,
+            "roles_needed": "PP, QA, BA",
+            "est_team": "XL – PP, QA, BA",
+            "est_conservative": "L – PP, QA",
+            "dependencies": "Feature #{batch_start + 1}" 
+        }}
+    ]
+}}
+
+RULES:
+1. ALL {batch_count} features MUST appear in feature_analysis
+2. IDs must be sequential starting from {batch_start + 1}
+3. Be specific to {req.tech_stack} in technical_scope
+4. Dependencies reference feature # numbers from the FULL list (1-{num_features})"""
+
+        try:
+            result = generate_ai_response(fa_prompt, temperature=0.2, timeout=timeout, model=model)
+            if result:
+                raw = result.replace('```json', '').replace('```', '').strip()
+                parsed_batch = json.loads(raw)
+                batch_fa = parsed_batch.get("feature_analysis", [])
+                all_feature_analysis.extend(batch_fa)
+                print(f"  ✅ Phase 1A Batch {batch_idx+1}: {len(batch_fa)} features analyzed", flush=True)
+            else:
+                print(f"  ⚠️ Phase 1A Batch {batch_idx+1}: Empty response, creating defaults", flush=True)
+                for i, f in enumerate(batch_features):
+                    all_feature_analysis.append({
+                        "id": batch_start + i + 1, "feature": f,
+                        "feature_type": "Application (UI)",
+                        "technical_scope": f"Implementation of {f} using {req.tech_stack}",
+                        "size": "MEDIUM", "story_points": 3, "days": 3,
+                        "roles_needed": "PP, QA", "est_team": "M – PP, QA",
+                        "est_conservative": "S – PP", "dependencies": "None"
+                    })
+        except Exception as e:
+            print(f"  ⚠️ Phase 1A Batch {batch_idx+1} Error: {e}. Creating defaults.", flush=True)
+            for i, f in enumerate(batch_features):
+                all_feature_analysis.append({
+                    "id": batch_start + i + 1, "feature": f,
+                    "feature_type": "Application (UI)",
+                    "technical_scope": f"Implementation of {f} using {req.tech_stack}",
+                    "size": "MEDIUM", "story_points": 3, "days": 3,
+                    "roles_needed": "PP, QA", "est_team": "M – PP, QA",
+                    "est_conservative": "S – PP", "dependencies": "None"
+                })
+
+    print(f"\n  📊 Phase 1A complete: {len(all_feature_analysis)} features analyzed", flush=True)
+
+    # ═══════════════════════════════════════════════════════════
+    # PHASE 1B: Project Structure (using aggregated feature data)
+    # ═══════════════════════════════════════════════════════════
+    print(f"  ⚡ Phase 1B: Generating project structure...", flush=True)
+
+    total_pts = sum(f.get("story_points", 3) for f in all_feature_analysis)
+    total_seq_days = sum(f.get("days", 3) for f in all_feature_analysis)
+
+    # Build compact feature summary for the structure prompt
+    feature_summary = json.dumps([
+        {"id": f.get("id"), "feature": f.get("feature", "")[:60], "pts": f.get("story_points", 3),
+         "days": f.get("days", 3), "type": f.get("feature_type", ""), "deps": f.get("dependencies", "None")}
+        for f in all_feature_analysis
+    ])
+
+    structure_prompt = f"""You are an expert Release Train Engineer and Project Planner.
+
+CONTEXT:
+- Tech Stack: {req.tech_stack}
+- Total Features: {num_features}
+- Total Story Points: {total_pts}
+- Total Sequential Days: {total_seq_days}
+- Client Target: {target_working_days} working days ({target_months} months)
+- Start Date: {start_date}
+
+FEATURE SUMMARY (already analyzed):
+{feature_summary}
+
+TASK: Generate the project structure around these features. Calculate scheduling, team, and timeline.
+
+TARGET DURATION SCALING:
+- Sequential effort: {total_seq_days} days
+- Target: {target_working_days} days
+- If sequential > target: need parallel streams (max 4)
+- Each stream: separate dev, QA, BA roles + 10% coordination overhead per extra stream
+
+Return ONLY valid JSON (no markdown):
 {{
     "sizing_legend": [
         {{"size": "XXS", "days": 1, "story_points": 1, "sprints_equivalent": "0.1 sprint"}},
@@ -1404,26 +1505,9 @@ Return ONLY valid JSON (no markdown) with this structure:
         {{"size": "XXL", "days": 13, "story_points": 13, "sprints_equivalent": "1.3 sprints"}},
         {{"size": "XXXL", "days": 21, "story_points": 21, "sprints_equivalent": "2.1 sprints"}}
     ],
-    "feature_analysis": [
-        {{
-            "id": 1,
-            "feature": "Exact feature name from input",
-            "feature_type": "Application (UI)",
-            "technical_scope": "Detailed technical scope (2-3 sentences)",
-            "size": "XL",
-            "story_points": 8,
-            "days": 8,
-            "roles_needed": "PP, QA, BA",
-            "est_team": "XL – PP, QA, BA",
-            "est_conservative": "L – PP, QA",
-            "dependencies": "Feature #3",
-            "start_day": 1,
-            "end_day": 8,
-            "sprint_allocation": "SP1"
-        }}
+    "scheduling": [
+        {{"id": 1, "start_day": 1, "end_day": 8, "sprint_allocation": "SP1"}}
     ],
-    "total_story_points": 0,
-    "total_working_days_sequential": 0,
     "team_composition": [
         {{
             "role": "Program Manager (PgM)",
@@ -1436,19 +1520,19 @@ Return ONLY valid JSON (no markdown) with this structure:
     ],
     "total_team_size": 0,
     "parallel_stream_analysis": {{
-        "single_stream_days": 0,
-        "single_stream_months": 0,
+        "single_stream_days": {total_seq_days},
+        "single_stream_months": {round(total_seq_days / 22, 1)},
         "recommended_streams": 0,
         "actual_parallel_days": 0,
         "actual_parallel_months": 0,
         "target_days": {target_working_days},
         "target_months": {target_months},
         "fits_target": true,
-        "coordination_overhead_pct": 10,
-        "notes": "Analysis notes"
+        "coordination_overhead_pct": 0,
+        "notes": "Analysis based on {num_features} features totaling {total_pts} story points"
     }},
     "timeline": {{
-        "total_story_points": 0,
+        "total_story_points": {total_pts},
         "team_velocity_per_sprint": 0,
         "sprint_duration_weeks": 2,
         "total_sprints": 0,
@@ -1456,17 +1540,14 @@ Return ONLY valid JSON (no markdown) with this structure:
         "total_months": 0,
         "start_date": "{start_date}",
         "end_date": "YYYY-MM-DD",
-        "assumptions": "Based on N parallel streams with team of X"
+        "assumptions": "Based on N parallel streams"
     }},
     "sprint_mapping": [
         {{
-            "sprint": "SP1",
-            "start_day": 1,
-            "end_day": 10,
-            "month": "M1",
-            "calendar_month": "Mar 2026",
+            "sprint": "SP1", "start_day": 1, "end_day": 10,
+            "month": "M1", "calendar_month": "Mar 2026",
             "features_in_sprint": ["Feature #1", "Feature #2"],
-            "points_in_sprint": 25
+            "points_in_sprint": 0
         }}
     ],
     "gantt_phases": [
@@ -1474,10 +1555,8 @@ Return ONLY valid JSON (no markdown) with this structure:
             "phase": "Planning & Discovery",
             "assigned_roles": "PgM, Architect",
             "dependencies": "None",
-            "start_day": 1,
-            "end_day": 5,
-            "start_week": 1,
-            "end_week": 1,
+            "start_day": 1, "end_day": 5,
+            "start_week": 1, "end_week": 1,
             "duration_days": 5,
             "phase_type": "planning"
         }}
@@ -1487,65 +1566,71 @@ Return ONLY valid JSON (no markdown) with this structure:
     ],
     "uat_milestones": [
         {{
-            "name": "UAT 1",
-            "sprint": "SP4",
-            "day": 40,
-            "scope": "Core modules",
-            "duration_days": 5,
-            "exit_criteria": "All P1 defects resolved, 85% test pass rate"
+            "name": "UAT 1", "sprint": "SP4", "day": 40,
+            "scope": "Core modules", "duration_days": 5,
+            "exit_criteria": "All P1 defects resolved"
         }}
     ],
     "pilot_hypercare": {{
-        "pilot": {{
-            "start_day": 0, "end_day": 0, "duration_days": 15,
-            "description": "Limited production deployment",
-            "team_needed": "PM, 1 Dev, 1 QA, 1 BA"
-        }},
-        "hypercare": {{
-            "start_day": 0, "end_day": 0, "duration_days": 15,
-            "description": "Full production support",
-            "team_needed": "PM, 2 Dev, 1 QA"
-        }}
+        "pilot": {{"start_day": 0, "end_day": 0, "duration_days": 15, "description": "Limited production deployment", "team_needed": "PM, 1 Dev, 1 QA, 1 BA"}},
+        "hypercare": {{"start_day": 0, "end_day": 0, "duration_days": 15, "description": "Full production support", "team_needed": "PM, 2 Dev, 1 QA"}}
     }},
-    "feature_type_summary": {{
-        "Application (UI)": {{"count": 0, "total_points": 0}}
-    }}
+    "feature_type_summary": {{}}
 }}
 
 RULES:
-1. ALL {num_features} features MUST appear in feature_analysis
-2. Features with dependencies start AFTER dependency ends
-3. Per feature: start_day and end_day for day-level Gantt
-4. resource_loading entries for every 10th day up to total_working_days
-5. UAT gates every 4-6 sprints + final UAT before pilot
-6. Pilot 15 days after final UAT, Hypercare 15 days after pilot
-7. Sprint mapping: SP1=Day 1-10, SP2=Day 11-20, etc.
-8. Calendar months start from {start_date}"""
+1. "scheduling" array: one entry per feature with start_day, end_day, sprint_allocation
+   - Respect dependencies (dependent features start AFTER their dependency ends)
+   - Parallel features can overlap if they don't share roles
+2. Sprint mapping: SP1=Day 1-10, SP2=Day 11-20, etc. Calendar months from {start_date}
+3. UAT gates every 4-6 sprints + final UAT before pilot
+4. Pilot 15 days after final UAT, Hypercare 15 days after pilot
+5. resource_loading: entries for every 10th day
+6. gantt_phases: Planning, Setup, Development sprints, QA, each UAT, Pilot, Hypercare
+7. feature_type_summary: count and points per feature type"""
 
     try:
-        phase1_result = generate_ai_response(phase1_prompt, temperature=0.2, timeout=timeout, model=model)
-        if not phase1_result:
-            raise ValueError("Phase 1 AI returned empty response")
-        
-        phase1_raw = phase1_result.replace('```json', '').replace('```', '').strip()
-        parsed = json.loads(phase1_raw)
-        print(f"  ✅ Phase 1 complete: {len(parsed.get('feature_analysis', []))} features analyzed", flush=True)
+        structure_result = generate_ai_response(structure_prompt, temperature=0.2, timeout=timeout, model=model)
+        if not structure_result:
+            raise ValueError("Phase 1B AI returned empty response")
+
+        structure_raw = structure_result.replace('```json', '').replace('```', '').strip()
+        structure = json.loads(structure_raw)
+        print(f"  ✅ Phase 1B complete: project structure generated", flush=True)
 
     except Exception as e:
-        print(f"Phase 1 Error: {e}", flush=True)
-        return {"error": f"Phase 1 (structure analysis) failed: {str(e)}. Try reducing features or retrying."}
+        print(f"  ⚠️ Phase 1B Error: {e}. Building fallback structure.", flush=True)
+        structure = _build_fallback_structure(
+            all_feature_analysis, num_features, total_pts, total_seq_days,
+            target_working_days, target_months, start_date
+        )
 
-    # ═══ PHASE 2: Epics & Stories (in batches) ═══
+    # ═══ MERGE Phase 1A + 1B ═══
+    # Apply scheduling data back to feature_analysis
+    scheduling = {s.get("id"): s for s in structure.get("scheduling", [])}
+    for fa in all_feature_analysis:
+        sched = scheduling.get(fa.get("id"), {})
+        fa["start_day"] = sched.get("start_day", 1)
+        fa["end_day"] = sched.get("end_day", fa.get("start_day", 1) + fa.get("days", 3) - 1)
+        fa["sprint_allocation"] = sched.get("sprint_allocation", "SP1")
+
+    parsed = structure
+    parsed["feature_analysis"] = all_feature_analysis
+    parsed["total_story_points"] = total_pts
+    parsed["total_working_days_sequential"] = total_seq_days
+
+    # ═══════════════════════════════════════════════════════════
+    # PHASE 2: Epics & Stories (unchanged from before)
+    # ═══════════════════════════════════════════════════════════
     all_epics = []
-    feature_list = parsed.get("feature_analysis", [])
-    total_batches = math.ceil(len(feature_list) / epic_batch_size)
+    total_epic_batches = math.ceil(len(all_feature_analysis) / epic_batch_size)
 
-    for batch_idx in range(total_batches):
+    for batch_idx in range(total_epic_batches):
         batch_start = batch_idx * epic_batch_size
-        batch_end = min(batch_start + epic_batch_size, len(feature_list))
-        batch_features = feature_list[batch_start:batch_end]
+        batch_end = min(batch_start + epic_batch_size, len(all_feature_analysis))
+        batch_features = all_feature_analysis[batch_start:batch_end]
 
-        print(f"  ⚡ Phase 2 Batch {batch_idx+1}/{total_batches}: Epics for features {batch_start+1}-{batch_end}...", flush=True)
+        print(f"  ⚡ Phase 2 Batch {batch_idx+1}/{total_epic_batches}: Epics for features {batch_start+1}-{batch_end}...", flush=True)
 
         batch_features_text = "\n".join([
             f"- {f.get('feature', '')} (ID:{f.get('id','')}, {f.get('story_points',3)} pts, {f.get('feature_type','Application (UI)')})"
@@ -1596,41 +1681,154 @@ RULES:
                 all_epics.extend(batch_epics)
                 print(f"  ✅ Batch {batch_idx+1}: {len(batch_epics)} epics generated", flush=True)
             else:
-                print(f"  ⚠️ Batch {batch_idx+1}: Empty response, creating placeholder epics", flush=True)
+                print(f"  ⚠️ Batch {batch_idx+1}: Empty response, creating placeholders", flush=True)
                 for f in batch_features:
-                    all_epics.append({
-                        "epic_name": f.get("feature", "Unnamed"),
-                        "epic_description": f.get("technical_scope", ""),
-                        "feature_type": f.get("feature_type", "Application (UI)"),
-                        "total_points": f.get("story_points", 3),
-                        "stories": [{
-                            "summary": f"Implement {f.get('feature', 'feature')}",
-                            "description": f"As a user, I want {f.get('feature', '')} functionality.\n\nAcceptance Criteria:\n- Feature works as specified\n- All edge cases handled",
-                            "story_points": f.get("story_points", 3),
-                            "priority": "High"
-                        }]
-                    })
+                    all_epics.append(_placeholder_epic(f, req.tech_stack))
         except Exception as e:
             print(f"  ⚠️ Batch {batch_idx+1} Error: {e}. Creating placeholders.", flush=True)
             for f in batch_features:
-                all_epics.append({
-                    "epic_name": f.get("feature", "Unnamed"),
-                    "epic_description": f.get("technical_scope", ""),
-                    "feature_type": f.get("feature_type", "Application (UI)"),
-                    "total_points": f.get("story_points", 3),
-                    "stories": [{
-                        "summary": f"Implement {f.get('feature', 'feature')}",
-                        "description": f"As a user, I want {f.get('feature', '')}.",
-                        "story_points": f.get("story_points", 3),
-                        "priority": "High"
-                    }]
-                })
+                all_epics.append(_placeholder_epic(f, req.tech_stack))
 
-    # ═══ MERGE: Combine Phase 1 + Phase 2 ═══
     parsed["epics"] = all_epics
-    print(f"\n✅ Roadmap complete: {len(feature_list)} features, {len(all_epics)} epics, {sum(len(e.get('stories',[])) for e in all_epics)} stories\n", flush=True)
+    print(f"\n✅ Roadmap complete: {len(all_feature_analysis)} features, {len(all_epics)} epics, {sum(len(e.get('stories',[])) for e in all_epics)} stories\n", flush=True)
 
     return _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features)
+
+
+def _placeholder_epic(feature, tech_stack):
+    """Create a placeholder epic when AI fails for a feature."""
+    return {
+        "epic_name": feature.get("feature", "Unnamed"),
+        "epic_description": feature.get("technical_scope", f"Implementation using {tech_stack}"),
+        "feature_type": feature.get("feature_type", "Application (UI)"),
+        "total_points": feature.get("story_points", 3),
+        "stories": [{
+            "summary": f"Implement {feature.get('feature', 'feature')}",
+            "description": f"As a user, I want {feature.get('feature', '')} functionality.\n\nAcceptance Criteria:\n- Feature works as specified\n- All edge cases handled\n- QA sign-off complete",
+            "story_points": feature.get("story_points", 3),
+            "priority": "High"
+        }]
+    }
+
+
+def _build_fallback_structure(features, num_features, total_pts, total_seq_days,
+                               target_working_days, target_months, start_date):
+    """Build a deterministic project structure when AI fails."""
+    from datetime import datetime, timedelta
+
+    # Calculate parallel streams needed
+    if total_seq_days <= target_working_days:
+        streams = 1
+        actual_days = total_seq_days
+    else:
+        streams = min(4, math.ceil(total_seq_days / target_working_days))
+        overhead = 1 + (streams - 1) * 0.1
+        actual_days = math.ceil((total_seq_days / streams) * overhead)
+
+    actual_months = round(actual_days / 22, 1)
+    total_sprints = math.ceil(actual_days / 10)
+    velocity = math.ceil(total_pts / max(total_sprints, 1))
+
+    # Simple sequential scheduling
+    current_day = 1
+    scheduling = []
+    for f in features:
+        days = f.get("days", 3)
+        scheduling.append({
+            "id": f.get("id"), "start_day": current_day,
+            "end_day": current_day + days - 1,
+            "sprint_allocation": f"SP{math.ceil(current_day / 10)}"
+        })
+        current_day += days
+
+    # Sprint mapping
+    sprint_mapping = []
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    for sp in range(1, total_sprints + 1):
+        sp_start = (sp - 1) * 10 + 1
+        sp_end = sp * 10
+        sp_date = start_dt + timedelta(days=(sp - 1) * 14)
+        sprint_features = [f"Feature #{f.get('id')}" for f in features
+                          if scheduling[features.index(f)]["start_day"] >= sp_start
+                          and scheduling[features.index(f)]["start_day"] <= sp_end]
+        sprint_mapping.append({
+            "sprint": f"SP{sp}", "start_day": sp_start, "end_day": sp_end,
+            "month": f"M{math.ceil(sp / 2)}", "calendar_month": sp_date.strftime("%b %Y"),
+            "features_in_sprint": sprint_features[:5],
+            "points_in_sprint": velocity
+        })
+
+    # Resource loading
+    resource_loading = []
+    for d in range(1, actual_days + 1, 10):
+        resource_loading.append({
+            "day": d, "sprint": f"SP{math.ceil(d / 10)}", "month": f"M{math.ceil(d / 22)}",
+            "active_features": min(streams * 2, num_features),
+            "team_members_needed": streams * 3 + 2,
+            "roles_active": "PM, PP, QA, BA"
+        })
+
+    uat_day = actual_days + 1
+    pilot_start = uat_day + 5
+    pilot_end = pilot_start + 14
+    hc_start = pilot_end + 1
+    hc_end = hc_start + 14
+
+    end_dt = start_dt + timedelta(days=int(hc_end * 1.4))
+
+    return {
+        "sizing_legend": [
+            {"size": "XXS", "days": 1, "story_points": 1, "sprints_equivalent": "0.1 sprint"},
+            {"size": "SMALL", "days": 2, "story_points": 2, "sprints_equivalent": "0.2 sprint"},
+            {"size": "MEDIUM", "days": 3, "story_points": 3, "sprints_equivalent": "0.3 sprint"},
+            {"size": "LARGE", "days": 5, "story_points": 5, "sprints_equivalent": "0.5 sprint"},
+            {"size": "XL", "days": 8, "story_points": 8, "sprints_equivalent": "0.8 sprint"},
+            {"size": "XXL", "days": 13, "story_points": 13, "sprints_equivalent": "1.3 sprints"},
+            {"size": "XXXL", "days": 21, "story_points": 21, "sprints_equivalent": "2.1 sprints"},
+        ],
+        "scheduling": scheduling,
+        "team_composition": [
+            {"role": "Program Manager (PgM)", "headcount": 1, "billable": True, "justification": "Delivery coordination", "ramp_up_notes": "Day 1", "stream_allocation": "All"},
+            {"role": "Tech Lead (TL)", "headcount": streams, "billable": True, "justification": "Technical guidance per stream", "ramp_up_notes": "Day 1", "stream_allocation": f"1 per stream"},
+            {"role": "Developer (PP)", "headcount": streams * 2, "billable": True, "justification": "Core development", "ramp_up_notes": "Day 1", "stream_allocation": f"2 per stream"},
+            {"role": "QA Engineer", "headcount": streams, "billable": True, "justification": "Testing & quality", "ramp_up_notes": "Day 5", "stream_allocation": f"1 per stream"},
+            {"role": "Business Analyst (BA)", "headcount": max(1, streams), "billable": True, "justification": "Requirements & UAT", "ramp_up_notes": "Day 1", "stream_allocation": f"Shared"},
+        ],
+        "total_team_size": 1 + streams + streams * 2 + streams + max(1, streams),
+        "parallel_stream_analysis": {
+            "single_stream_days": total_seq_days, "single_stream_months": round(total_seq_days / 22, 1),
+            "recommended_streams": streams, "actual_parallel_days": actual_days,
+            "actual_parallel_months": actual_months, "target_days": target_working_days,
+            "target_months": target_months, "fits_target": actual_days <= target_working_days,
+            "coordination_overhead_pct": (streams - 1) * 10,
+            "notes": f"Fallback calculation: {streams} streams, {actual_days} working days."
+        },
+        "timeline": {
+            "total_story_points": total_pts, "team_velocity_per_sprint": velocity,
+            "sprint_duration_weeks": 2, "total_sprints": total_sprints,
+            "total_working_days": actual_days, "total_months": actual_months,
+            "start_date": start_date, "end_date": end_dt.strftime("%Y-%m-%d"),
+            "assumptions": f"Based on {streams} parallel streams"
+        },
+        "sprint_mapping": sprint_mapping,
+        "gantt_phases": [
+            {"phase": "Planning & Discovery", "assigned_roles": "PgM, BA, TL", "dependencies": "None", "start_day": 1, "end_day": 5, "start_week": 1, "end_week": 1, "duration_days": 5, "phase_type": "planning"},
+            {"phase": "Development", "assigned_roles": "PP, QA, TL", "dependencies": "Planning", "start_day": 6, "end_day": actual_days, "start_week": 2, "end_week": math.ceil(actual_days / 5), "duration_days": actual_days - 5, "phase_type": "development"},
+            {"phase": "Final UAT", "assigned_roles": "QA, BA, PM", "dependencies": "Development", "start_day": uat_day, "end_day": uat_day + 4, "start_week": math.ceil(uat_day / 5), "end_week": math.ceil((uat_day + 4) / 5), "duration_days": 5, "phase_type": "uat"},
+            {"phase": "Pilot", "assigned_roles": "PM, PP, QA", "dependencies": "UAT", "start_day": pilot_start, "end_day": pilot_end, "start_week": math.ceil(pilot_start / 5), "end_week": math.ceil(pilot_end / 5), "duration_days": 15, "phase_type": "pilot"},
+            {"phase": "Hypercare", "assigned_roles": "PM, PP, QA", "dependencies": "Pilot", "start_day": hc_start, "end_day": hc_end, "start_week": math.ceil(hc_start / 5), "end_week": math.ceil(hc_end / 5), "duration_days": 15, "phase_type": "hypercare"},
+        ],
+        "resource_loading": resource_loading,
+        "uat_milestones": [
+            {"name": "UAT Final", "sprint": f"SP{total_sprints + 1}", "day": uat_day, "scope": f"All {num_features} features", "duration_days": 5, "exit_criteria": "All P1 defects resolved, 85% pass rate"}
+        ],
+        "pilot_hypercare": {
+            "pilot": {"start_day": pilot_start, "end_day": pilot_end, "duration_days": 15, "description": "Limited production deployment", "team_needed": "PM, 1 Dev, 1 QA, 1 BA"},
+            "hypercare": {"start_day": hc_start, "end_day": hc_end, "duration_days": 15, "description": "Full production support", "team_needed": "PM, 2 Dev, 1 QA"}
+        },
+        "feature_type_summary": {}
+    }
+
 
 
 def _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features):
