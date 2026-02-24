@@ -2175,350 +2175,457 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
-    wb = Workbook()
-    data = req.data
+    # ── Safe extraction helpers ──
+    def safe_str(obj, key, default=""):
+        if not isinstance(obj, dict): return str(default)
+        val = obj.get(key)
+        if val is None: return str(default)
+        return str(val)
 
-    # ── VALIDATION: Ensure required keys exist with safe defaults ──
-    meta = data.get("_meta", {})
-    fa = data.get("feature_analysis", [])
-    team = data.get("team_composition", [])
-    tl = data.get("timeline", {})
-    gantt = data.get("gantt_phases", [])
-    epics = data.get("epics", [])
-    sprint_map = data.get("sprint_mapping", [])
-    resource_load = data.get("resource_loading", [])
-    uat = data.get("uat_milestones", [])
-    ph = data.get("pilot_hypercare", {})
-    psa = data.get("parallel_stream_analysis", {})
-    sizing = data.get("sizing_legend", [])
-    ft_summary = data.get("feature_type_summary", {})
+    def safe_int(obj, key, default=0):
+        if not isinstance(obj, dict): return default
+        val = obj.get(key)
+        if val is None: return default
+        try: return int(float(val))
+        except (ValueError, TypeError): return default
 
-    # Safe defaults for pilot/hypercare
-    if not isinstance(ph, dict):
-        ph = {}
-    pilot = ph.get("pilot", {})
-    hypercare = ph.get("hypercare", {})
-    if not isinstance(pilot, dict): pilot = {}
-    if not isinstance(hypercare, dict): hypercare = {}
-    if not isinstance(psa, dict): psa = {}
+    def safe_num(obj, key, default=0):
+        if not isinstance(obj, dict): return default
+        val = obj.get(key)
+        if val is None: return default
+        try: return float(val)
+        except (ValueError, TypeError): return default
 
-    # ── Styles ──
-    header_font = Font(bold=True, color="FFFFFF", size=11)
-    header_fill = PatternFill("solid", fgColor="2563EB")
-    subheader_fill = PatternFill("solid", fgColor="DBEAFE")
-    subheader_font = Font(bold=True, size=10)
-    thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
-    size_colors = {
-        'XXS': 'E0F7FA', 'SMALL': 'E8F5E9', 'MEDIUM': 'E3F2FD',
-        'LARGE': 'FFF8E1', 'XL': 'FFF3E0', 'XXL': 'FCE4EC', 'XXXL': 'FFEBEE'
-    }
+    def safe_list(obj, key):
+        if not isinstance(obj, dict): return []
+        val = obj.get(key)
+        if isinstance(val, list): return val
+        return []
 
-    def write_header(ws, row, headers, col_start=1):
-        for i, h in enumerate(headers):
-            cell = ws.cell(row=row, column=col_start + i, value=h)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal='center', wrap_text=True)
-            cell.border = thin_border
+    def safe_dict(obj, key):
+        if not isinstance(obj, dict): return {}
+        val = obj.get(key)
+        if isinstance(val, dict): return val
+        return {}
 
-    def auto_width(ws, min_w=10, max_w=40):
-        for col_cells in ws.columns:
-            max_len = 0
-            col_letter = get_column_letter(col_cells[0].column)
-            for cell in col_cells:
-                if cell.value:
-                    max_len = max(max_len, len(str(cell.value)))
-            ws.column_dimensions[col_letter].width = min(max(max_len + 2, min_w), max_w)
+    def safe_bool(obj, key, default=True):
+        if not isinstance(obj, dict): return default
+        val = obj.get(key)
+        if val is None: return default
+        return bool(val)
 
-    def safe_val(obj, key, default=""):
-        """Safely extract value from dict or return default."""
-        if not isinstance(obj, dict):
-            return default
-        val = obj.get(key, default)
-        return val if val is not None else default
+    try:
+        data = req.data
+        if not isinstance(data, dict):
+            print(f"[XLSX] ERROR: req.data is not a dict, it's {type(data)}", flush=True)
+            raise HTTPException(status_code=400, detail="Invalid data format — expected JSON object")
 
-    # ═══════════ SHEET 1: Project Summary ═══════════
-    ws1 = wb.active
-    ws1.title = "Project Summary"
-    ws1.sheet_properties.tabColor = "2563EB"
+        print(f"[XLSX] Starting generation. Keys in data: {list(data.keys())}", flush=True)
 
-    ws1['A1'] = "FEATURE ROADMAP — PROJECT ESTIMATION"
-    ws1['A1'].font = Font(bold=True, size=16, color="2563EB")
-    ws1.merge_cells('A1:F1')
-    ws1['A2'] = f"Tech Stack: {safe_val(meta, 'tech_stack', 'N/A')} | Target: {safe_val(meta, 'target_duration_value', '')} {safe_val(meta, 'target_duration_unit', '')} | Generated: {str(safe_val(meta, 'generated_at', ''))[:10]}"
-    ws1['A2'].font = Font(italic=True, size=10, color="666666")
-    ws1.merge_cells('A2:F2')
+        # ── Extract all sections with safe defaults ──
+        meta = safe_dict(data, "_meta")
+        fa = safe_list(data, "feature_analysis")
+        team = safe_list(data, "team_composition")
+        tl = safe_dict(data, "timeline")
+        gantt = safe_list(data, "gantt_phases")
+        epics = safe_list(data, "epics")
+        sprint_map = safe_list(data, "sprint_mapping")
+        resource_load = safe_list(data, "resource_loading")
+        uat = safe_list(data, "uat_milestones")
+        ph = safe_dict(data, "pilot_hypercare")
+        psa = safe_dict(data, "parallel_stream_analysis")
+        sizing = safe_list(data, "sizing_legend")
 
-    # Sizing Legend
-    r = 4
-    ws1.cell(row=r, column=1, value="T-SHIRT SIZING LEGEND").font = Font(bold=True, size=12, color="2563EB")
-    r += 1
-    write_header(ws1, r, ["Size", "Days", "Story Points", "Sprint Equivalent"])
-    r += 1
-    for s in sizing:
-        if not isinstance(s, dict): continue
-        ws1.cell(row=r, column=1, value=safe_val(s, "size")).border = thin_border
-        ws1.cell(row=r, column=1).fill = PatternFill("solid", fgColor=size_colors.get(safe_val(s, "size", ""), "FFFFFF"))
-        ws1.cell(row=r, column=2, value=safe_val(s, "days", 0)).border = thin_border
-        ws1.cell(row=r, column=3, value=safe_val(s, "story_points", 0)).border = thin_border
-        ws1.cell(row=r, column=4, value=safe_val(s, "sprints_equivalent")).border = thin_border
-        r += 1
+        pilot = safe_dict(ph, "pilot")
+        hypercare = safe_dict(ph, "hypercare")
 
-    # Team Composition
-    r += 1
-    ws1.cell(row=r, column=1, value="TEAM COMPOSITION").font = Font(bold=True, size=12, color="2563EB")
-    r += 1
-    write_header(ws1, r, ["Role", "Headcount", "Billable", "Justification", "Ramp-Up Notes", "Stream Allocation"])
-    r += 1
-    for t in team:
-        if not isinstance(t, dict): continue
-        ws1.cell(row=r, column=1, value=safe_val(t, "role")).border = thin_border
-        ws1.cell(row=r, column=2, value=safe_val(t, "headcount", 1)).border = thin_border
-        ws1.cell(row=r, column=3, value="Yes" if t.get("billable", True) else "No").border = thin_border
-        ws1.cell(row=r, column=4, value=safe_val(t, "justification")).border = thin_border
-        ws1.cell(row=r, column=5, value=safe_val(t, "ramp_up_notes")).border = thin_border
-        ws1.cell(row=r, column=6, value=safe_val(t, "stream_allocation")).border = thin_border
-        r += 1
-    ws1.cell(row=r, column=1, value="TOTAL TEAM SIZE").font = Font(bold=True)
-    ws1.cell(row=r, column=2, value=data.get("total_team_size", sum(safe_val(t, "headcount", 1) for t in team if isinstance(t, dict)))).font = Font(bold=True, color="2563EB", size=14)
+        print(f"[XLSX] Data loaded: {len(fa)} features, {len(team)} team, {len(epics)} epics, {len(sprint_map)} sprints, {len(gantt)} phases", flush=True)
 
-    # Parallel Stream Analysis
-    r += 2
-    ws1.cell(row=r, column=1, value="PARALLEL STREAM ANALYSIS").font = Font(bold=True, size=12, color="2563EB")
-    r += 1
-    for label, key in [
-        ("Sequential (1 Stream) Days", "single_stream_days"),
-        ("Sequential (1 Stream) Months", "single_stream_months"),
-        ("Recommended Parallel Streams", "recommended_streams"),
-        ("Actual Duration (Parallel) Days", "actual_parallel_days"),
-        ("Actual Duration (Parallel) Months", "actual_parallel_months"),
-        ("Client Target Days", "target_days"),
-        ("Client Target Months", "target_months"),
-        ("Fits Target?", "fits_target"),
-        ("Coordination Overhead", "coordination_overhead_pct"),
-    ]:
-        ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
-        ws1.cell(row=r, column=1).border = thin_border
-        val = safe_val(psa, key, "")
-        if key == "fits_target":
-            val = "✅ YES" if val else "❌ NO"
-        elif key == "coordination_overhead_pct":
-            val = f"{val}%"
-        ws1.cell(row=r, column=2, value=str(val)).border = thin_border
-        r += 1
-    if safe_val(psa, "notes"):
-        ws1.cell(row=r, column=1, value="Notes:").font = Font(italic=True)
-        ws1.cell(row=r, column=2, value=safe_val(psa, "notes"))
-        ws1.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
+        wb = Workbook()
 
-    # Timeline
-    r += 2
-    ws1.cell(row=r, column=1, value="TIMELINE SUMMARY").font = Font(bold=True, size=12, color="2563EB")
-    r += 1
-    for label, val in [
-        ("Total Story Points", safe_val(tl, "total_story_points", data.get("total_story_points", 0))),
-        ("Team Velocity/Sprint", safe_val(tl, "team_velocity_per_sprint")),
-        ("Sprint Duration", "2 weeks"),
-        ("Total Sprints", safe_val(tl, "total_sprints")),
-        ("Total Working Days", safe_val(tl, "total_working_days")),
-        ("Total Calendar Months", safe_val(tl, "total_months")),
-        ("Start Date", safe_val(tl, "start_date")),
-        ("End Date", safe_val(tl, "end_date")),
-        ("Assumptions", safe_val(tl, "assumptions")),
-    ]:
-        ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
-        ws1.cell(row=r, column=1).border = thin_border
-        ws1.cell(row=r, column=2, value=str(val)).border = thin_border
-        r += 1
+        # ── Styles ──
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        header_fill = PatternFill("solid", fgColor="2563EB")
+        thin_border = Border(
+            left=Side(style='thin'), right=Side(style='thin'),
+            top=Side(style='thin'), bottom=Side(style='thin')
+        )
+        size_colors = {
+            'XXS': 'E0F7FA', 'SMALL': 'E8F5E9', 'MEDIUM': 'E3F2FD',
+            'LARGE': 'FFF8E1', 'XL': 'FFF3E0', 'XXL': 'FCE4EC', 'XXXL': 'FFEBEE'
+        }
 
-    auto_width(ws1)
+        def write_header(ws, row, headers, col_start=1):
+            for i, h in enumerate(headers):
+                cell = ws.cell(row=row, column=col_start + i, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                cell.border = thin_border
 
-    # ═══════════ SHEET 2: Feature Schedule ═══════════
-    ws2 = wb.create_sheet("Feature Schedule")
-    ws2.sheet_properties.tabColor = "10B981"
+        def auto_width(ws, min_w=10, max_w=40):
+            try:
+                for col_cells in ws.columns:
+                    max_len = 0
+                    col_letter = get_column_letter(col_cells[0].column)
+                    for cell in col_cells:
+                        if cell.value:
+                            max_len = max(max_len, len(str(cell.value)))
+                    ws.column_dimensions[col_letter].width = min(max(max_len + 2, min_w), max_w)
+            except Exception as e:
+                print(f"[XLSX] auto_width warning: {e}", flush=True)
 
-    total_days = max((safe_val(f, "end_day", 0) for f in fa if isinstance(f, dict)), default=10) if fa else 10
-    if safe_val(hypercare, "end_day", 0) > total_days:
-        total_days = hypercare["end_day"]
-    total_days = max(int(total_days) if total_days else 10, 10)
+        # ═══════════════════════════════════════════════
+        # SHEET 1: Project Summary
+        # ═══════════════════════════════════════════════
+        try:
+            print("[XLSX] Building Sheet 1: Project Summary...", flush=True)
+            ws1 = wb.active
+            ws1.title = "Project Summary"
+            ws1.sheet_properties.tabColor = "2563EB"
 
-    static_cols = ["ID", "Feature Name", "Type", "Days", "Sizing", "Est. TEAM", "Est. Conservative", "Roles", "Dependencies"]
-    num_static = len(static_cols)
-    write_header(ws2, 1, static_cols)
+            ws1['A1'] = "FEATURE ROADMAP — PROJECT ESTIMATION"
+            ws1['A1'].font = Font(bold=True, size=16, color="2563EB")
+            ws1.merge_cells('A1:F1')
+            ws1['A2'] = f"Tech Stack: {safe_str(meta, 'tech_stack', 'N/A')} | Target: {safe_str(meta, 'target_duration_value', '')} {safe_str(meta, 'target_duration_unit', '')} | Generated: {safe_str(meta, 'generated_at', '')[:10]}"
+            ws1['A2'].font = Font(italic=True, size=10, color="666666")
+            ws1.merge_cells('A2:F2')
 
-    for d in range(1, total_days + 1):
-        col = num_static + d
-        sprint_num = math.ceil(d / 10)
-        if (d - 1) % 10 == 0:
-            cell = ws2.cell(row=1, column=col, value=f"SP{sprint_num}")
-            cell.font = Font(bold=True, size=8, color="2563EB")
-            cell.alignment = Alignment(horizontal='center')
-
-    for d in range(1, total_days + 1):
-        cell = ws2.cell(row=2, column=num_static + d, value=d)
-        cell.font = Font(size=7, color="999999")
-        cell.alignment = Alignment(horizontal='center')
-
-    gantt_fill_colors = ['4FC3F7', '81C784', 'FFB74D', 'E57373', 'BA68C8', '4DD0E1', 'F06292', 'AED581']
-    for idx, f in enumerate(fa):
-        if not isinstance(f, dict): continue
-        r = 3 + idx
-        ws2.cell(row=r, column=1, value=safe_val(f, "id", idx + 1)).border = thin_border
-        ws2.cell(row=r, column=2, value=safe_val(f, "feature")).border = thin_border
-        ws2.cell(row=r, column=3, value=safe_val(f, "feature_type")).border = thin_border
-        ws2.cell(row=r, column=4, value=safe_val(f, "days", 0)).border = thin_border
-
-        size_val = safe_val(f, "size", "")
-        size_cell = ws2.cell(row=r, column=5, value=size_val)
-        size_cell.border = thin_border
-        size_cell.fill = PatternFill("solid", fgColor=size_colors.get(str(size_val), "FFFFFF"))
-
-        ws2.cell(row=r, column=6, value=safe_val(f, "est_team")).border = thin_border
-        ws2.cell(row=r, column=7, value=safe_val(f, "est_conservative")).border = thin_border
-        ws2.cell(row=r, column=8, value=safe_val(f, "roles_needed")).border = thin_border
-        ws2.cell(row=r, column=9, value=safe_val(f, "dependencies", "None")).border = thin_border
-
-        start_d = int(safe_val(f, "start_day", 1) or 1)
-        end_d = int(safe_val(f, "end_day", start_d) or start_d)
-        color = gantt_fill_colors[idx % len(gantt_fill_colors)]
-        for d in range(start_d, min(end_d + 1, total_days + 1)):
-            col = num_static + d
-            cell = ws2.cell(row=r, column=col, value=1)
-            cell.fill = PatternFill("solid", fgColor=color)
-            cell.font = Font(size=7, color=color)
-            cell.alignment = Alignment(horizontal='center')
-
-    # Resource loading, UAT, Pilot, Hypercare rows
-    r_load_row = 3 + len(fa) + 1
-    ws2.cell(row=r_load_row, column=1, value="RESOURCE").font = Font(bold=True, color="FFFFFF")
-    ws2.cell(row=r_load_row, column=1).fill = PatternFill("solid", fgColor="EF4444")
-    ws2.cell(row=r_load_row, column=2, value="Daily Team Count").font = Font(bold=True)
-    for rl in resource_load:
-        if not isinstance(rl, dict): continue
-        d = int(safe_val(rl, "day", 0) or 0)
-        if 1 <= d <= total_days:
-            col = num_static + d
-            members = safe_val(rl, "team_members_needed", 0)
-            cell = ws2.cell(row=r_load_row, column=col, value=members)
-            cell.font = Font(bold=True, size=8)
-            cell.alignment = Alignment(horizontal='center')
-
-    uat_row = r_load_row + 1
-    ws2.cell(row=uat_row, column=1, value="UAT").font = Font(bold=True, color="FFFFFF")
-    ws2.cell(row=uat_row, column=1).fill = PatternFill("solid", fgColor="8B5CF6")
-    for u in uat:
-        if not isinstance(u, dict): continue
-        d = int(safe_val(u, "day", 0) or 0)
-        if 1 <= d <= total_days:
-            col = num_static + d
-            cell = ws2.cell(row=uat_row, column=col, value=safe_val(u, "name", "UAT"))
-            cell.fill = PatternFill("solid", fgColor="DDD6FE")
-            cell.font = Font(bold=True, size=8, color="6D28D9")
-
-    pilot_row = uat_row + 1
-    ws2.cell(row=pilot_row, column=1, value="PILOT").font = Font(bold=True, color="FFFFFF")
-    ws2.cell(row=pilot_row, column=1).fill = PatternFill("solid", fgColor="F59E0B")
-    p_start = int(safe_val(pilot, "start_day", 0) or 0)
-    p_end = int(safe_val(pilot, "end_day", 0) or 0)
-    for d in range(max(1, p_start), min(p_end + 1, total_days + 1)):
-        cell = ws2.cell(row=pilot_row, column=num_static + d, value=1)
-        cell.fill = PatternFill("solid", fgColor="FEF3C7")
-        cell.font = Font(size=7, color="FEF3C7")
-
-    hc_row = pilot_row + 1
-    ws2.cell(row=hc_row, column=1, value="HYPERCARE").font = Font(bold=True, color="FFFFFF")
-    ws2.cell(row=hc_row, column=1).fill = PatternFill("solid", fgColor="06B6D4")
-    h_start = int(safe_val(hypercare, "start_day", 0) or 0)
-    h_end = int(safe_val(hypercare, "end_day", 0) or 0)
-    for d in range(max(1, h_start), min(h_end + 1, total_days + 1)):
-        cell = ws2.cell(row=hc_row, column=num_static + d, value=1)
-        cell.fill = PatternFill("solid", fgColor="CFFAFE")
-        cell.font = Font(size=7, color="CFFAFE")
-
-    ws2.column_dimensions['A'].width = 5
-    ws2.column_dimensions['B'].width = 45
-    ws2.column_dimensions['C'].width = 18
-    ws2.column_dimensions['D'].width = 6
-    ws2.column_dimensions['E'].width = 14
-    ws2.column_dimensions['F'].width = 22
-    ws2.column_dimensions['G'].width = 22
-    ws2.column_dimensions['H'].width = 16
-    ws2.column_dimensions['I'].width = 18
-    for d in range(1, total_days + 1):
-        ws2.column_dimensions[get_column_letter(num_static + d)].width = 3.5
-    ws2.freeze_panes = ws2.cell(row=3, column=num_static + 1)
-
-    # ═══════════ SHEET 3: Gantt Phases ═══════════
-    ws3 = wb.create_sheet("Gantt Phases")
-    ws3.sheet_properties.tabColor = "F59E0B"
-    write_header(ws3, 1, ["Phase", "Assigned Roles", "Dependencies", "Start Day", "End Day", "Start Week", "End Week", "Duration (days)", "Phase Type"])
-    for i, g in enumerate(gantt):
-        if not isinstance(g, dict): continue
-        r = i + 2
-        ws3.cell(row=r, column=1, value=safe_val(g, "phase")).border = thin_border
-        ws3.cell(row=r, column=2, value=safe_val(g, "assigned_roles")).border = thin_border
-        ws3.cell(row=r, column=3, value=safe_val(g, "dependencies")).border = thin_border
-        ws3.cell(row=r, column=4, value=safe_val(g, "start_day", 0)).border = thin_border
-        ws3.cell(row=r, column=5, value=safe_val(g, "end_day", 0)).border = thin_border
-        ws3.cell(row=r, column=6, value=safe_val(g, "start_week", 0)).border = thin_border
-        ws3.cell(row=r, column=7, value=safe_val(g, "end_week", 0)).border = thin_border
-        ws3.cell(row=r, column=8, value=safe_val(g, "duration_days", 0)).border = thin_border
-        ws3.cell(row=r, column=9, value=safe_val(g, "phase_type")).border = thin_border
-    auto_width(ws3)
-
-    # ═══════════ SHEET 4: Jira Breakdown ═══════════
-    ws4 = wb.create_sheet("Jira Breakdown")
-    ws4.sheet_properties.tabColor = "8B5CF6"
-    write_header(ws4, 1, ["Epic Name", "Feature Type", "Epic Points", "Story Summary", "Description", "Story Points", "Priority"])
-    r = 2
-    for epic in epics:
-        if not isinstance(epic, dict): continue
-        for story in epic.get("stories", []):
-            if not isinstance(story, dict): continue
-            ws4.cell(row=r, column=1, value=safe_val(epic, "epic_name")).border = thin_border
-            ws4.cell(row=r, column=2, value=safe_val(epic, "feature_type")).border = thin_border
-            ws4.cell(row=r, column=3, value=safe_val(epic, "total_points", 0)).border = thin_border
-            ws4.cell(row=r, column=4, value=safe_val(story, "summary")).border = thin_border
-            ws4.cell(row=r, column=5, value=str(safe_val(story, "description", "")).replace("\n", " | ")[:500]).border = thin_border
-            ws4.cell(row=r, column=6, value=safe_val(story, "story_points", 0)).border = thin_border
-            ws4.cell(row=r, column=7, value=safe_val(story, "priority", "Medium")).border = thin_border
+            # Sizing Legend
+            r = 4
+            ws1.cell(row=r, column=1, value="T-SHIRT SIZING LEGEND").font = Font(bold=True, size=12, color="2563EB")
             r += 1
-    auto_width(ws4)
+            write_header(ws1, r, ["Size", "Days", "Story Points", "Sprint Equivalent"])
+            r += 1
+            for s in sizing:
+                if not isinstance(s, dict): continue
+                sz = safe_str(s, "size")
+                ws1.cell(row=r, column=1, value=sz).border = thin_border
+                ws1.cell(row=r, column=1).fill = PatternFill("solid", fgColor=size_colors.get(sz, "FFFFFF"))
+                ws1.cell(row=r, column=2, value=safe_int(s, "days")).border = thin_border
+                ws1.cell(row=r, column=3, value=safe_int(s, "story_points")).border = thin_border
+                ws1.cell(row=r, column=4, value=safe_str(s, "sprints_equivalent")).border = thin_border
+                r += 1
 
-    # ═══════════ SHEET 5: Sprint Map ═══════════
-    ws5 = wb.create_sheet("Sprint Map")
-    ws5.sheet_properties.tabColor = "06B6D4"
-    write_header(ws5, 1, ["Sprint", "Start Day", "End Day", "Month", "Calendar Month", "Features", "Points"])
-    for i, sm in enumerate(sprint_map):
-        if not isinstance(sm, dict): continue
-        r = i + 2
-        ws5.cell(row=r, column=1, value=safe_val(sm, "sprint")).border = thin_border
-        ws5.cell(row=r, column=2, value=safe_val(sm, "start_day", 0)).border = thin_border
-        ws5.cell(row=r, column=3, value=safe_val(sm, "end_day", 0)).border = thin_border
-        ws5.cell(row=r, column=4, value=safe_val(sm, "month")).border = thin_border
-        ws5.cell(row=r, column=5, value=safe_val(sm, "calendar_month")).border = thin_border
-        features_list = sm.get("features_in_sprint", [])
-        features_str = ", ".join(features_list) if isinstance(features_list, list) else str(features_list)
-        ws5.cell(row=r, column=6, value=features_str).border = thin_border
-        ws5.cell(row=r, column=7, value=safe_val(sm, "points_in_sprint", 0)).border = thin_border
-    auto_width(ws5)
+            # Team Composition
+            r += 1
+            ws1.cell(row=r, column=1, value="TEAM COMPOSITION").font = Font(bold=True, size=12, color="2563EB")
+            r += 1
+            write_header(ws1, r, ["Role", "Headcount", "Billable", "Justification", "Ramp-Up Notes", "Stream Allocation"])
+            r += 1
+            for t in team:
+                if not isinstance(t, dict): continue
+                ws1.cell(row=r, column=1, value=safe_str(t, "role")).border = thin_border
+                ws1.cell(row=r, column=2, value=safe_int(t, "headcount", 1)).border = thin_border
+                ws1.cell(row=r, column=3, value="Yes" if safe_bool(t, "billable") else "No").border = thin_border
+                ws1.cell(row=r, column=4, value=safe_str(t, "justification")).border = thin_border
+                ws1.cell(row=r, column=5, value=safe_str(t, "ramp_up_notes")).border = thin_border
+                ws1.cell(row=r, column=6, value=safe_str(t, "stream_allocation")).border = thin_border
+                r += 1
+            total_hc = sum(safe_int(t, "headcount", 1) for t in team if isinstance(t, dict))
+            ws1.cell(row=r, column=1, value="TOTAL TEAM SIZE").font = Font(bold=True)
+            ws1.cell(row=r, column=2, value=safe_int(data, "total_team_size", total_hc)).font = Font(bold=True, color="2563EB", size=14)
 
-    # ── Save & return ──
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
+            # Parallel Stream Analysis
+            r += 2
+            ws1.cell(row=r, column=1, value="PARALLEL STREAM ANALYSIS").font = Font(bold=True, size=12, color="2563EB")
+            r += 1
+            for label, key in [
+                ("Sequential (1 Stream) Days", "single_stream_days"),
+                ("Sequential (1 Stream) Months", "single_stream_months"),
+                ("Recommended Parallel Streams", "recommended_streams"),
+                ("Actual Duration (Parallel) Days", "actual_parallel_days"),
+                ("Actual Duration (Parallel) Months", "actual_parallel_months"),
+                ("Client Target Days", "target_days"),
+                ("Client Target Months", "target_months"),
+                ("Fits Target?", "fits_target"),
+                ("Coordination Overhead", "coordination_overhead_pct"),
+            ]:
+                ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
+                ws1.cell(row=r, column=1).border = thin_border
+                val = psa.get(key, "")
+                if key == "fits_target":
+                    display_val = "YES" if val else "NO"
+                elif key == "coordination_overhead_pct":
+                    display_val = f"{val}%"
+                else:
+                    display_val = str(val) if val is not None else ""
+                ws1.cell(row=r, column=2, value=display_val).border = thin_border
+                r += 1
+            notes = safe_str(psa, "notes")
+            if notes:
+                ws1.cell(row=r, column=1, value="Notes:").font = Font(italic=True)
+                ws1.cell(row=r, column=2, value=notes)
+                ws1.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
 
-    tech_clean = str(safe_val(meta, 'tech_stack', 'Project')).replace(' ', '_')[:20]
-    filename = f"Feature_Roadmap_{tech_clean}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            # Timeline Summary
+            r += 2
+            ws1.cell(row=r, column=1, value="TIMELINE SUMMARY").font = Font(bold=True, size=12, color="2563EB")
+            r += 1
+            tl_items = [
+                ("Total Story Points", safe_str(tl, "total_story_points", str(data.get("total_story_points", 0)))),
+                ("Team Velocity/Sprint", safe_str(tl, "team_velocity_per_sprint")),
+                ("Sprint Duration", "2 weeks"),
+                ("Total Sprints", safe_str(tl, "total_sprints")),
+                ("Total Working Days", safe_str(tl, "total_working_days")),
+                ("Total Calendar Months", safe_str(tl, "total_months")),
+                ("Start Date", safe_str(tl, "start_date")),
+                ("End Date", safe_str(tl, "end_date")),
+                ("Assumptions", safe_str(tl, "assumptions")),
+            ]
+            for label, val in tl_items:
+                ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
+                ws1.cell(row=r, column=1).border = thin_border
+                ws1.cell(row=r, column=2, value=val).border = thin_border
+                r += 1
 
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
+            auto_width(ws1)
+            print("[XLSX] Sheet 1 done.", flush=True)
+        except Exception as e:
+            print(f"[XLSX] Sheet 1 ERROR: {e}", flush=True)
+            traceback.print_exc()
+
+        # ═══════════════════════════════════════════════
+        # SHEET 2: Feature Schedule (Gantt)
+        # ═══════════════════════════════════════════════
+        try:
+            print("[XLSX] Building Sheet 2: Feature Schedule...", flush=True)
+            ws2 = wb.create_sheet("Feature Schedule")
+            ws2.sheet_properties.tabColor = "10B981"
+
+            # Calculate total days safely
+            all_end_days = [safe_int(f, "end_day", 0) for f in fa if isinstance(f, dict)]
+            hc_end = safe_int(hypercare, "end_day", 0)
+            all_end_days.append(hc_end)
+            total_days = max(all_end_days) if all_end_days else 10
+            total_days = max(total_days, 10)
+            print(f"[XLSX] Total days for Gantt: {total_days}", flush=True)
+
+            static_cols = ["ID", "Feature Name", "Type", "Days", "Sizing", "Est. TEAM", "Est. Conservative", "Roles", "Dependencies"]
+            num_static = len(static_cols)
+            write_header(ws2, 1, static_cols)
+
+            # Sprint headers
+            for d in range(1, total_days + 1):
+                col = num_static + d
+                sprint_num = math.ceil(d / 10)
+                if (d - 1) % 10 == 0:
+                    cell = ws2.cell(row=1, column=col, value=f"SP{sprint_num}")
+                    cell.font = Font(bold=True, size=8, color="2563EB")
+                    cell.alignment = Alignment(horizontal='center')
+
+            # Day number row
+            for d in range(1, total_days + 1):
+                cell = ws2.cell(row=2, column=num_static + d, value=d)
+                cell.font = Font(size=7, color="999999")
+                cell.alignment = Alignment(horizontal='center')
+
+            # Feature rows
+            gantt_colors = ['4FC3F7', '81C784', 'FFB74D', 'E57373', 'BA68C8', '4DD0E1', 'F06292', 'AED581']
+            for idx, f in enumerate(fa):
+                if not isinstance(f, dict): continue
+                r = 3 + idx
+                ws2.cell(row=r, column=1, value=safe_int(f, "id", idx + 1)).border = thin_border
+                ws2.cell(row=r, column=2, value=safe_str(f, "feature")).border = thin_border
+                ws2.cell(row=r, column=3, value=safe_str(f, "feature_type")).border = thin_border
+                ws2.cell(row=r, column=4, value=safe_int(f, "days")).border = thin_border
+
+                sz = safe_str(f, "size")
+                sc = ws2.cell(row=r, column=5, value=sz)
+                sc.border = thin_border
+                sc.fill = PatternFill("solid", fgColor=size_colors.get(sz, "FFFFFF"))
+
+                ws2.cell(row=r, column=6, value=safe_str(f, "est_team")).border = thin_border
+                ws2.cell(row=r, column=7, value=safe_str(f, "est_conservative")).border = thin_border
+                ws2.cell(row=r, column=8, value=safe_str(f, "roles_needed")).border = thin_border
+                ws2.cell(row=r, column=9, value=safe_str(f, "dependencies", "None")).border = thin_border
+
+                # Gantt bars
+                start_d = safe_int(f, "start_day", 1)
+                end_d = safe_int(f, "end_day", start_d)
+                if start_d < 1: start_d = 1
+                if end_d < start_d: end_d = start_d
+                color = gantt_colors[idx % len(gantt_colors)]
+                for d in range(start_d, min(end_d + 1, total_days + 1)):
+                    cell = ws2.cell(row=r, column=num_static + d, value=1)
+                    cell.fill = PatternFill("solid", fgColor=color)
+                    cell.font = Font(size=7, color=color)
+                    cell.alignment = Alignment(horizontal='center')
+
+            # Resource loading row
+            r_load_row = 3 + len(fa) + 1
+            ws2.cell(row=r_load_row, column=1, value="RESOURCE").font = Font(bold=True, color="FFFFFF")
+            ws2.cell(row=r_load_row, column=1).fill = PatternFill("solid", fgColor="EF4444")
+            ws2.cell(row=r_load_row, column=2, value="Daily Team Count").font = Font(bold=True)
+            for rl in resource_load:
+                if not isinstance(rl, dict): continue
+                d = safe_int(rl, "day")
+                if 1 <= d <= total_days:
+                    cell = ws2.cell(row=r_load_row, column=num_static + d, value=safe_int(rl, "team_members_needed"))
+                    cell.font = Font(bold=True, size=8)
+                    cell.alignment = Alignment(horizontal='center')
+
+            # UAT row
+            uat_row = r_load_row + 1
+            ws2.cell(row=uat_row, column=1, value="UAT").font = Font(bold=True, color="FFFFFF")
+            ws2.cell(row=uat_row, column=1).fill = PatternFill("solid", fgColor="8B5CF6")
+            for u in uat:
+                if not isinstance(u, dict): continue
+                d = safe_int(u, "day")
+                if 1 <= d <= total_days:
+                    cell = ws2.cell(row=uat_row, column=num_static + d, value=safe_str(u, "name", "UAT"))
+                    cell.fill = PatternFill("solid", fgColor="DDD6FE")
+                    cell.font = Font(bold=True, size=8, color="6D28D9")
+
+            # Pilot row
+            pilot_row = uat_row + 1
+            ws2.cell(row=pilot_row, column=1, value="PILOT").font = Font(bold=True, color="FFFFFF")
+            ws2.cell(row=pilot_row, column=1).fill = PatternFill("solid", fgColor="F59E0B")
+            p_start = safe_int(pilot, "start_day")
+            p_end = safe_int(pilot, "end_day")
+            for d in range(max(1, p_start), min(p_end + 1, total_days + 1)):
+                cell = ws2.cell(row=pilot_row, column=num_static + d, value=1)
+                cell.fill = PatternFill("solid", fgColor="FEF3C7")
+                cell.font = Font(size=7, color="FEF3C7")
+
+            # Hypercare row
+            hc_row = pilot_row + 1
+            ws2.cell(row=hc_row, column=1, value="HYPERCARE").font = Font(bold=True, color="FFFFFF")
+            ws2.cell(row=hc_row, column=1).fill = PatternFill("solid", fgColor="06B6D4")
+            h_start = safe_int(hypercare, "start_day")
+            h_end = safe_int(hypercare, "end_day")
+            for d in range(max(1, h_start), min(h_end + 1, total_days + 1)):
+                cell = ws2.cell(row=hc_row, column=num_static + d, value=1)
+                cell.fill = PatternFill("solid", fgColor="CFFAFE")
+                cell.font = Font(size=7, color="CFFAFE")
+
+            # Column widths
+            ws2.column_dimensions['A'].width = 5
+            ws2.column_dimensions['B'].width = 45
+            ws2.column_dimensions['C'].width = 18
+            ws2.column_dimensions['D'].width = 6
+            ws2.column_dimensions['E'].width = 14
+            ws2.column_dimensions['F'].width = 22
+            ws2.column_dimensions['G'].width = 22
+            ws2.column_dimensions['H'].width = 16
+            ws2.column_dimensions['I'].width = 18
+            for d in range(1, total_days + 1):
+                ws2.column_dimensions[get_column_letter(num_static + d)].width = 3.5
+            ws2.freeze_panes = ws2.cell(row=3, column=num_static + 1)
+
+            print("[XLSX] Sheet 2 done.", flush=True)
+        except Exception as e:
+            print(f"[XLSX] Sheet 2 ERROR: {e}", flush=True)
+            traceback.print_exc()
+
+        # ═══════════════════════════════════════════════
+        # SHEET 3: Gantt Phases
+        # ═══════════════════════════════════════════════
+        try:
+            print("[XLSX] Building Sheet 3: Gantt Phases...", flush=True)
+            ws3 = wb.create_sheet("Gantt Phases")
+            ws3.sheet_properties.tabColor = "F59E0B"
+            write_header(ws3, 1, ["Phase", "Assigned Roles", "Dependencies", "Start Day", "End Day", "Start Week", "End Week", "Duration (days)", "Phase Type"])
+            for i, g in enumerate(gantt):
+                if not isinstance(g, dict): continue
+                r = i + 2
+                ws3.cell(row=r, column=1, value=safe_str(g, "phase")).border = thin_border
+                ws3.cell(row=r, column=2, value=safe_str(g, "assigned_roles")).border = thin_border
+                ws3.cell(row=r, column=3, value=safe_str(g, "dependencies")).border = thin_border
+                ws3.cell(row=r, column=4, value=safe_int(g, "start_day")).border = thin_border
+                ws3.cell(row=r, column=5, value=safe_int(g, "end_day")).border = thin_border
+                ws3.cell(row=r, column=6, value=safe_int(g, "start_week")).border = thin_border
+                ws3.cell(row=r, column=7, value=safe_int(g, "end_week")).border = thin_border
+                ws3.cell(row=r, column=8, value=safe_int(g, "duration_days")).border = thin_border
+                ws3.cell(row=r, column=9, value=safe_str(g, "phase_type")).border = thin_border
+            auto_width(ws3)
+            print("[XLSX] Sheet 3 done.", flush=True)
+        except Exception as e:
+            print(f"[XLSX] Sheet 3 ERROR: {e}", flush=True)
+            traceback.print_exc()
+
+        # ═══════════════════════════════════════════════
+        # SHEET 4: Jira Breakdown
+        # ═══════════════════════════════════════════════
+        try:
+            print("[XLSX] Building Sheet 4: Jira Breakdown...", flush=True)
+            ws4 = wb.create_sheet("Jira Breakdown")
+            ws4.sheet_properties.tabColor = "8B5CF6"
+            write_header(ws4, 1, ["Epic Name", "Feature Type", "Epic Points", "Story Summary", "Description", "Story Points", "Priority"])
+            r = 2
+            for epic in epics:
+                if not isinstance(epic, dict): continue
+                stories = safe_list(epic, "stories")
+                for story in stories:
+                    if not isinstance(story, dict): continue
+                    ws4.cell(row=r, column=1, value=safe_str(epic, "epic_name")).border = thin_border
+                    ws4.cell(row=r, column=2, value=safe_str(epic, "feature_type")).border = thin_border
+                    ws4.cell(row=r, column=3, value=safe_int(epic, "total_points")).border = thin_border
+                    ws4.cell(row=r, column=4, value=safe_str(story, "summary")).border = thin_border
+                    desc = safe_str(story, "description")
+                    ws4.cell(row=r, column=5, value=desc.replace("\n", " | ")[:500]).border = thin_border
+                    ws4.cell(row=r, column=6, value=safe_int(story, "story_points")).border = thin_border
+                    ws4.cell(row=r, column=7, value=safe_str(story, "priority", "Medium")).border = thin_border
+                    r += 1
+            auto_width(ws4)
+            print("[XLSX] Sheet 4 done.", flush=True)
+        except Exception as e:
+            print(f"[XLSX] Sheet 4 ERROR: {e}", flush=True)
+            traceback.print_exc()
+
+        # ═══════════════════════════════════════════════
+        # SHEET 5: Sprint Map
+        # ═══════════════════════════════════════════════
+        try:
+            print("[XLSX] Building Sheet 5: Sprint Map...", flush=True)
+            ws5 = wb.create_sheet("Sprint Map")
+            ws5.sheet_properties.tabColor = "06B6D4"
+            write_header(ws5, 1, ["Sprint", "Start Day", "End Day", "Month", "Calendar Month", "Features", "Points"])
+            for i, sm in enumerate(sprint_map):
+                if not isinstance(sm, dict): continue
+                r = i + 2
+                ws5.cell(row=r, column=1, value=safe_str(sm, "sprint")).border = thin_border
+                ws5.cell(row=r, column=2, value=safe_int(sm, "start_day")).border = thin_border
+                ws5.cell(row=r, column=3, value=safe_int(sm, "end_day")).border = thin_border
+                ws5.cell(row=r, column=4, value=safe_str(sm, "month")).border = thin_border
+                ws5.cell(row=r, column=5, value=safe_str(sm, "calendar_month")).border = thin_border
+                fis = sm.get("features_in_sprint")
+                if isinstance(fis, list):
+                    features_str = ", ".join(str(x) for x in fis)
+                else:
+                    features_str = str(fis) if fis else ""
+                ws5.cell(row=r, column=6, value=features_str).border = thin_border
+                ws5.cell(row=r, column=7, value=safe_int(sm, "points_in_sprint")).border = thin_border
+            auto_width(ws5)
+            print("[XLSX] Sheet 5 done.", flush=True)
+        except Exception as e:
+            print(f"[XLSX] Sheet 5 ERROR: {e}", flush=True)
+            traceback.print_exc()
+
+        # ═══════════════════════════════════════════════
+        # SAVE & RETURN
+        # ═══════════════════════════════════════════════
+        print("[XLSX] Saving workbook...", flush=True)
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        tech_clean = safe_str(meta, 'tech_stack', 'Project').replace(' ', '_').replace('/', '_')[:20]
+        filename = f"Feature_Roadmap_{tech_clean}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+        print(f"[XLSX] SUCCESS: {filename} ({output.getbuffer().nbytes} bytes)", flush=True)
+
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[XLSX] FATAL ERROR: {e}", flush=True)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"XLSX generation failed: {str(e)}")
 
 @app.post("/team/generate_email")
 def generate_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):
