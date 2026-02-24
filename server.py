@@ -266,7 +266,7 @@ def create_adf_doc(text_content, ac_list=None):
     if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True):
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -280,29 +280,29 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True):
             gen_config = {"temperature": temperature}
             if json_mode: gen_config["responseMimeType"] = "application/json"
             payload = {"contents": contents, "generationConfig": gen_config}
-            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json=payload, timeout=20)
+            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json=payload, timeout=timeout)
             if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
         except Exception: continue
     return None
 
-def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True):
+def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20):
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: return call_gemini(prompt, temperature, image_data, json_mode)
+    if not api_key: return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
     sys_msg = "You are an elite Enterprise Strategy Consultant. Return strictly valid JSON." if json_mode else "You are an Expert Agile Coach assisting a Scrum Master."
     messages = [{"role": "system", "content": sys_msg}, {"role": "user", "content": [{"type": "text", "text": prompt}]}]
     if image_data: messages[1]["content"].append({"type": "image_url", "image_url": {"url": image_data}})
     try:
         kwargs = {"model": "gpt-4o", "messages": messages, "temperature": temperature}
         if json_mode: kwargs["response_format"] = {"type": "json_object"}
-        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=kwargs, timeout=20)
+        r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=kwargs, timeout=timeout)
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
     except Exception: pass
     print("Seamless Fallback to Google Gemini...", flush=True)
-    return call_gemini(prompt, temperature, image_data, json_mode)
+    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True):
-    if force_openai or image_data: return call_openai(prompt, temperature, image_data, json_mode)
-    return call_gemini(prompt, temperature, image_data, json_mode)
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20):
+    if force_openai or image_data: return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout)
+    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
 
 # ================= APP ENDPOINTS =================
@@ -1472,7 +1472,7 @@ ESTIMATION RULES:
 18. Parallel stream analysis must show: what if 1 stream vs recommended streams"""
 
     try:
-        ai_result = generate_ai_response(prompt, temperature=0.2)
+        ai_result = generate_ai_response(prompt, temperature=0.2, force_openai=True, timeout=90)
         if not ai_result:
             raise ValueError("AI returned empty response")
 
