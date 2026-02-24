@@ -266,7 +266,7 @@ def create_adf_doc(text_content, ac_list=None):
     if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20):
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20, model=None):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -275,24 +275,48 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
             mime_type = header.split(":")[1].split(";")[0]
             contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
         except Exception as e: print(f"Image Parse Error: {e}", flush=True)
-    for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
+
+    if model:
+        models_to_try = [model, "gemini-2.5-flash"]
+    else:
+        models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash"]
+
+    for m in models_to_try:
         try:
             gen_config = {"temperature": temperature}
             if json_mode: gen_config["responseMimeType"] = "application/json"
             payload = {"contents": contents, "generationConfig": gen_config}
-            r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}", headers={"Content-Type": "application/json"}, json=payload, timeout=timeout)
-            if r.status_code == 200: return r.json()['candidates'][0]['content']['parts'][0]['text']
-        except Exception: continue
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}",
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=timeout
+            )
+            if r.status_code == 200:
+                return r.json()['candidates'][0]['content']['parts'][0]['text']
+            elif r.status_code == 429:
+                print(f"Gemini rate limit on {m}, trying next model...", flush=True)
+                import time as _t; _t.sleep(2)
+                continue
+            else:
+                print(f"Gemini {m} returned {r.status_code}: {r.text[:200]}", flush=True)
+                continue
+        except requests.exceptions.Timeout:
+            print(f"Gemini {m} timeout ({timeout}s), trying next...", flush=True)
+            continue
+        except Exception as e:
+            print(f"Gemini {m} error: {e}", flush=True)
+            continue
     return None
 
-def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20):
+def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20, model="gpt-4o"):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
     sys_msg = "You are an elite Enterprise Strategy Consultant. Return strictly valid JSON." if json_mode else "You are an Expert Agile Coach assisting a Scrum Master."
     messages = [{"role": "system", "content": sys_msg}, {"role": "user", "content": [{"type": "text", "text": prompt}]}]
     if image_data: messages[1]["content"].append({"type": "image_url", "image_url": {"url": image_data}})
     try:
-        kwargs = {"model": "gpt-4o", "messages": messages, "temperature": temperature}
+        kwargs = {"model": model, "messages": messages, "temperature": temperature}
         if json_mode: kwargs["response_format"] = {"type": "json_object"}
         r = requests.post("https://api.openai.com/v1/chat/completions", headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, json=kwargs, timeout=timeout)
         if r.status_code == 200: return r.json()['choices'][0]['message']['content']
@@ -300,10 +324,16 @@ def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     print("Seamless Fallback to Google Gemini...", flush=True)
     return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20):
-    if force_openai or image_data: return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout)
-    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None):
+    """
+    Routes AI calls. Default: Gemini. 
+    force_openai=True only for endpoints that specifically need OpenAI (e.g. image analysis).
+    model param: pass specific Gemini model like "gemini-2.5-pro" for premium tasks.
+    """
+    if force_openai:
+        return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout, model=model or "gpt-4o")
+    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout, model=model)
 
 # ================= APP ENDPOINTS =================
 @app.get("/")
@@ -1255,23 +1285,409 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
     if unit == "days":
         target_working_days = val
     elif unit == "months":
-        target_working_days = int(val * 22)  # ~22 working days/month
+        target_working_days = int(val * 22)
     elif unit == "years":
-        target_working_days = int(val * 260)  # ~260 working days/year
+        target_working_days = int(val * 260)
     else:
         target_working_days = int(val * 22)
 
     target_months = round(target_working_days / 22, 1)
-    target_sprints = math.ceil(target_working_days / 10)  # 10 working days per 2-week sprint
+    target_sprints = math.ceil(target_working_days / 10)
 
-    features_text = "\n".join([f"{i+1}. {f}" for i, f in enumerate(req.features)])
     num_features = len(req.features)
     start_date = req.start_date or datetime.now().strftime('%Y-%m-%d')
 
-    prompt = f"""You are a world-class Technical Project Manager, Solutions Architect, and Agile Delivery Lead with 20+ years of experience estimating enterprise software projects.
+    print(f"\n{'='*60}", flush=True)
+    print(f"🗺️  Feature Roadmap: {num_features} features | Target: {target_months}m", flush=True)
+    print(f"   Tech: {req.tech_stack} | Start: {start_date}", flush=True)
+    print(f"{'='*60}\n", flush=True)
+
+    # ── CHOOSE MODEL: Premium for roadmap accuracy ──
+    # o3-mini for deep reasoning, gpt-4o as fallback
+    ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-2.5-pro")
+    ROADMAP_TIMEOUT = 120  # seconds per AI call
+
+    # ── CHUNKING STRATEGY ──
+    # Small (≤20): single call — everything in one shot
+    # Medium (21-40): 2-phase — structure first, then epics
+    # Large (41+): 3-phase — structure, epics batch 1, epics batch 2+
+    SINGLE_CALL_LIMIT = 20
+    EPIC_BATCH_SIZE = 15
+
+    features_text = "\n".join([f"{i+1}. {f}" for i, f in enumerate(req.features)])
+
+    if num_features <= SINGLE_CALL_LIMIT:
+        # ═══ SINGLE CALL MODE (≤20 features) ═══
+        print(f"📦 Single-call mode ({num_features} features)", flush=True)
+        return _roadmap_single_call(
+            req, features_text, num_features, start_date,
+            target_working_days, target_months, target_sprints,
+            ROADMAP_MODEL, ROADMAP_TIMEOUT
+        )
+    else:
+        # ═══ CHUNKED MODE (>20 features) ═══
+        print(f"🔀 Chunked mode ({num_features} features → Phase 1 + {math.ceil(num_features/EPIC_BATCH_SIZE)} epic batches)", flush=True)
+        return _roadmap_chunked(
+            req, features_text, num_features, start_date,
+            target_working_days, target_months, target_sprints,
+            ROADMAP_MODEL, ROADMAP_TIMEOUT, EPIC_BATCH_SIZE
+        )
+
+
+def _roadmap_single_call(req, features_text, num_features, start_date,
+                          target_working_days, target_months, target_sprints,
+                          model, timeout):
+    """Original single-call approach for ≤20 features."""
+    prompt = _build_full_roadmap_prompt(
+        req.tech_stack, features_text, num_features, start_date,
+        target_working_days, target_months, target_sprints
+    )
+
+    try:
+        ai_result = generate_ai_response(prompt, temperature=0.2, timeout=timeout, model=model)
+        if not ai_result:
+            raise ValueError("AI returned empty response")
+
+        raw = ai_result.replace('```json', '').replace('```', '').strip()
+        parsed = json.loads(raw)
+        return _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features)
+
+    except json.JSONDecodeError as e:
+        print(f"Feature Roadmap JSON Error: {e}", flush=True)
+        return {"error": f"AI response was not valid JSON. Please try again.", "raw_snippet": str(e)}
+    except Exception as e:
+        print(f"Feature Roadmap Error: {e}", flush=True)
+        return {"error": str(e)}
+
+
+def _roadmap_chunked(req, features_text, num_features, start_date,
+                      target_working_days, target_months, target_sprints,
+                      model, timeout, epic_batch_size):
+    """Chunked approach for >20 features — splits into Phase 1 (structure) + Phase 2 (epics)."""
+
+    # ═══ PHASE 1: Core Structure (feature_analysis, team, timeline, gantt, sprint_map) ═══
+    print(f"  ⚡ Phase 1: Core structure for all {num_features} features...", flush=True)
+
+    phase1_prompt = f"""You are a world-class Technical Project Manager with 20+ years of experience.
 
 CONTEXT:
 - Tech Stack: {req.tech_stack}
+- Number of Features: {num_features}
+- Client Target Deadline: {target_working_days} working days ({target_months} months, ~{target_sprints} sprints)
+- Project Start Date: {start_date}
+
+FEATURES TO BUILD:
+{features_text}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK: Analyze ALL {num_features} features and produce the project structure.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TARGET DURATION RESOURCE SCALING LOGIC:
+The client wants this done in {target_months} months.
+- First estimate total story points WITHOUT time constraint
+- Then calculate parallel streams needed to fit within {target_working_days} working days
+- Each stream needs its own roles (dev, QA, BA minimum)
+- Maximum practical parallel streams: 4
+
+SIZING: T-Shirt → Fibonacci: XXS=1, SMALL=2, MEDIUM=3, LARGE=5, XL=8, XXL=13, XXXL=21
+Feature types: "Application (UI)", "Systems Integration", "Reporting", "Process Automation", "Data & Backend"
+
+Return ONLY valid JSON (no markdown) with this structure:
+{{
+    "sizing_legend": [
+        {{"size": "XXS", "days": 1, "story_points": 1, "sprints_equivalent": "0.1 sprint"}},
+        {{"size": "SMALL", "days": 2, "story_points": 2, "sprints_equivalent": "0.2 sprint"}},
+        {{"size": "MEDIUM", "days": 3, "story_points": 3, "sprints_equivalent": "0.3 sprint"}},
+        {{"size": "LARGE", "days": 5, "story_points": 5, "sprints_equivalent": "0.5 sprint"}},
+        {{"size": "XL", "days": 8, "story_points": 8, "sprints_equivalent": "0.8 sprint"}},
+        {{"size": "XXL", "days": 13, "story_points": 13, "sprints_equivalent": "1.3 sprints"}},
+        {{"size": "XXXL", "days": 21, "story_points": 21, "sprints_equivalent": "2.1 sprints"}}
+    ],
+    "feature_analysis": [
+        {{
+            "id": 1,
+            "feature": "Exact feature name from input",
+            "feature_type": "Application (UI)",
+            "technical_scope": "Detailed technical scope (2-3 sentences)",
+            "size": "XL",
+            "story_points": 8,
+            "days": 8,
+            "roles_needed": "PP, QA, BA",
+            "est_team": "XL – PP, QA, BA",
+            "est_conservative": "L – PP, QA",
+            "dependencies": "Feature #3",
+            "start_day": 1,
+            "end_day": 8,
+            "sprint_allocation": "SP1"
+        }}
+    ],
+    "total_story_points": 0,
+    "total_working_days_sequential": 0,
+    "team_composition": [
+        {{
+            "role": "Program Manager (PgM)",
+            "headcount": 1,
+            "billable": true,
+            "justification": "Overall delivery coordination",
+            "ramp_up_notes": "From Day 1",
+            "stream_allocation": "All streams"
+        }}
+    ],
+    "total_team_size": 0,
+    "parallel_stream_analysis": {{
+        "single_stream_days": 0,
+        "single_stream_months": 0,
+        "recommended_streams": 0,
+        "actual_parallel_days": 0,
+        "actual_parallel_months": 0,
+        "target_days": {target_working_days},
+        "target_months": {target_months},
+        "fits_target": true,
+        "coordination_overhead_pct": 10,
+        "notes": "Analysis notes"
+    }},
+    "timeline": {{
+        "total_story_points": 0,
+        "team_velocity_per_sprint": 0,
+        "sprint_duration_weeks": 2,
+        "total_sprints": 0,
+        "total_working_days": 0,
+        "total_months": 0,
+        "start_date": "{start_date}",
+        "end_date": "YYYY-MM-DD",
+        "assumptions": "Based on N parallel streams with team of X"
+    }},
+    "sprint_mapping": [
+        {{
+            "sprint": "SP1",
+            "start_day": 1,
+            "end_day": 10,
+            "month": "M1",
+            "calendar_month": "Mar 2026",
+            "features_in_sprint": ["Feature #1", "Feature #2"],
+            "points_in_sprint": 25
+        }}
+    ],
+    "gantt_phases": [
+        {{
+            "phase": "Planning & Discovery",
+            "assigned_roles": "PgM, Architect",
+            "dependencies": "None",
+            "start_day": 1,
+            "end_day": 5,
+            "start_week": 1,
+            "end_week": 1,
+            "duration_days": 5,
+            "phase_type": "planning"
+        }}
+    ],
+    "resource_loading": [
+        {{"day": 1, "sprint": "SP1", "month": "M1", "active_features": 2, "team_members_needed": 4, "roles_active": "PP, QA, BA, PM"}}
+    ],
+    "uat_milestones": [
+        {{
+            "name": "UAT 1",
+            "sprint": "SP4",
+            "day": 40,
+            "scope": "Core modules",
+            "duration_days": 5,
+            "exit_criteria": "All P1 defects resolved, 85% test pass rate"
+        }}
+    ],
+    "pilot_hypercare": {{
+        "pilot": {{
+            "start_day": 0, "end_day": 0, "duration_days": 15,
+            "description": "Limited production deployment",
+            "team_needed": "PM, 1 Dev, 1 QA, 1 BA"
+        }},
+        "hypercare": {{
+            "start_day": 0, "end_day": 0, "duration_days": 15,
+            "description": "Full production support",
+            "team_needed": "PM, 2 Dev, 1 QA"
+        }}
+    }},
+    "feature_type_summary": {{
+        "Application (UI)": {{"count": 0, "total_points": 0}}
+    }}
+}}
+
+RULES:
+1. ALL {num_features} features MUST appear in feature_analysis
+2. Features with dependencies start AFTER dependency ends
+3. Per feature: start_day and end_day for day-level Gantt
+4. resource_loading entries for every 10th day up to total_working_days
+5. UAT gates every 4-6 sprints + final UAT before pilot
+6. Pilot 15 days after final UAT, Hypercare 15 days after pilot
+7. Sprint mapping: SP1=Day 1-10, SP2=Day 11-20, etc.
+8. Calendar months start from {start_date}"""
+
+    try:
+        phase1_result = generate_ai_response(phase1_prompt, temperature=0.2, timeout=timeout, model=model)
+        if not phase1_result:
+            raise ValueError("Phase 1 AI returned empty response")
+        
+        phase1_raw = phase1_result.replace('```json', '').replace('```', '').strip()
+        parsed = json.loads(phase1_raw)
+        print(f"  ✅ Phase 1 complete: {len(parsed.get('feature_analysis', []))} features analyzed", flush=True)
+
+    except Exception as e:
+        print(f"Phase 1 Error: {e}", flush=True)
+        return {"error": f"Phase 1 (structure analysis) failed: {str(e)}. Try reducing features or retrying."}
+
+    # ═══ PHASE 2: Epics & Stories (in batches) ═══
+    all_epics = []
+    feature_list = parsed.get("feature_analysis", [])
+    total_batches = math.ceil(len(feature_list) / epic_batch_size)
+
+    for batch_idx in range(total_batches):
+        batch_start = batch_idx * epic_batch_size
+        batch_end = min(batch_start + epic_batch_size, len(feature_list))
+        batch_features = feature_list[batch_start:batch_end]
+
+        print(f"  ⚡ Phase 2 Batch {batch_idx+1}/{total_batches}: Epics for features {batch_start+1}-{batch_end}...", flush=True)
+
+        batch_features_text = "\n".join([
+            f"- {f.get('feature', '')} (ID:{f.get('id','')}, {f.get('story_points',3)} pts, {f.get('feature_type','Application (UI)')})"
+            for f in batch_features
+        ])
+
+        epic_prompt = f"""You are an expert Agile Product Owner. Generate Jira-ready Epics with User Stories.
+
+Tech Stack: {req.tech_stack}
+
+FEATURES TO BREAK DOWN INTO EPICS:
+{batch_features_text}
+
+For EACH feature above, create ONE epic with 1-4 user stories.
+
+Return ONLY valid JSON (no markdown):
+{{
+    "epics": [
+        {{
+            "epic_name": "Feature Name as Epic",
+            "epic_description": "What this epic covers",
+            "feature_type": "Application (UI)",
+            "total_points": 8,
+            "stories": [
+                {{
+                    "summary": "Implement [specific functionality]",
+                    "description": "As a [user], I want [feature] so that [benefit].\\n\\nAcceptance Criteria:\\n- Criterion 1\\n- Criterion 2",
+                    "story_points": 3,
+                    "priority": "High"
+                }}
+            ]
+        }}
+    ]
+}}
+
+RULES:
+1. One epic per feature — {len(batch_features)} epics total
+2. Story points within an epic must sum to the feature's total points
+3. Each story needs clear acceptance criteria
+4. Priorities: High for core features, Medium for enhancements"""
+
+        try:
+            epic_result = generate_ai_response(epic_prompt, temperature=0.3, timeout=timeout, model=model)
+            if epic_result:
+                epic_raw = epic_result.replace('```json', '').replace('```', '').strip()
+                epic_parsed = json.loads(epic_raw)
+                batch_epics = epic_parsed.get("epics", [])
+                all_epics.extend(batch_epics)
+                print(f"  ✅ Batch {batch_idx+1}: {len(batch_epics)} epics generated", flush=True)
+            else:
+                print(f"  ⚠️ Batch {batch_idx+1}: Empty response, creating placeholder epics", flush=True)
+                for f in batch_features:
+                    all_epics.append({
+                        "epic_name": f.get("feature", "Unnamed"),
+                        "epic_description": f.get("technical_scope", ""),
+                        "feature_type": f.get("feature_type", "Application (UI)"),
+                        "total_points": f.get("story_points", 3),
+                        "stories": [{
+                            "summary": f"Implement {f.get('feature', 'feature')}",
+                            "description": f"As a user, I want {f.get('feature', '')} functionality.\n\nAcceptance Criteria:\n- Feature works as specified\n- All edge cases handled",
+                            "story_points": f.get("story_points", 3),
+                            "priority": "High"
+                        }]
+                    })
+        except Exception as e:
+            print(f"  ⚠️ Batch {batch_idx+1} Error: {e}. Creating placeholders.", flush=True)
+            for f in batch_features:
+                all_epics.append({
+                    "epic_name": f.get("feature", "Unnamed"),
+                    "epic_description": f.get("technical_scope", ""),
+                    "feature_type": f.get("feature_type", "Application (UI)"),
+                    "total_points": f.get("story_points", 3),
+                    "stories": [{
+                        "summary": f"Implement {f.get('feature', 'feature')}",
+                        "description": f"As a user, I want {f.get('feature', '')}.",
+                        "story_points": f.get("story_points", 3),
+                        "priority": "High"
+                    }]
+                })
+
+    # ═══ MERGE: Combine Phase 1 + Phase 2 ═══
+    parsed["epics"] = all_epics
+    print(f"\n✅ Roadmap complete: {len(feature_list)} features, {len(all_epics)} epics, {sum(len(e.get('stories',[])) for e in all_epics)} stories\n", flush=True)
+
+    return _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features)
+
+
+def _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features):
+    """Validate, fix totals, and add metadata to roadmap result."""
+    fa = parsed.get("feature_analysis", [])
+    total_pts = sum(f.get("story_points", 0) for f in fa)
+    parsed["total_story_points"] = total_pts
+    parsed["total_working_days_sequential"] = sum(f.get("days", 0) for f in fa)
+
+    # Fix timeline math
+    tl = parsed.get("timeline", {})
+    tl["total_story_points"] = total_pts
+    tl["start_date"] = start_date
+
+    # Ensure parallel stream analysis has target
+    psa = parsed.get("parallel_stream_analysis", {})
+    psa["target_days"] = target_working_days
+    psa["target_months"] = target_months
+
+    # Ensure epics exist (even if empty)
+    if "epics" not in parsed:
+        parsed["epics"] = []
+
+    # Ensure feature_type_summary exists
+    if "feature_type_summary" not in parsed:
+        ft_summary = {}
+        for f in fa:
+            ft = f.get("feature_type", "Application (UI)")
+            if ft not in ft_summary:
+                ft_summary[ft] = {"count": 0, "total_points": 0}
+            ft_summary[ft]["count"] += 1
+            ft_summary[ft]["total_points"] += f.get("story_points", 0)
+        parsed["feature_type_summary"] = ft_summary
+
+    # Add metadata
+    parsed["_meta"] = {
+        "tech_stack": req.tech_stack,
+        "target_duration_value": req.target_duration_value,
+        "target_duration_unit": req.target_duration_unit,
+        "target_working_days": target_working_days,
+        "target_months": target_months,
+        "target_sprints": target_sprints,
+        "num_features": num_features,
+        "start_date": start_date,
+        "generated_at": datetime.now().isoformat()
+    }
+
+    return parsed
+
+
+def _build_full_roadmap_prompt(tech_stack, features_text, num_features, start_date,
+                                target_working_days, target_months, target_sprints):
+    """Build the full single-call prompt (for ≤20 features)."""
+    return f"""You are a world-class Technical Project Manager, Solutions Architect, and Agile Delivery Lead with 20+ years of experience estimating enterprise software projects.
+
+CONTEXT:
+- Tech Stack: {tech_stack}
 - Number of Features: {num_features}
 - Client Target Deadline: {target_working_days} working days ({target_months} months, ~{target_sprints} sprints)
 - Project Start Date: {start_date}
@@ -1315,7 +1731,7 @@ Analyze ALL features and return ONLY valid JSON (no markdown, no backticks) with
             "id": 1,
             "feature": "Exact feature name from input",
             "feature_type": "Application (UI)",
-            "technical_scope": "Detailed technical scope based on {req.tech_stack} (2-3 sentences)",
+            "technical_scope": "Detailed technical scope based on {tech_stack} (2-3 sentences)",
             "size": "XXL",
             "story_points": 13,
             "days": 13,
@@ -1470,52 +1886,6 @@ ESTIMATION RULES:
 16. Ensure resource_loading has entries for day 1, 10, 20, 30... up to total_working_days
 17. gantt_phases must include: Planning, Setup/CI-CD, Development (grouped by sprint), Testing/QA, each UAT, Pilot, Hypercare
 18. Parallel stream analysis must show: what if 1 stream vs recommended streams"""
-
-    try:
-        ai_result = generate_ai_response(prompt, temperature=0.2, force_openai=True, timeout=90)
-        if not ai_result:
-            raise ValueError("AI returned empty response")
-
-        raw = ai_result.replace('```json', '').replace('```', '').strip()
-        parsed = json.loads(raw)
-
-        # ── Post-process: validate & fix totals ──
-        fa = parsed.get("feature_analysis", [])
-        total_pts = sum(f.get("story_points", 0) for f in fa)
-        parsed["total_story_points"] = total_pts
-        parsed["total_working_days_sequential"] = sum(f.get("days", 0) for f in fa)
-
-        # Fix timeline math
-        tl = parsed.get("timeline", {})
-        tl["total_story_points"] = total_pts
-        tl["start_date"] = start_date
-
-        # Ensure parallel stream analysis has target
-        psa = parsed.get("parallel_stream_analysis", {})
-        psa["target_days"] = target_working_days
-        psa["target_months"] = target_months
-
-        # Add metadata
-        parsed["_meta"] = {
-            "tech_stack": req.tech_stack,
-            "target_duration_value": req.target_duration_value,
-            "target_duration_unit": req.target_duration_unit,
-            "target_working_days": target_working_days,
-            "target_months": target_months,
-            "target_sprints": target_sprints,
-            "num_features": num_features,
-            "start_date": start_date,
-            "generated_at": datetime.now().isoformat()
-        }
-
-        return parsed
-
-    except json.JSONDecodeError as e:
-        print(f"Feature Roadmap V2 JSON Error: {e}", flush=True)
-        return {"error": f"AI response was not valid JSON. Please try again.", "raw_snippet": str(e)}
-    except Exception as e:
-        print(f"Feature Roadmap V2 Error: {e}", flush=True)
-        return {"error": str(e)}
     
 @app.post("/feature_roadmap/push_jira/{project_key}")
 def push_feature_roadmap_to_jira(project_key: str, req: JiraPushRequest, creds: dict = Depends(get_jira_creds)):
@@ -1609,6 +1979,8 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
 
     wb = Workbook()
     data = req.data
+
+    # ── VALIDATION: Ensure required keys exist with safe defaults ──
     meta = data.get("_meta", {})
     fa = data.get("feature_analysis", [])
     team = data.get("team_composition", [])
@@ -1622,6 +1994,15 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     psa = data.get("parallel_stream_analysis", {})
     sizing = data.get("sizing_legend", [])
     ft_summary = data.get("feature_type_summary", {})
+
+    # Safe defaults for pilot/hypercare
+    if not isinstance(ph, dict):
+        ph = {}
+    pilot = ph.get("pilot", {})
+    hypercare = ph.get("hypercare", {})
+    if not isinstance(pilot, dict): pilot = {}
+    if not isinstance(hypercare, dict): hypercare = {}
+    if not isinstance(psa, dict): psa = {}
 
     # ── Styles ──
     header_font = Font(bold=True, color="FFFFFF", size=11)
@@ -1654,16 +2035,22 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
                     max_len = max(max_len, len(str(cell.value)))
             ws.column_dimensions[col_letter].width = min(max(max_len + 2, min_w), max_w)
 
+    def safe_val(obj, key, default=""):
+        """Safely extract value from dict or return default."""
+        if not isinstance(obj, dict):
+            return default
+        val = obj.get(key, default)
+        return val if val is not None else default
+
     # ═══════════ SHEET 1: Project Summary ═══════════
     ws1 = wb.active
     ws1.title = "Project Summary"
     ws1.sheet_properties.tabColor = "2563EB"
 
-    # Title
     ws1['A1'] = "FEATURE ROADMAP — PROJECT ESTIMATION"
     ws1['A1'].font = Font(bold=True, size=16, color="2563EB")
     ws1.merge_cells('A1:F1')
-    ws1['A2'] = f"Tech Stack: {meta.get('tech_stack', 'N/A')} | Target: {meta.get('target_duration_value', '')} {meta.get('target_duration_unit', '')} | Generated: {meta.get('generated_at', '')[:10]}"
+    ws1['A2'] = f"Tech Stack: {safe_val(meta, 'tech_stack', 'N/A')} | Target: {safe_val(meta, 'target_duration_value', '')} {safe_val(meta, 'target_duration_unit', '')} | Generated: {str(safe_val(meta, 'generated_at', ''))[:10]}"
     ws1['A2'].font = Font(italic=True, size=10, color="666666")
     ws1.merge_cells('A2:F2')
 
@@ -1674,11 +2061,12 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     write_header(ws1, r, ["Size", "Days", "Story Points", "Sprint Equivalent"])
     r += 1
     for s in sizing:
-        ws1.cell(row=r, column=1, value=s.get("size", "")).border = thin_border
-        ws1.cell(row=r, column=1).fill = PatternFill("solid", fgColor=size_colors.get(s.get("size", ""), "FFFFFF"))
-        ws1.cell(row=r, column=2, value=s.get("days", 0)).border = thin_border
-        ws1.cell(row=r, column=3, value=s.get("story_points", 0)).border = thin_border
-        ws1.cell(row=r, column=4, value=s.get("sprints_equivalent", "")).border = thin_border
+        if not isinstance(s, dict): continue
+        ws1.cell(row=r, column=1, value=safe_val(s, "size")).border = thin_border
+        ws1.cell(row=r, column=1).fill = PatternFill("solid", fgColor=size_colors.get(safe_val(s, "size", ""), "FFFFFF"))
+        ws1.cell(row=r, column=2, value=safe_val(s, "days", 0)).border = thin_border
+        ws1.cell(row=r, column=3, value=safe_val(s, "story_points", 0)).border = thin_border
+        ws1.cell(row=r, column=4, value=safe_val(s, "sprints_equivalent")).border = thin_border
         r += 1
 
     # Team Composition
@@ -1688,15 +2076,16 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     write_header(ws1, r, ["Role", "Headcount", "Billable", "Justification", "Ramp-Up Notes", "Stream Allocation"])
     r += 1
     for t in team:
-        ws1.cell(row=r, column=1, value=t.get("role", "")).border = thin_border
-        ws1.cell(row=r, column=2, value=t.get("headcount", 1)).border = thin_border
+        if not isinstance(t, dict): continue
+        ws1.cell(row=r, column=1, value=safe_val(t, "role")).border = thin_border
+        ws1.cell(row=r, column=2, value=safe_val(t, "headcount", 1)).border = thin_border
         ws1.cell(row=r, column=3, value="Yes" if t.get("billable", True) else "No").border = thin_border
-        ws1.cell(row=r, column=4, value=t.get("justification", "")).border = thin_border
-        ws1.cell(row=r, column=5, value=t.get("ramp_up_notes", "")).border = thin_border
-        ws1.cell(row=r, column=6, value=t.get("stream_allocation", "")).border = thin_border
+        ws1.cell(row=r, column=4, value=safe_val(t, "justification")).border = thin_border
+        ws1.cell(row=r, column=5, value=safe_val(t, "ramp_up_notes")).border = thin_border
+        ws1.cell(row=r, column=6, value=safe_val(t, "stream_allocation")).border = thin_border
         r += 1
     ws1.cell(row=r, column=1, value="TOTAL TEAM SIZE").font = Font(bold=True)
-    ws1.cell(row=r, column=2, value=data.get("total_team_size", sum(t.get("headcount", 1) for t in team))).font = Font(bold=True, color="2563EB", size=14)
+    ws1.cell(row=r, column=2, value=data.get("total_team_size", sum(safe_val(t, "headcount", 1) for t in team if isinstance(t, dict)))).font = Font(bold=True, color="2563EB", size=14)
 
     # Parallel Stream Analysis
     r += 2
@@ -1715,16 +2104,16 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     ]:
         ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
         ws1.cell(row=r, column=1).border = thin_border
-        val = psa.get(key, "")
+        val = safe_val(psa, key, "")
         if key == "fits_target":
             val = "✅ YES" if val else "❌ NO"
         elif key == "coordination_overhead_pct":
             val = f"{val}%"
         ws1.cell(row=r, column=2, value=str(val)).border = thin_border
         r += 1
-    if psa.get("notes"):
+    if safe_val(psa, "notes"):
         ws1.cell(row=r, column=1, value="Notes:").font = Font(italic=True)
-        ws1.cell(row=r, column=2, value=psa.get("notes", ""))
+        ws1.cell(row=r, column=2, value=safe_val(psa, "notes"))
         ws1.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
 
     # Timeline
@@ -1732,15 +2121,15 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     ws1.cell(row=r, column=1, value="TIMELINE SUMMARY").font = Font(bold=True, size=12, color="2563EB")
     r += 1
     for label, val in [
-        ("Total Story Points", tl.get("total_story_points", data.get("total_story_points", 0))),
-        ("Team Velocity/Sprint", tl.get("team_velocity_per_sprint", "")),
+        ("Total Story Points", safe_val(tl, "total_story_points", data.get("total_story_points", 0))),
+        ("Team Velocity/Sprint", safe_val(tl, "team_velocity_per_sprint")),
         ("Sprint Duration", "2 weeks"),
-        ("Total Sprints", tl.get("total_sprints", "")),
-        ("Total Working Days", tl.get("total_working_days", "")),
-        ("Total Calendar Months", tl.get("total_months", "")),
-        ("Start Date", tl.get("start_date", "")),
-        ("End Date", tl.get("end_date", "")),
-        ("Assumptions", tl.get("assumptions", "")),
+        ("Total Sprints", safe_val(tl, "total_sprints")),
+        ("Total Working Days", safe_val(tl, "total_working_days")),
+        ("Total Calendar Months", safe_val(tl, "total_months")),
+        ("Start Date", safe_val(tl, "start_date")),
+        ("End Date", safe_val(tl, "end_date")),
+        ("Assumptions", safe_val(tl, "assumptions")),
     ]:
         ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
         ws1.cell(row=r, column=1).border = thin_border
@@ -1749,23 +2138,19 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
 
     auto_width(ws1)
 
-    # ═══════════ SHEET 2: Feature Schedule (THE BIG ONE) ═══════════
+    # ═══════════ SHEET 2: Feature Schedule ═══════════
     ws2 = wb.create_sheet("Feature Schedule")
     ws2.sheet_properties.tabColor = "10B981"
 
-    total_days = max((f.get("end_day", 0) for f in fa), default=10)
-    pilot = ph.get("pilot", {})
-    hypercare = ph.get("hypercare", {})
-    if hypercare.get("end_day", 0) > total_days:
+    total_days = max((safe_val(f, "end_day", 0) for f in fa if isinstance(f, dict)), default=10) if fa else 10
+    if safe_val(hypercare, "end_day", 0) > total_days:
         total_days = hypercare["end_day"]
-    total_days = max(total_days, 10)
+    total_days = max(int(total_days) if total_days else 10, 10)
 
-    # Row 1: Sprint headers
     static_cols = ["ID", "Feature Name", "Type", "Days", "Sizing", "Est. TEAM", "Est. Conservative", "Roles", "Dependencies"]
     num_static = len(static_cols)
     write_header(ws2, 1, static_cols)
 
-    # Sprint header row across day columns
     for d in range(1, total_days + 1):
         col = num_static + d
         sprint_num = math.ceil(d / 10)
@@ -1774,34 +2159,32 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
             cell.font = Font(bold=True, size=8, color="2563EB")
             cell.alignment = Alignment(horizontal='center')
 
-    # Row 2: Day numbers
     for d in range(1, total_days + 1):
         cell = ws2.cell(row=2, column=num_static + d, value=d)
         cell.font = Font(size=7, color="999999")
         cell.alignment = Alignment(horizontal='center')
 
-    # Feature rows (starting row 3)
     gantt_fill_colors = ['4FC3F7', '81C784', 'FFB74D', 'E57373', 'BA68C8', '4DD0E1', 'F06292', 'AED581']
     for idx, f in enumerate(fa):
+        if not isinstance(f, dict): continue
         r = 3 + idx
-        ws2.cell(row=r, column=1, value=f.get("id", idx + 1)).border = thin_border
-        ws2.cell(row=r, column=2, value=f.get("feature", "")).border = thin_border
-        ws2.cell(row=r, column=3, value=f.get("feature_type", "")).border = thin_border
-        ws2.cell(row=r, column=4, value=f.get("days", 0)).border = thin_border
+        ws2.cell(row=r, column=1, value=safe_val(f, "id", idx + 1)).border = thin_border
+        ws2.cell(row=r, column=2, value=safe_val(f, "feature")).border = thin_border
+        ws2.cell(row=r, column=3, value=safe_val(f, "feature_type")).border = thin_border
+        ws2.cell(row=r, column=4, value=safe_val(f, "days", 0)).border = thin_border
 
-        size_val = f.get("size", "")
+        size_val = safe_val(f, "size", "")
         size_cell = ws2.cell(row=r, column=5, value=size_val)
         size_cell.border = thin_border
-        size_cell.fill = PatternFill("solid", fgColor=size_colors.get(size_val, "FFFFFF"))
+        size_cell.fill = PatternFill("solid", fgColor=size_colors.get(str(size_val), "FFFFFF"))
 
-        ws2.cell(row=r, column=6, value=f.get("est_team", "")).border = thin_border
-        ws2.cell(row=r, column=7, value=f.get("est_conservative", "")).border = thin_border
-        ws2.cell(row=r, column=8, value=f.get("roles_needed", "")).border = thin_border
-        ws2.cell(row=r, column=9, value=f.get("dependencies", "None")).border = thin_border
+        ws2.cell(row=r, column=6, value=safe_val(f, "est_team")).border = thin_border
+        ws2.cell(row=r, column=7, value=safe_val(f, "est_conservative")).border = thin_border
+        ws2.cell(row=r, column=8, value=safe_val(f, "roles_needed")).border = thin_border
+        ws2.cell(row=r, column=9, value=safe_val(f, "dependencies", "None")).border = thin_border
 
-        # Day-by-day Gantt cells
-        start_d = f.get("start_day", 1)
-        end_d = f.get("end_day", start_d + f.get("days", 1) - 1)
+        start_d = int(safe_val(f, "start_day", 1) or 1)
+        end_d = int(safe_val(f, "end_day", start_d) or start_d)
         color = gantt_fill_colors[idx % len(gantt_fill_colors)]
         for d in range(start_d, min(end_d + 1, total_days + 1)):
             col = num_static + d
@@ -1810,55 +2193,53 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
             cell.font = Font(size=7, color=color)
             cell.alignment = Alignment(horizontal='center')
 
-    # Resource loading row at bottom
+    # Resource loading, UAT, Pilot, Hypercare rows
     r_load_row = 3 + len(fa) + 1
     ws2.cell(row=r_load_row, column=1, value="RESOURCE").font = Font(bold=True, color="FFFFFF")
     ws2.cell(row=r_load_row, column=1).fill = PatternFill("solid", fgColor="EF4444")
     ws2.cell(row=r_load_row, column=2, value="Daily Team Count").font = Font(bold=True)
     for rl in resource_load:
-        d = rl.get("day", 1)
+        if not isinstance(rl, dict): continue
+        d = int(safe_val(rl, "day", 0) or 0)
         if 1 <= d <= total_days:
             col = num_static + d
-            members = rl.get("team_members_needed", 0)
+            members = safe_val(rl, "team_members_needed", 0)
             cell = ws2.cell(row=r_load_row, column=col, value=members)
             cell.font = Font(bold=True, size=8)
             cell.alignment = Alignment(horizontal='center')
 
-    # UAT milestone row
     uat_row = r_load_row + 1
     ws2.cell(row=uat_row, column=1, value="UAT").font = Font(bold=True, color="FFFFFF")
     ws2.cell(row=uat_row, column=1).fill = PatternFill("solid", fgColor="8B5CF6")
     for u in uat:
-        d = u.get("day", 0)
+        if not isinstance(u, dict): continue
+        d = int(safe_val(u, "day", 0) or 0)
         if 1 <= d <= total_days:
             col = num_static + d
-            cell = ws2.cell(row=uat_row, column=col, value=u.get("name", "UAT"))
+            cell = ws2.cell(row=uat_row, column=col, value=safe_val(u, "name", "UAT"))
             cell.fill = PatternFill("solid", fgColor="DDD6FE")
             cell.font = Font(bold=True, size=8, color="6D28D9")
 
-    # Pilot row
     pilot_row = uat_row + 1
     ws2.cell(row=pilot_row, column=1, value="PILOT").font = Font(bold=True, color="FFFFFF")
     ws2.cell(row=pilot_row, column=1).fill = PatternFill("solid", fgColor="F59E0B")
-    p_start = pilot.get("start_day", 0)
-    p_end = pilot.get("end_day", 0)
+    p_start = int(safe_val(pilot, "start_day", 0) or 0)
+    p_end = int(safe_val(pilot, "end_day", 0) or 0)
     for d in range(max(1, p_start), min(p_end + 1, total_days + 1)):
         cell = ws2.cell(row=pilot_row, column=num_static + d, value=1)
         cell.fill = PatternFill("solid", fgColor="FEF3C7")
         cell.font = Font(size=7, color="FEF3C7")
 
-    # Hypercare row
     hc_row = pilot_row + 1
     ws2.cell(row=hc_row, column=1, value="HYPERCARE").font = Font(bold=True, color="FFFFFF")
     ws2.cell(row=hc_row, column=1).fill = PatternFill("solid", fgColor="06B6D4")
-    h_start = hypercare.get("start_day", 0)
-    h_end = hypercare.get("end_day", 0)
+    h_start = int(safe_val(hypercare, "start_day", 0) or 0)
+    h_end = int(safe_val(hypercare, "end_day", 0) or 0)
     for d in range(max(1, h_start), min(h_end + 1, total_days + 1)):
         cell = ws2.cell(row=hc_row, column=num_static + d, value=1)
         cell.fill = PatternFill("solid", fgColor="CFFAFE")
         cell.font = Font(size=7, color="CFFAFE")
 
-    # Set column widths for Feature Schedule
     ws2.column_dimensions['A'].width = 5
     ws2.column_dimensions['B'].width = 45
     ws2.column_dimensions['C'].width = 18
@@ -1870,8 +2251,6 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     ws2.column_dimensions['I'].width = 18
     for d in range(1, total_days + 1):
         ws2.column_dimensions[get_column_letter(num_static + d)].width = 3.5
-
-    # Freeze panes
     ws2.freeze_panes = ws2.cell(row=3, column=num_static + 1)
 
     # ═══════════ SHEET 3: Gantt Phases ═══════════
@@ -1879,16 +2258,17 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     ws3.sheet_properties.tabColor = "F59E0B"
     write_header(ws3, 1, ["Phase", "Assigned Roles", "Dependencies", "Start Day", "End Day", "Start Week", "End Week", "Duration (days)", "Phase Type"])
     for i, g in enumerate(gantt):
+        if not isinstance(g, dict): continue
         r = i + 2
-        ws3.cell(row=r, column=1, value=g.get("phase", "")).border = thin_border
-        ws3.cell(row=r, column=2, value=g.get("assigned_roles", "")).border = thin_border
-        ws3.cell(row=r, column=3, value=g.get("dependencies", "")).border = thin_border
-        ws3.cell(row=r, column=4, value=g.get("start_day", 0)).border = thin_border
-        ws3.cell(row=r, column=5, value=g.get("end_day", 0)).border = thin_border
-        ws3.cell(row=r, column=6, value=g.get("start_week", 0)).border = thin_border
-        ws3.cell(row=r, column=7, value=g.get("end_week", 0)).border = thin_border
-        ws3.cell(row=r, column=8, value=g.get("duration_days", 0)).border = thin_border
-        ws3.cell(row=r, column=9, value=g.get("phase_type", "")).border = thin_border
+        ws3.cell(row=r, column=1, value=safe_val(g, "phase")).border = thin_border
+        ws3.cell(row=r, column=2, value=safe_val(g, "assigned_roles")).border = thin_border
+        ws3.cell(row=r, column=3, value=safe_val(g, "dependencies")).border = thin_border
+        ws3.cell(row=r, column=4, value=safe_val(g, "start_day", 0)).border = thin_border
+        ws3.cell(row=r, column=5, value=safe_val(g, "end_day", 0)).border = thin_border
+        ws3.cell(row=r, column=6, value=safe_val(g, "start_week", 0)).border = thin_border
+        ws3.cell(row=r, column=7, value=safe_val(g, "end_week", 0)).border = thin_border
+        ws3.cell(row=r, column=8, value=safe_val(g, "duration_days", 0)).border = thin_border
+        ws3.cell(row=r, column=9, value=safe_val(g, "phase_type")).border = thin_border
     auto_width(ws3)
 
     # ═══════════ SHEET 4: Jira Breakdown ═══════════
@@ -1897,14 +2277,16 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     write_header(ws4, 1, ["Epic Name", "Feature Type", "Epic Points", "Story Summary", "Description", "Story Points", "Priority"])
     r = 2
     for epic in epics:
+        if not isinstance(epic, dict): continue
         for story in epic.get("stories", []):
-            ws4.cell(row=r, column=1, value=epic.get("epic_name", "")).border = thin_border
-            ws4.cell(row=r, column=2, value=epic.get("feature_type", "")).border = thin_border
-            ws4.cell(row=r, column=3, value=epic.get("total_points", 0)).border = thin_border
-            ws4.cell(row=r, column=4, value=story.get("summary", "")).border = thin_border
-            ws4.cell(row=r, column=5, value=story.get("description", "").replace("\n", " | ")[:500]).border = thin_border
-            ws4.cell(row=r, column=6, value=story.get("story_points", 0)).border = thin_border
-            ws4.cell(row=r, column=7, value=story.get("priority", "Medium")).border = thin_border
+            if not isinstance(story, dict): continue
+            ws4.cell(row=r, column=1, value=safe_val(epic, "epic_name")).border = thin_border
+            ws4.cell(row=r, column=2, value=safe_val(epic, "feature_type")).border = thin_border
+            ws4.cell(row=r, column=3, value=safe_val(epic, "total_points", 0)).border = thin_border
+            ws4.cell(row=r, column=4, value=safe_val(story, "summary")).border = thin_border
+            ws4.cell(row=r, column=5, value=str(safe_val(story, "description", "")).replace("\n", " | ")[:500]).border = thin_border
+            ws4.cell(row=r, column=6, value=safe_val(story, "story_points", 0)).border = thin_border
+            ws4.cell(row=r, column=7, value=safe_val(story, "priority", "Medium")).border = thin_border
             r += 1
     auto_width(ws4)
 
@@ -1913,15 +2295,17 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     ws5.sheet_properties.tabColor = "06B6D4"
     write_header(ws5, 1, ["Sprint", "Start Day", "End Day", "Month", "Calendar Month", "Features", "Points"])
     for i, sm in enumerate(sprint_map):
+        if not isinstance(sm, dict): continue
         r = i + 2
-        ws5.cell(row=r, column=1, value=sm.get("sprint", "")).border = thin_border
-        ws5.cell(row=r, column=2, value=sm.get("start_day", 0)).border = thin_border
-        ws5.cell(row=r, column=3, value=sm.get("end_day", 0)).border = thin_border
-        ws5.cell(row=r, column=4, value=sm.get("month", "")).border = thin_border
-        ws5.cell(row=r, column=5, value=sm.get("calendar_month", "")).border = thin_border
-        features_str = ", ".join(sm.get("features_in_sprint", []))
+        ws5.cell(row=r, column=1, value=safe_val(sm, "sprint")).border = thin_border
+        ws5.cell(row=r, column=2, value=safe_val(sm, "start_day", 0)).border = thin_border
+        ws5.cell(row=r, column=3, value=safe_val(sm, "end_day", 0)).border = thin_border
+        ws5.cell(row=r, column=4, value=safe_val(sm, "month")).border = thin_border
+        ws5.cell(row=r, column=5, value=safe_val(sm, "calendar_month")).border = thin_border
+        features_list = sm.get("features_in_sprint", [])
+        features_str = ", ".join(features_list) if isinstance(features_list, list) else str(features_list)
         ws5.cell(row=r, column=6, value=features_str).border = thin_border
-        ws5.cell(row=r, column=7, value=sm.get("points_in_sprint", 0)).border = thin_border
+        ws5.cell(row=r, column=7, value=safe_val(sm, "points_in_sprint", 0)).border = thin_border
     auto_width(ws5)
 
     # ── Save & return ──
@@ -1929,7 +2313,8 @@ def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
     wb.save(output)
     output.seek(0)
 
-    filename = f"Feature_Roadmap_{meta.get('tech_stack', 'Project').replace(' ', '_')[:20]}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    tech_clean = str(safe_val(meta, 'tech_stack', 'Project')).replace(' ', '_')[:20]
+    filename = f"Feature_Roadmap_{tech_clean}_{datetime.now().strftime('%Y%m%d')}.xlsx"
 
     return StreamingResponse(
         output,
