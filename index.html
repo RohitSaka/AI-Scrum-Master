@@ -667,7 +667,7 @@
                     <main className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300 bg-bg-body" style={{ padding: view === 'smartdeck' ? '0' : '2.5rem' }}>
                         {activeProject ? (
                             <div className="flex-1 min-h-0 relative h-full">
-                                {view === 'feature_roadmap' && <FeatureRoadmapView project={selectedProject} setIsLoading={setIsLoading} />}
+                                {view === 'feature_roadmap' && <FeatureRoadmapView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'smartdeck' && <SmartDeckView project={activeProject} endpoint={`/super_deck/${activeProject}?sprint_id=active`} isFullScreenLayout={true} />}
                                 {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                                 {view === 'roadmap' && <RoadmapView project={activeProject} setIsLoading={setIsGlobalLoading} />}
