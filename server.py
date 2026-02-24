@@ -90,10 +90,10 @@ Base.metadata.create_all(bind=engine_db)
 class FeatureRoadmapRequest(BaseModel):
     tech_stack: str
     features: List[str]
-    target_duration_value: int         # e.g. 90, 6, 2
-    target_duration_unit: str          # "days" | "months" | "years"
+    target_duration_value: float         # was int — now accepts 1.5, 2.5 etc.
+    target_duration_unit: str
     project_key: Optional[str] = None
-    start_date: Optional[str] = None   # ISO date string, defaults to today
+    start_date: Optional[str] = None  # ISO date string, defaults to today
 
 class JiraPushRequest(BaseModel):
     epics: List[dict]
