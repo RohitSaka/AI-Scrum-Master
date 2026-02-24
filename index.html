@@ -733,8 +733,10 @@
         warning: { bg: 'rgba(245,158,11,0.12)', border: 'var(--warning)', icon: 'AlertTriangle', color: 'var(--warning)', label: 'AT RISK' },
         caution: { bg: 'rgba(245,158,11,0.08)', border: 'var(--warning)', icon: 'Clock', color: 'var(--warning)', label: 'AMBITIOUS' },
         healthy: { bg: 'rgba(16,185,129,0.08)', border: 'var(--success)', icon: 'CheckCircle', color: 'var(--success)', label: 'HEALTHY' },
+        first_sprint: { bg: 'rgba(59,130,246,0.1)', border: 'var(--primary)', icon: 'Zap', color: 'var(--primary)', label: 'FIRST SPRINT' },
         empty: { bg: 'var(--bg-card)', border: 'var(--border)', icon: 'BarChart', color: 'var(--text-muted)', label: 'NO DATA' },
     };
+    const isFirstSprint = capacityData?.severity === 'first_sprint';
 
     return (
         <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4 space-y-10">
@@ -791,9 +793,11 @@
                             {/* Big utilization percentage */}
                             <div className="text-right shrink-0 ml-6">
                                 <div className="text-5xl font-black" style={{ color: severityConfig[capacityData.severity]?.color }}>
-                                    {capacityData.utilization_pct}%
+                                    {isFirstSprint ? `${Math.round((capacityData.total_completed / Math.max(capacityData.total_committed, 1)) * 100)}%` : `${capacityData.utilization_pct}%`}
                                 </div>
-                                <div className="text-xs font-bold text-text-muted mt-1">Sprint Utilization</div>
+                                <div className="text-xs font-bold text-text-muted mt-1">
+                                    {isFirstSprint ? 'Sprint Progress' : 'Sprint Utilization'}
+                                </div>
                             </div>
                         </div>
 
@@ -808,8 +812,12 @@
                                     Remaining: <span className="text-text-main">{capacityData.total_remaining} pts</span>
                                 </span>
                                 <span className="text-text-muted">
-                                    Avg Velocity: <span className="text-primary">{capacityData.avg_velocity} pts</span>
-                                    <span className="ml-1 text-[10px]">({capacityData.sprints_analyzed} sprints)</span>
+                                    {isFirstSprint ? (
+                                        <>No velocity history yet <span className="ml-1 text-[10px]">(first sprint)</span></>
+                                    ) : (
+                                        <>Avg Velocity: <span className="text-primary">{capacityData.avg_velocity} pts</span>
+                                        <span className="ml-1 text-[10px]">({capacityData.sprints_analyzed} sprints)</span></>
+                                    )}
                                 </span>
                             </div>
                             <div className="w-full h-4 bg-border/50 rounded-full overflow-hidden relative">
@@ -835,7 +843,7 @@
                                     className="h-full rounded-r-full absolute top-0"
                                     style={{
                                         left: `${(capacityData.total_completed / Math.max(capacityData.total_committed, capacityData.avg_velocity, 1)) * 100}%`,
-                                        background: capacityData.severity === 'critical' ? 'var(--danger)' : capacityData.severity === 'warning' ? 'var(--warning)' : 'var(--primary)'
+                                        background: capacityData.severity === 'critical' ? 'var(--danger)' : capacityData.severity === 'warning' ? 'var(--warning)' : capacityData.severity === 'first_sprint' ? 'var(--primary)' : 'var(--primary)'
                                     }} />
                             </div>
                         </div>
@@ -849,15 +857,27 @@
                                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                                     {Object.entries(capacityData.person_capacity)
                                         .filter(([name]) => name !== 'Unassigned')
-                                        .sort(([, a], [, b]) => (b.utilization_pct || 0) - (a.utilization_pct || 0))
+                                        .sort(([, a], [, b]) => (b.committed || 0) - (a.committed || 0))
                                         .map(([name, person]) => {
-                                            const personSev = person.status === 'overloaded' ? 'critical' : person.status === 'at_risk' ? 'warning' : person.status === 'underutilized' ? 'caution' : 'healthy';
+                                            const personSev = person.status === 'overloaded' || person.status === 'heavy_load' ? 'critical'
+                                                : person.status === 'at_risk' ? 'warning'
+                                                : person.status === 'underutilized' || person.status === 'light_load' ? 'caution'
+                                                : person.status === 'first_sprint' ? 'first_sprint' : 'healthy';
                                             const personColor = severityConfig[personSev]?.color || 'var(--text-muted)';
+
+                                            // For first sprint: show completion % instead of utilization %
+                                            const displayPct = isFirstSprint
+                                                ? (person.committed > 0 ? Math.round((person.completed / person.committed) * 100) : 0)
+                                                : person.utilization_pct;
+                                            const barPct = isFirstSprint
+                                                ? (person.committed > 0 ? Math.min(100, (person.completed / person.committed) * 100) : 0)
+                                                : Math.min(100, person.utilization_pct);
+
                                             return (
                                                 <div key={name} className="p-3 rounded-xl border transition-all hover:shadow-md" style={{
                                                     background: 'var(--bg-body)',
-                                                    borderColor: person.status === 'overloaded' ? 'var(--danger)' : 'var(--border)',
-                                                    borderWidth: person.status === 'overloaded' ? '2px' : '1px'
+                                                    borderColor: (person.status === 'overloaded' || person.status === 'heavy_load') ? 'var(--danger)' : 'var(--border)',
+                                                    borderWidth: (person.status === 'overloaded' || person.status === 'heavy_load') ? '2px' : '1px'
                                                 }}>
                                                     <div className="flex justify-between items-center mb-2">
                                                         <span className="font-bold text-text-main text-sm truncate">{name}</span>
@@ -865,18 +885,23 @@
                                                             background: `${personColor}18`,
                                                             color: personColor
                                                         }}>
-                                                            {person.utilization_pct}%
+                                                            {displayPct}%
                                                         </span>
                                                     </div>
                                                     <div className="w-full h-1.5 bg-border rounded-full overflow-hidden mb-1.5">
-                                                        <div className="h-full rounded-full" style={{
-                                                            width: `${Math.min(100, person.utilization_pct)}%`,
-                                                            background: person.status === 'overloaded' ? 'var(--danger)' : person.status === 'at_risk' ? 'var(--warning)' : 'var(--success)'
+                                                        <div className="h-full rounded-full transition-all" style={{
+                                                            width: `${barPct}%`,
+                                                            background: (person.status === 'overloaded' || person.status === 'heavy_load') ? 'var(--danger)'
+                                                                : person.status === 'at_risk' ? 'var(--warning)'
+                                                                : isFirstSprint ? 'var(--primary)' : 'var(--success)'
                                                         }} />
                                                     </div>
                                                     <div className="flex justify-between text-[10px] text-text-muted font-medium">
                                                         <span>Committed: {person.committed} pts</span>
-                                                        <span>Avg: {person.historical_avg} pts</span>
+                                                        <span>{isFirstSprint
+                                                            ? `Done: ${person.completed} pts`
+                                                            : `Avg: ${person.historical_avg} pts`
+                                                        }</span>
                                                     </div>
                                                 </div>
                                             );
@@ -1082,20 +1107,28 @@
             <div className="grid grid-cols-5 gap-4 mb-8">
                 <div className="glass-card p-5 border-l-4 border-primary">
                     <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Avg Velocity</div>
-                    <div className="text-3xl font-extrabold text-text-main">{velocity.avg_velocity || '—'}</div>
-                    <div className="text-xs text-text-muted mt-1">pts/sprint</div>
+                    <div className="text-3xl font-extrabold text-text-main">
+                        {velocity.has_history === false ? '—' : (velocity.avg_velocity || '—')}
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                        {velocity.has_history === false ? 'no sprints completed' : 'pts/sprint'}
+                    </div>
                 </div>
                 <div className="glass-card p-5 border-l-4 border-success">
                     <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Trend</div>
-                    <div className="text-3xl font-extrabold" style={{ color: velocity.trend === 'improving' ? 'var(--success)' : velocity.trend === 'declining' ? 'var(--danger)' : 'var(--warning)' }}>
-                        {velocity.trend === 'improving' ? '▲' : velocity.trend === 'declining' ? '▼' : '→'}
+                    <div className="text-3xl font-extrabold" style={{ color: velocity.trend === 'improving' ? 'var(--success)' : velocity.trend === 'declining' ? 'var(--danger)' : velocity.trend === 'no_data' ? 'var(--text-muted)' : 'var(--warning)' }}>
+                        {velocity.trend === 'improving' ? '▲' : velocity.trend === 'declining' ? '▼' : velocity.trend === 'no_data' ? '○' : '→'}
                     </div>
-                    <div className="text-xs text-text-muted mt-1 capitalize">{velocity.trend || 'N/A'}</div>
+                    <div className="text-xs text-text-muted mt-1 capitalize">{velocity.trend === 'no_data' ? 'No data yet' : (velocity.trend || 'N/A')}</div>
                 </div>
                 <div className="glass-card p-5 border-l-4 border-warning">
                     <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Velocity Range</div>
-                    <div className="text-3xl font-extrabold text-text-main">{velocity.min}–{velocity.max}</div>
-                    <div className="text-xs text-text-muted mt-1">min–max pts</div>
+                    <div className="text-3xl font-extrabold text-text-main">
+                        {velocity.has_history === false ? '—' : `${velocity.min}–${velocity.max}`}
+                    </div>
+                    <div className="text-xs text-text-muted mt-1">
+                        {velocity.has_history === false ? 'needs history' : 'min–max pts'}
+                    </div>
                 </div>
                 <div className="glass-card p-5 border-l-4" style={{ borderLeftColor: '#8B5CF6' }}>
                     <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Backlog</div>

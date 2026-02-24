@@ -545,12 +545,20 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
 
     # ── Step 3: Calculate velocity metrics ──
     velocities = [s['completed_points'] for s in sprint_history if s['completed_points'] > 0]
-    avg_velocity = round(sum(velocities) / max(len(velocities), 1), 1) if velocities else 20.0
-    min_velocity = round(min(velocities), 1) if velocities else 0
-    max_velocity = round(max(velocities), 1) if velocities else 0
+    has_history = len(velocities) > 0
+
+    if has_history:
+        avg_velocity = round(sum(velocities) / len(velocities), 1)
+        min_velocity = round(min(velocities), 1)
+        max_velocity = round(max(velocities), 1)
+    else:
+        # No history: will recalculate after backlog fetch
+        avg_velocity = 0  # Placeholder, recalculated in Step 4
+        min_velocity = 0
+        max_velocity = 0
 
     # Trend: compare last 2 vs first 2
-    trend = "stable"
+    trend = "no_data" if not has_history else "stable"
     if len(velocities) >= 4:
         early = sum(velocities[:2]) / 2
         recent = sum(velocities[-2:]) / 2
@@ -564,7 +572,8 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
         "min": min_velocity,
         "max": max_velocity,
         "trend": trend,
-        "sprints_analyzed": len(velocities)
+        "sprints_analyzed": len(velocities),
+        "has_history": has_history
     }
 
     # ── Step 4: Fetch backlog (not Done, prioritized) ──
@@ -604,29 +613,59 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
             })
 
     # ── Step 5: AI groups backlog into sprint buckets ──
-    prompt = f"""You are an expert Release Train Engineer. Based on the team's ACTUAL historical velocity data, group the backlog items into future sprint-sized buckets.
+
+    # If no history, estimate velocity from backlog (aim for 3-4 sprints of work)
+    if not has_history and backlog_items:
+        total_backlog_pts = sum(item.get('points', 0) or 3 for item in backlog_items)
+        avg_velocity = round(max(total_backlog_pts / 3, 10), 1)  # At least 10 pts/sprint, aim for ~3 sprints
+        velocity_data["avg_velocity"] = avg_velocity
+        velocity_data["estimated"] = True
+
+    if not backlog_items:
+        # Nothing to plan
+        return {
+            "timeline": ["Sprint N+1"],
+            "tracks": [{"name": "Planned Work", "items": []}],
+            "sprint_buckets": [],
+            "unscheduled": [],
+            "planning_notes": "No backlog items found to plan.",
+            "velocity": velocity_data,
+            "sprint_history": [],
+            "backlog_count": 0,
+            "mode": "sprint_velocity"
+        }
+
+    history_context = ""
+    if has_history:
+        history_context = f"""SPRINT HISTORY (last {len(sprint_history)} completed sprints):
+{json.dumps([{{"name": s["sprint_name"], "velocity": s["completed_points"], "completion_rate": s["completion_rate"]}} for s in sprint_history], indent=2)}"""
+    else:
+        history_context = f"""NOTE: This is the team's FIRST sprint — no historical data exists.
+Using estimated velocity of {avg_velocity} story points per sprint (based on backlog size / 3 sprints).
+Be conservative with sprint allocation since the team has no proven velocity."""
+
+    prompt = f"""You are an expert Release Train Engineer. Group the backlog items into future sprint-sized buckets.
 
 VELOCITY DATA:
-- Average velocity per sprint: {avg_velocity} story points
+- Average velocity per sprint: {avg_velocity} story points {"(estimated — no history)" if not has_history else "(based on actual history)"}
 - Velocity trend: {trend}
 - Min velocity: {min_velocity}, Max velocity: {max_velocity}
 - Sprints analyzed: {len(velocities)}
 
-SPRINT HISTORY (last {len(sprint_history)} completed sprints):
-{json.dumps([{{"name": s["sprint_name"], "velocity": s["completed_points"], "completion_rate": s["completion_rate"]}} for s in sprint_history], indent=2)}
+{history_context}
 
 BACKLOG ITEMS TO SCHEDULE:
 {json.dumps(backlog_items[:40], indent=2)}
 
 RULES:
-1. Each future sprint bucket should NOT exceed {avg_velocity} story points (the team's average velocity)
+1. Each future sprint bucket should NOT exceed {avg_velocity} story points
 2. Respect priority ordering — higher priority items go into earlier sprints
 3. Items with 0 points: estimate them based on similar items in the backlog
 4. If an item has no points, assume 3 points
 5. Name each sprint as "Sprint N+1", "Sprint N+2", etc.
 6. Group into tracks by theme/type if possible (e.g., "Feature Track", "Tech Debt Track", "Bug Fix Track")
 
-Return EXACTLY this JSON structure:
+Return ONLY valid JSON (no markdown, no backticks) with this structure:
 {{
     "sprint_buckets": [
         {{
@@ -653,7 +692,10 @@ Return EXACTLY this JSON structure:
 }}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2).replace('```json', '').replace('```', '').strip()
+        ai_result = generate_ai_response(prompt, temperature=0.2)
+        if not ai_result:
+            raise ValueError("AI returned empty response")
+        raw = ai_result.replace('```json', '').replace('```', '').strip()
         parsed = json.loads(raw)
 
         # Validate structure
@@ -797,6 +839,7 @@ def capacity_check(project_key: str, sprint_id: str = None, creds: dict = Depend
 
     avg_velocity = round(sum(sprint_velocities) / max(len(sprint_velocities), 1), 1) if sprint_velocities else 0
     person_avg = {name: round(sum(hist) / len(hist), 1) for name, hist in person_history.items()}
+    has_history = len(sprint_velocities) > 0
 
     # ── 3. Get current sprint committed points ──
     jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
@@ -842,10 +885,23 @@ def capacity_check(project_key: str, sprint_id: str = None, creds: dict = Depend
                 total_remaining += pts
 
     # ── 4. Calculate capacity utilization ──
-    utilization_pct = round((total_committed / max(avg_velocity, 1)) * 100, 1) if avg_velocity > 0 else 0
+    # When no history exists, use committed points as the baseline (first sprint mode)
+    # This treats the current sprint commitment as the team's target velocity
+    if has_history and avg_velocity > 0:
+        utilization_pct = round((total_committed / avg_velocity) * 100, 1)
+    elif total_committed > 0:
+        # First sprint: show progress as utilization (completed/committed)
+        utilization_pct = round((total_completed / total_committed) * 100, 1)
+    else:
+        utilization_pct = 0
 
     # Determine severity
-    if utilization_pct > 120:
+    if not has_history and total_committed > 0:
+        # First sprint mode — no history to compare against
+        progress_pct = round((total_completed / total_committed) * 100, 1)
+        severity = "first_sprint"
+        warning = f"First sprint detected — no historical velocity to compare. The team has committed {total_committed} pts with {total_completed} completed ({progress_pct}% done). Complete this sprint to establish your velocity baseline."
+    elif utilization_pct > 120:
         severity = "critical"
         warning = f"Sprint is significantly over-capacity at {utilization_pct}%! The team has committed {total_committed} points against an average velocity of {avg_velocity}. Consider removing {round(total_committed - avg_velocity, 1)} points of work."
     elif utilization_pct > 100:
@@ -859,49 +915,85 @@ def capacity_check(project_key: str, sprint_id: str = None, creds: dict = Depend
         warning = f"Sprint is at {utilization_pct}% capacity ({total_committed}/{avg_velocity} pts). The team has room for additional work."
     else:
         severity = "empty"
-        warning = "No velocity data or no committed work found."
+        warning = "No active sprint or no committed work found."
 
     # Per-person breakdown
+    # When no history: calculate each person's share of the sprint
+    num_members = len([n for n in person_committed.keys() if n != 'Unassigned']) or 1
+    fair_share = round(total_committed / num_members, 1) if not has_history and total_committed > 0 else 0
+
     person_capacity = {}
     for name in set(list(person_committed.keys()) + list(person_avg.keys())):
         committed = person_committed.get(name, 0)
         completed = person_completed.get(name, 0)
         hist_avg = person_avg.get(name, 0)
-        util = round((committed / max(hist_avg, 1)) * 100, 1) if hist_avg > 0 else 0
 
-        person_status = "healthy"
-        if util > 120:
-            person_status = "overloaded"
-        elif util > 100:
-            person_status = "at_risk"
-        elif util < 50 and hist_avg > 0:
-            person_status = "underutilized"
+        if has_history and hist_avg > 0:
+            util = round((committed / hist_avg) * 100, 1)
+        elif committed > 0:
+            # First sprint: show completion % as utilization
+            util = round((completed / committed) * 100, 1)
+        else:
+            util = 0
+
+        if has_history:
+            person_status = "healthy"
+            if util > 120:
+                person_status = "overloaded"
+            elif util > 100:
+                person_status = "at_risk"
+            elif util < 50 and hist_avg > 0:
+                person_status = "underutilized"
+        else:
+            # First sprint: flag based on workload distribution
+            person_status = "first_sprint"
+            if name != 'Unassigned' and fair_share > 0:
+                load_ratio = committed / fair_share
+                if load_ratio > 1.5:
+                    person_status = "heavy_load"
+                elif load_ratio < 0.5 and committed > 0:
+                    person_status = "light_load"
 
         person_capacity[name] = {
             "committed": committed,
             "completed": completed,
             "remaining": committed - completed,
             "historical_avg": hist_avg,
+            "fair_share": fair_share if not has_history else 0,
             "utilization_pct": util,
             "status": person_status,
             "issues": person_issues.get(name, [])
         }
 
-    # ── 5. AI Recommendations ──
+    # ── 5. Recommendations ──
     recommendations = []
-    overloaded = [n for n, c in person_capacity.items() if c["status"] == "overloaded" and n != "Unassigned"]
-    underutilized = [n for n, c in person_capacity.items() if c["status"] == "underutilized" and n != "Unassigned"]
 
-    if overloaded:
-        recommendations.append(f"{'These members are' if len(overloaded) > 1 else 'This member is'} over-capacity: {', '.join(overloaded)}. Consider redistributing work.")
-    if underutilized:
-        recommendations.append(f"{'These members have' if len(underutilized) > 1 else 'This member has'} available bandwidth: {', '.join(underutilized)}.")
-    if severity in ["critical", "warning"]:
-        excess = round(total_committed - avg_velocity, 1)
-        recommendations.append(f"Remove approximately {excess} story points from this sprint to match team velocity.")
-    if total_remaining > 0 and total_completed > 0:
+    if not has_history and total_committed > 0:
+        # First sprint recommendations
         progress_pct = round((total_completed / total_committed) * 100, 1)
         recommendations.append(f"Sprint progress: {progress_pct}% complete ({total_completed}/{total_committed} pts).")
+
+        heavy = [n for n, c in person_capacity.items() if c["status"] == "heavy_load" and n != "Unassigned"]
+        light = [n for n, c in person_capacity.items() if c["status"] == "light_load" and n != "Unassigned"]
+        if heavy:
+            recommendations.append(f"Uneven distribution: {', '.join(heavy)} {'have' if len(heavy) > 1 else 'has'} significantly more work than the team average ({fair_share} pts).")
+        if light:
+            recommendations.append(f"{', '.join(light)} {'have' if len(light) > 1 else 'has'} lighter workload — consider rebalancing.")
+        recommendations.append("Complete this sprint to establish historical velocity for future capacity planning.")
+    else:
+        overloaded = [n for n, c in person_capacity.items() if c["status"] == "overloaded" and n != "Unassigned"]
+        underutilized = [n for n, c in person_capacity.items() if c["status"] == "underutilized" and n != "Unassigned"]
+
+        if overloaded:
+            recommendations.append(f"{'These members are' if len(overloaded) > 1 else 'This member is'} over-capacity: {', '.join(overloaded)}. Consider redistributing work.")
+        if underutilized:
+            recommendations.append(f"{'These members have' if len(underutilized) > 1 else 'This member has'} available bandwidth: {', '.join(underutilized)}.")
+        if severity in ["critical", "warning"]:
+            excess = round(total_committed - avg_velocity, 1)
+            recommendations.append(f"Remove approximately {excess} story points from this sprint to match team velocity.")
+        if total_remaining > 0 and total_completed > 0:
+            progress_pct = round((total_completed / total_committed) * 100, 1)
+            recommendations.append(f"Sprint progress: {progress_pct}% complete ({total_completed}/{total_committed} pts).")
 
     return {
         "severity": severity,
@@ -914,7 +1006,8 @@ def capacity_check(project_key: str, sprint_id: str = None, creds: dict = Depend
         "velocity_history": sprint_velocities,
         "person_capacity": person_capacity,
         "recommendations": recommendations,
-        "sprints_analyzed": len(sprint_velocities)
+        "sprints_analyzed": len(sprint_velocities),
+        "has_history": has_history
     }
 
 
