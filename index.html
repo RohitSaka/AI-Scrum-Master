@@ -690,191 +690,667 @@
            DASHBOARD VIEW — Command Center
            ================================================================ */
         function DashboardView({ project, role, setIsLoading, isGlobalLoading }) {
-            const [data, setData] = useState(null);
-            const [sprints, setSprints] = useState([]);
-            const [activeSprint, setActiveSprint] = useState('active');
+    const [data, setData] = useState(null);
+    const [sprints, setSprints] = useState([]);
+    const [activeSprint, setActiveSprint] = useState('active');
+    const [capacityData, setCapacityData] = useState(null);
+    const [loadingCapacity, setLoadingCapacity] = useState(false);
 
-            useEffect(() => { secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { if (d && d.length) setSprints(d); }); }, [project]);
-            useEffect(() => {
-                setData(null); setIsLoading(true);
-                const url = activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`;
-                secureFetch(url).then(r => r?.json()).then(d => { setData(d); setIsLoading(false); }).catch(() => setIsLoading(false));
-            }, [project, activeSprint]);
+    useEffect(() => {
+        secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { if (d && d.length) setSprints(d); });
+    }, [project]);
 
-            if (!data) return <LoadingScreen msg="Loading Command Center..." />;
-            const metrics = data.metrics || {};
-            const ai = data.ai_insights || {};
-            const assignees = Object.entries(metrics.assignees || {});
-            const maxPts = Math.max(1, ...assignees.map(([, s]) => s.points || 0));
-            const statusColor = (status) => { const s = (status || '').toLowerCase(); if (s.includes('done') || s.includes('closed') || s.includes('resolved')) return 'var(--success)'; if (s.includes('progress') || s.includes('review')) return 'var(--primary)'; return 'var(--border)'; };
+    useEffect(() => {
+        setData(null); setCapacityData(null); setIsLoading(true); setLoadingCapacity(true);
+        const analyticsUrl = activeSprint === 'active' ? `/analytics/${project}` : `/analytics/${project}?sprint_id=${activeSprint}`;
+        const capacityUrl = activeSprint === 'active' ? `/capacity_check/${project}` : `/capacity_check/${project}?sprint_id=${activeSprint}`;
 
-            return (
-                <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4 space-y-10">
-                    <header className="flex justify-between items-end pb-6 border-b border-border">
-                        <div>
-                            <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Command Center</h2>
-                            <p className="text-base font-medium mt-2 text-text-muted">Sprint Intelligence Dashboard &middot; Project <span className="text-primary font-black">{project}</span></p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <span className="text-xs font-black uppercase tracking-wider text-text-muted">Sprint</span>
-                            <select value={activeSprint} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm outline-none cursor-pointer hover:border-primary transition-colors border-border">
-                                <option value="active">Active Sprint</option>
-                                {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
-                        </div>
-                    </header>
-                    <div className="grid grid-cols-4 gap-6">
-                        <MetricCard label="Total Issues" value={metrics.total || 0} color="primary" />
-                        <MetricCard label="Story Points" value={(metrics.points || 0).toFixed(1)} color="success" />
-                        <MetricCard label="High Priority" value={metrics.blockers || 0} color="danger" isDanger={(metrics.blockers || 0) > 0} />
-                        <MetricCard label="Bugs" value={metrics.bugs || 0} color="warning" isDanger={(metrics.bugs || 0) > 0} />
-                    </div>
-                    {ai.executive_summary && (
-                        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-8 border-t-4 border-primary relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none opacity-50" style={{ background: 'var(--glow-primary)' }}></div>
-                            <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2 relative z-10"><Icon name="Sparkles" size={16} /> AI Executive Summary</h3>
-                            <p className="text-xl font-bold text-text-main leading-relaxed relative z-10">{ai.executive_summary}</p>
-                            {ai.business_value && <p className="text-sm text-text-muted mt-4 font-medium leading-relaxed border-t border-border pt-4 relative z-10">{ai.business_value}</p>}
-                        </motion.div>
+        Promise.all([
+            secureFetch(analyticsUrl).then(r => r?.json()),
+            secureFetch(capacityUrl).then(r => r?.json()).catch(() => null)
+        ]).then(([analyticsData, capData]) => {
+            setData(analyticsData);
+            setCapacityData(capData);
+            setIsLoading(false);
+            setLoadingCapacity(false);
+        }).catch(() => { setIsLoading(false); setLoadingCapacity(false); });
+    }, [project, activeSprint]);
+
+    if (!data) return <LoadingScreen msg="Loading Command Center..." />;
+    const metrics = data.metrics || {};
+    const ai = data.ai_insights || {};
+    const assignees = Object.entries(metrics.assignees || {});
+    const maxPts = Math.max(1, ...assignees.map(([, s]) => s.points || 0));
+    const statusColor = (status) => {
+        const s = (status || '').toLowerCase();
+        if (s.includes('done') || s.includes('closed') || s.includes('resolved')) return 'var(--success)';
+        if (s.includes('progress') || s.includes('review')) return 'var(--primary)';
+        return 'var(--border)';
+    };
+
+    const severityConfig = {
+        critical: { bg: 'rgba(244,63,94,0.12)', border: 'var(--danger)', icon: 'AlertTriangle', color: 'var(--danger)', label: 'OVER-CAPACITY' },
+        warning: { bg: 'rgba(245,158,11,0.12)', border: 'var(--warning)', icon: 'AlertTriangle', color: 'var(--warning)', label: 'AT RISK' },
+        caution: { bg: 'rgba(245,158,11,0.08)', border: 'var(--warning)', icon: 'Clock', color: 'var(--warning)', label: 'AMBITIOUS' },
+        healthy: { bg: 'rgba(16,185,129,0.08)', border: 'var(--success)', icon: 'CheckCircle', color: 'var(--success)', label: 'HEALTHY' },
+        empty: { bg: 'var(--bg-card)', border: 'var(--border)', icon: 'BarChart', color: 'var(--text-muted)', label: 'NO DATA' },
+    };
+
+    return (
+        <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4 space-y-10">
+            <header className="flex justify-between items-end pb-6 border-b border-border">
+                <div>
+                    <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Command Center</h2>
+                    <p className="text-base font-medium mt-2 text-text-muted">Sprint Intelligence Dashboard &middot; Project <span className="text-primary font-black">{project}</span></p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-black uppercase tracking-wider text-text-muted">Sprint</span>
+                    <select value={activeSprint} onChange={e => setActiveSprint(e.target.value)} className="p-3 rounded-lg border bg-bg-card text-text-main font-bold shadow-sm outline-none cursor-pointer hover:border-primary transition-colors border-border">
+                        <option value="active">Active Sprint</option>
+                        {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                </div>
+            </header>
+
+            {/* ═══════════════════════════════════════════
+                ★ CAPACITY WARNING BANNER — The Key Feature
+                ═══════════════════════════════════════════ */}
+            {capacityData && capacityData.severity && (
+                <motion.div initial={{ opacity: 0, y: -20, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ type: "spring", bounce: 0.3 }}
+                    className="rounded-2xl p-6 relative overflow-hidden shadow-xl"
+                    style={{
+                        background: severityConfig[capacityData.severity]?.bg || 'var(--bg-card)',
+                        border: `2px solid ${severityConfig[capacityData.severity]?.border || 'var(--border)'}`,
+                    }}>
+                    {/* Glow effect for critical/warning */}
+                    {(capacityData.severity === 'critical' || capacityData.severity === 'warning') && (
+                        <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"
+                            style={{ background: severityConfig[capacityData.severity]?.border, opacity: 0.15 }} />
                     )}
-                    {assignees.length > 0 && (
-                        <div className="glass-card p-8">
-                            <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2"><Icon name="Users" size={16} /> Team Workload Distribution</h3>
-                            <div className="space-y-4">
-                                {assignees.map(([name, stats]) => (
-                                    <div key={name} className="flex items-center gap-4 p-4 bg-bg-body rounded-xl border border-border hover:border-primary transition-colors group">
-                                        {stats.avatar ? <img src={stats.avatar} className="w-10 h-10 rounded-full border-2 border-primary shrink-0" alt={name} /> : <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style={{ background: 'var(--accent-gradient)' }}>{name.charAt(0)}</div>}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex justify-between items-center mb-1"><span className="font-bold text-text-main text-sm truncate">{name}</span><span className="text-xs font-black text-primary ml-4 shrink-0">{(stats.points || 0).toFixed(1)} pts</span></div>
-                                            <div className="w-full h-2 bg-border rounded-full overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, ((stats.points || 0) / maxPts) * 100)}%` }} transition={{ duration: 0.8, ease: "easeOut" }} className="h-full rounded-full" style={{ background: 'var(--accent-gradient)' }}></motion.div></div>
-                                            <div className="text-xs text-text-muted mt-1">{stats.count} issues assigned</div>
+
+                    <div className="relative z-10">
+                        {/* Top row: Status badge + Utilization */}
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                                    style={{ background: `${severityConfig[capacityData.severity]?.border}22`, color: severityConfig[capacityData.severity]?.color }}>
+                                    <Icon name={severityConfig[capacityData.severity]?.icon || 'BarChart'} size={24} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-black uppercase tracking-widest"
+                                            style={{ color: severityConfig[capacityData.severity]?.color }}>
+                                            {severityConfig[capacityData.severity]?.label}
+                                        </span>
+                                        <span className="text-xs font-bold text-text-muted">• Capacity Analysis</span>
+                                    </div>
+                                    <p className="text-base font-bold text-text-main mt-1 max-w-2xl leading-relaxed">{capacityData.warning}</p>
+                                </div>
+                            </div>
+
+                            {/* Big utilization percentage */}
+                            <div className="text-right shrink-0 ml-6">
+                                <div className="text-5xl font-black" style={{ color: severityConfig[capacityData.severity]?.color }}>
+                                    {capacityData.utilization_pct}%
+                                </div>
+                                <div className="text-xs font-bold text-text-muted mt-1">Sprint Utilization</div>
+                            </div>
+                        </div>
+
+                        {/* Capacity Bar */}
+                        <div className="mt-4">
+                            <div className="flex justify-between text-xs font-bold mb-2">
+                                <span className="text-text-muted">
+                                    Committed: <span className="text-text-main">{capacityData.total_committed} pts</span>
+                                </span>
+                                <span className="text-text-muted">
+                                    Completed: <span className="text-success">{capacityData.total_completed} pts</span> &middot;
+                                    Remaining: <span className="text-text-main">{capacityData.total_remaining} pts</span>
+                                </span>
+                                <span className="text-text-muted">
+                                    Avg Velocity: <span className="text-primary">{capacityData.avg_velocity} pts</span>
+                                    <span className="ml-1 text-[10px]">({capacityData.sprints_analyzed} sprints)</span>
+                                </span>
+                            </div>
+                            <div className="w-full h-4 bg-border/50 rounded-full overflow-hidden relative">
+                                {/* Velocity marker */}
+                                {capacityData.avg_velocity > 0 && capacityData.total_committed > 0 && (
+                                    <div className="absolute top-0 bottom-0 w-0.5 bg-white z-20"
+                                        style={{
+                                            left: `${Math.min(100, (capacityData.avg_velocity / Math.max(capacityData.total_committed, capacityData.avg_velocity)) * 100)}%`,
+                                            opacity: 0.7
+                                        }}>
+                                        <div className="absolute -top-5 -translate-x-1/2 text-[9px] font-black text-primary whitespace-nowrap">
+                                            ▼ velocity
                                         </div>
                                     </div>
-                                ))}
+                                )}
+                                {/* Completed portion */}
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, (capacityData.total_completed / Math.max(capacityData.total_committed, capacityData.avg_velocity, 1)) * 100)}%` }}
+                                    transition={{ duration: 1, ease: "easeOut" }}
+                                    className="h-full rounded-full" style={{ background: 'var(--success)' }} />
+                                {/* Remaining portion (stacked) */}
+                                <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, (capacityData.total_remaining / Math.max(capacityData.total_committed, capacityData.avg_velocity, 1)) * 100)}%` }}
+                                    transition={{ duration: 1, ease: "easeOut", delay: 0.3 }}
+                                    className="h-full rounded-r-full absolute top-0"
+                                    style={{
+                                        left: `${(capacityData.total_completed / Math.max(capacityData.total_committed, capacityData.avg_velocity, 1)) * 100}%`,
+                                        background: capacityData.severity === 'critical' ? 'var(--danger)' : capacityData.severity === 'warning' ? 'var(--warning)' : 'var(--primary)'
+                                    }} />
                             </div>
                         </div>
-                    )}
-                    {ai.story_progress && ai.story_progress.length > 0 && (
-                        <div className="glass-card p-8">
-                            <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2"><Icon name="AlignLeft" size={16} /> AI Story Analysis</h3>
-                            <div className="space-y-4">
-                                {ai.story_progress.map((story, i) => (
-                                    <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} className="p-5 bg-bg-body rounded-xl border border-border hover:border-primary transition-colors">
-                                        <div className="flex justify-between items-start gap-4 mb-2">
-                                            <span className="text-xs font-black text-primary bg-primary-dim px-2.5 py-1 rounded-full shrink-0">{story.key}</span>
-                                            <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: `${statusColor(story.status)}22`, color: statusColor(story.status), border: `1px solid ${statusColor(story.status)}44` }}>{story.status}</span>
+
+                        {/* Per-Person Capacity (collapsed by default for non-critical) */}
+                        {capacityData.person_capacity && Object.keys(capacityData.person_capacity).length > 0 && (
+                            <div className="mt-6 pt-4 border-t" style={{ borderColor: `${severityConfig[capacityData.severity]?.border}44` }}>
+                                <h4 className="text-xs font-black uppercase tracking-widest text-text-muted mb-3 flex items-center gap-2">
+                                    <Icon name="Users" size={14} /> Team Member Capacity
+                                </h4>
+                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {Object.entries(capacityData.person_capacity)
+                                        .filter(([name]) => name !== 'Unassigned')
+                                        .sort(([, a], [, b]) => (b.utilization_pct || 0) - (a.utilization_pct || 0))
+                                        .map(([name, person]) => {
+                                            const personSev = person.status === 'overloaded' ? 'critical' : person.status === 'at_risk' ? 'warning' : person.status === 'underutilized' ? 'caution' : 'healthy';
+                                            const personColor = severityConfig[personSev]?.color || 'var(--text-muted)';
+                                            return (
+                                                <div key={name} className="p-3 rounded-xl border transition-all hover:shadow-md" style={{
+                                                    background: 'var(--bg-body)',
+                                                    borderColor: person.status === 'overloaded' ? 'var(--danger)' : 'var(--border)',
+                                                    borderWidth: person.status === 'overloaded' ? '2px' : '1px'
+                                                }}>
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <span className="font-bold text-text-main text-sm truncate">{name}</span>
+                                                        <span className="text-xs font-black px-2 py-0.5 rounded-full shrink-0" style={{
+                                                            background: `${personColor}18`,
+                                                            color: personColor
+                                                        }}>
+                                                            {person.utilization_pct}%
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-full h-1.5 bg-border rounded-full overflow-hidden mb-1.5">
+                                                        <div className="h-full rounded-full" style={{
+                                                            width: `${Math.min(100, person.utilization_pct)}%`,
+                                                            background: person.status === 'overloaded' ? 'var(--danger)' : person.status === 'at_risk' ? 'var(--warning)' : 'var(--success)'
+                                                        }} />
+                                                    </div>
+                                                    <div className="flex justify-between text-[10px] text-text-muted font-medium">
+                                                        <span>Committed: {person.committed} pts</span>
+                                                        <span>Avg: {person.historical_avg} pts</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Recommendations */}
+                        {capacityData.recommendations && capacityData.recommendations.length > 0 && (
+                            <div className="mt-4 pt-3 border-t" style={{ borderColor: `${severityConfig[capacityData.severity]?.border}33` }}>
+                                <div className="flex flex-wrap gap-2">
+                                    {capacityData.recommendations.map((rec, i) => (
+                                        <div key={i} className="flex items-start gap-2 text-xs font-semibold text-text-main bg-bg-body px-3 py-2 rounded-lg border border-border">
+                                            <Icon name="ArrowRight" size={12} className="text-primary shrink-0 mt-0.5" />
+                                            <span>{rec}</span>
                                         </div>
-                                        <div className="font-bold text-text-main text-sm mt-2">{story.summary}</div>
-                                        {story.analysis && <div className="text-xs text-text-muted mt-2 font-medium leading-relaxed border-t border-border pt-2">{story.analysis}</div>}
-                                        {story.assignee && <div className="text-xs text-primary font-bold mt-2 flex items-center gap-1"><Icon name="Users" size={12} /> {story.assignee}</div>}
-                                    </motion.div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
-                        </div>
-                    )}
-                    {assignees.length === 0 && !ai.executive_summary && (
-                        <div className="glass-card p-16 flex flex-col items-center justify-center text-center">
-                            <Icon name="Activity" size={56} className="text-text-muted mb-6 opacity-40" />
-                            <h3 className="text-2xl font-extrabold text-text-main mb-3">No Sprint Data Found</h3>
-                            <p className="text-text-muted font-medium max-w-md">No active sprint issues were found for project <span className="text-primary font-bold">{project}</span>.</p>
-                        </div>
-                    )}
+                        )}
+                    </div>
+                </motion.div>
+            )}
+
+            {/* Standard Metrics Cards */}
+            <div className="grid grid-cols-4 gap-6">
+                <MetricCard label="Total Issues" value={metrics.total || 0} color="primary" />
+                <MetricCard label="Story Points" value={(metrics.points || 0).toFixed(1)} color="success" />
+                <MetricCard label="High Priority" value={metrics.blockers || 0} color="danger" isDanger={(metrics.blockers || 0) > 0} />
+                <MetricCard label="Bugs" value={metrics.bugs || 0} color="warning" isDanger={(metrics.bugs || 0) > 0} />
+            </div>
+
+            {/* AI Executive Summary */}
+            {ai.executive_summary && (
+                <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="glass-card p-8 border-t-4 border-primary relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none opacity-50" style={{ background: 'var(--glow-primary)' }}></div>
+                    <h3 className="text-xs font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2 relative z-10">
+                        <Icon name="Sparkles" size={16} /> AI Executive Summary
+                    </h3>
+                    <p className="text-xl font-bold text-text-main leading-relaxed relative z-10">{ai.executive_summary}</p>
+                    {ai.business_value && <p className="text-sm text-text-muted mt-4 font-medium leading-relaxed border-t border-border pt-4 relative z-10">{ai.business_value}</p>}
+                </motion.div>
+            )}
+
+            {/* Team Workload Distribution */}
+            {assignees.length > 0 && (
+                <div className="glass-card p-8">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2">
+                        <Icon name="Users" size={16} /> Team Workload Distribution
+                    </h3>
+                    <div className="space-y-4">
+                        {assignees.map(([name, stats]) => {
+                            // Merge with capacity data if available
+                            const personCap = capacityData?.person_capacity?.[name];
+                            const isOverloaded = personCap?.status === 'overloaded';
+                            const isAtRisk = personCap?.status === 'at_risk';
+
+                            return (
+                                <div key={name} className={`flex items-center gap-4 p-4 bg-bg-body rounded-xl border transition-colors group ${isOverloaded ? 'border-danger border-2' : isAtRisk ? 'border-warning' : 'border-border hover:border-primary'}`}>
+                                    {stats.avatar ? <img src={stats.avatar} className="w-10 h-10 rounded-full border-2 border-primary shrink-0" alt={name} /> : <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0" style={{ background: 'var(--accent-gradient)' }}>{name.charAt(0)}</div>}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-bold text-text-main text-sm truncate">{name}</span>
+                                                {isOverloaded && <span className="text-[10px] font-black text-danger bg-danger/10 px-2 py-0.5 rounded-full border border-danger/20">OVERLOADED</span>}
+                                                {isAtRisk && <span className="text-[10px] font-black text-warning bg-warning/10 px-2 py-0.5 rounded-full border border-warning/20">AT RISK</span>}
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xs font-black text-primary ml-4 shrink-0">{(stats.points || 0).toFixed(1)} pts</span>
+                                                {personCap && personCap.historical_avg > 0 && (
+                                                    <span className="text-[10px] font-bold text-text-muted shrink-0">
+                                                        (avg: {personCap.historical_avg} pts)
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="w-full h-2 bg-border rounded-full overflow-hidden">
+                                            <motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, ((stats.points || 0) / maxPts) * 100)}%` }}
+                                                transition={{ duration: 0.8, ease: "easeOut" }}
+                                                className="h-full rounded-full"
+                                                style={{ background: isOverloaded ? 'var(--danger)' : isAtRisk ? 'var(--warning)' : 'var(--accent-gradient)' }}
+                                            />
+                                        </div>
+                                        <div className="text-xs text-text-muted mt-1">{stats.count} issues assigned</div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
-            );
-        }
+            )}
+
+            {/* AI Story Analysis */}
+            {ai.story_progress && ai.story_progress.length > 0 && (
+                <div className="glass-card p-8">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-6 flex items-center gap-2">
+                        <Icon name="AlignLeft" size={16} /> AI Story Analysis
+                    </h3>
+                    <div className="space-y-4">
+                        {ai.story_progress.map((story, i) => (
+                            <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+                                className="p-5 bg-bg-body rounded-xl border border-border hover:border-primary transition-colors">
+                                <div className="flex justify-between items-start gap-4 mb-2">
+                                    <span className="text-xs font-black text-primary bg-primary-dim px-2.5 py-1 rounded-full shrink-0">{story.key}</span>
+                                    <span className="text-xs font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: `${statusColor(story.status)}22`, color: statusColor(story.status), border: `1px solid ${statusColor(story.status)}44` }}>{story.status}</span>
+                                </div>
+                                <div className="font-bold text-text-main text-sm mt-2">{story.summary}</div>
+                                {story.analysis && <div className="text-xs text-text-muted mt-2 font-medium leading-relaxed border-t border-border pt-2">{story.analysis}</div>}
+                                {story.assignee && <div className="text-xs text-primary font-bold mt-2 flex items-center gap-1"><Icon name="Users" size={12} /> {story.assignee}</div>}
+                            </motion.div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {assignees.length === 0 && !ai.executive_summary && (
+                <div className="glass-card p-16 flex flex-col items-center justify-center text-center">
+                    <Icon name="Activity" size={56} className="text-text-muted mb-6 opacity-40" />
+                    <h3 className="text-2xl font-extrabold text-text-main mb-3">No Sprint Data Found</h3>
+                    <p className="text-text-muted font-medium max-w-md">No active sprint issues were found for project <span className="text-primary font-bold">{project}</span>.</p>
+                </div>
+            )}
+        </div>
+    );
+}
 
         /* ================================================================
            ROADMAP VIEW
            ================================================================ */
         function RoadmapView({ project, setIsLoading }) {
-            const [data, setData] = useState(null);
-            const [error, setError] = useState(null);
-            const [selectedItem, setSelectedItem] = useState(null);
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [selectedItem, setSelectedItem] = useState(null);
+    const [viewMode, setViewMode] = useState('gantt'); // gantt | buckets
 
-            useEffect(() => {
-                setData(null); setError(null); setIsLoading(true);
-                secureFetch(`/roadmap/${project}`).then(r => r?.json()).then(d => {
-                    if (d && d.timeline && d.tracks) { setData(d); } else { setError("AI could not generate roadmap data."); }
-                    setIsLoading(false);
-                }).catch(() => { setError("Network error loading roadmap."); setIsLoading(false); });
-            }, [project]);
+    useEffect(() => {
+        setData(null); setError(null); setIsLoading(true);
+        secureFetch(`/roadmap/${project}`).then(r => r?.json()).then(d => {
+            if (d && (d.sprint_buckets || d.tracks)) { setData(d); }
+            else { setError("AI could not generate roadmap data."); }
+            setIsLoading(false);
+        }).catch(() => { setError("Network error loading roadmap."); setIsLoading(false); });
+    }, [project]);
 
-            if (!data && !error) return <LoadingScreen msg="Building Strategic Roadmap with AI..." />;
-            if (error) return (<div className="animate-fade-in h-full flex items-center justify-center"><div className="glass-card p-12 max-w-lg text-center"><Icon name="AlertTriangle" size={48} className="text-warning mx-auto mb-4 opacity-80" /><h3 className="text-xl font-extrabold text-text-main mb-3">Roadmap Unavailable</h3><p className="text-text-muted font-medium">{error}</p></div></div>);
+    if (!data && !error) return <LoadingScreen msg="Analyzing Sprint History & Building Roadmap..." />;
+    if (error) return (
+        <div className="animate-fade-in h-full flex items-center justify-center">
+            <div className="glass-card p-12 max-w-lg text-center">
+                <Icon name="AlertTriangle" size={48} className="text-warning mx-auto mb-4 opacity-80" />
+                <h3 className="text-xl font-extrabold text-text-main mb-3">Roadmap Unavailable</h3>
+                <p className="text-text-muted font-medium">{error}</p>
+            </div>
+        </div>
+    );
 
-            const TRACK_COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F43F5E', '#F59E0B', '#06B6D4'];
-            const PRIORITY_COLORS = { High: '#F43F5E', Highest: '#F43F5E', Critical: '#F43F5E', Medium: '#F59E0B', Low: '#10B981', Lowest: '#8B9DC3' };
-            const timeline = data.timeline || [];
-            const tracks = data.tracks || [];
+    const TRACK_COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F43F5E', '#F59E0B', '#06B6D4'];
+    const PRIORITY_COLORS = { High: '#F43F5E', Highest: '#F43F5E', Critical: '#F43F5E', Medium: '#F59E0B', Low: '#10B981', Lowest: '#8B9DC3' };
+    const velocity = data.velocity || {};
+    const sprintHistory = data.sprint_history || [];
+    const sprintBuckets = data.sprint_buckets || [];
+    const timeline = data.timeline || [];
+    const tracks = data.tracks || [];
+    const unscheduled = data.unscheduled || [];
+    const maxVelocity = Math.max(1, ...sprintHistory.map(s => s.velocity || 0));
 
-            return (
-                <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4">
-                    <header className="flex justify-between items-end pb-6 border-b border-border mb-8">
-                        <div>
-                            <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Strategic Roadmap</h2>
-                            <p className="text-base font-medium mt-2 text-text-muted">12-Week Release Plan &middot; Project <span className="text-primary font-black">{project}</span></p>
-                        </div>
-                        <div className="flex gap-4 flex-wrap justify-end">
-                            {tracks.map((track, i) => (<span key={i} className="flex items-center gap-2 text-xs font-bold text-text-muted uppercase tracking-wider"><span className="w-3 h-3 rounded-full inline-block shrink-0" style={{ background: TRACK_COLORS[i % TRACK_COLORS.length] }}></span>{track.name}</span>))}
-                        </div>
-                    </header>
-                    <div className="glass-card overflow-hidden shadow-xl mb-8">
-                        <div className="overflow-x-auto hide-scroll">
-                            <div style={{ minWidth: `${250 + timeline.length * 80}px` }}>
-                                <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${timeline.length}, 1fr)` }}>
-                                    <div className="roadmap-header text-left px-4">Track</div>
-                                    {timeline.map(w => <div key={w} className="roadmap-header">{w}</div>)}
+    return (
+        <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4">
+            <header className="flex justify-between items-end pb-6 border-b border-border mb-8">
+                <div>
+                    <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Strategic Roadmap</h2>
+                    <p className="text-base font-medium mt-2 text-text-muted">
+                        Velocity-Based Sprint Planning &middot; Project <span className="text-primary font-black">{project}</span>
+                        {velocity.sprints_analyzed > 0 && (
+                            <span className="ml-3 text-xs font-black px-2.5 py-1 rounded-full bg-primary-dim text-primary">
+                                Based on {velocity.sprints_analyzed} completed sprints
+                            </span>
+                        )}
+                    </p>
+                </div>
+                <div className="flex gap-3 items-center">
+                    {/* View Mode Toggle */}
+                    <div className="flex bg-bg-card p-1 rounded-xl border border-border">
+                        <button onClick={() => setViewMode('gantt')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${viewMode === 'gantt' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>
+                            Gantt View
+                        </button>
+                        <button onClick={() => setViewMode('buckets')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${viewMode === 'buckets' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>
+                            Sprint Buckets
+                        </button>
+                    </div>
+                    <div className="flex gap-4 flex-wrap justify-end">
+                        {tracks.map((track, i) => (
+                            <span key={i} className="flex items-center gap-2 text-xs font-bold text-text-muted uppercase tracking-wider">
+                                <span className="w-3 h-3 rounded-full inline-block shrink-0" style={{ background: TRACK_COLORS[i % TRACK_COLORS.length] }}></span>
+                                {track.name}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            </header>
+
+            {/* ── Velocity Intelligence Panel ── */}
+            <div className="grid grid-cols-5 gap-4 mb-8">
+                <div className="glass-card p-5 border-l-4 border-primary">
+                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Avg Velocity</div>
+                    <div className="text-3xl font-extrabold text-text-main">{velocity.avg_velocity || '—'}</div>
+                    <div className="text-xs text-text-muted mt-1">pts/sprint</div>
+                </div>
+                <div className="glass-card p-5 border-l-4 border-success">
+                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Trend</div>
+                    <div className="text-3xl font-extrabold" style={{ color: velocity.trend === 'improving' ? 'var(--success)' : velocity.trend === 'declining' ? 'var(--danger)' : 'var(--warning)' }}>
+                        {velocity.trend === 'improving' ? '▲' : velocity.trend === 'declining' ? '▼' : '→'}
+                    </div>
+                    <div className="text-xs text-text-muted mt-1 capitalize">{velocity.trend || 'N/A'}</div>
+                </div>
+                <div className="glass-card p-5 border-l-4 border-warning">
+                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Velocity Range</div>
+                    <div className="text-3xl font-extrabold text-text-main">{velocity.min}–{velocity.max}</div>
+                    <div className="text-xs text-text-muted mt-1">min–max pts</div>
+                </div>
+                <div className="glass-card p-5 border-l-4" style={{ borderLeftColor: '#8B5CF6' }}>
+                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Backlog</div>
+                    <div className="text-3xl font-extrabold text-text-main">{data.backlog_count || 0}</div>
+                    <div className="text-xs text-text-muted mt-1">items to plan</div>
+                </div>
+                <div className="glass-card p-5 border-l-4" style={{ borderLeftColor: '#06B6D4' }}>
+                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Planned Sprints</div>
+                    <div className="text-3xl font-extrabold text-text-main">{sprintBuckets.length}</div>
+                    <div className="text-xs text-text-muted mt-1">future sprints</div>
+                </div>
+            </div>
+
+            {/* ── Sprint Velocity History Chart ── */}
+            {sprintHistory.length > 0 && (
+                <div className="glass-card p-6 mb-8">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2">
+                        <Icon name="TrendingUp" size={16} /> Sprint Velocity History
+                    </h3>
+                    <div className="flex items-end gap-3 h-32">
+                        {sprintHistory.map((s, i) => {
+                            const pct = ((s.velocity || 0) / maxVelocity) * 100;
+                            const isAboveAvg = (s.velocity || 0) >= (velocity.avg_velocity || 0);
+                            return (
+                                <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
+                                    <span className="text-xs font-black opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: isAboveAvg ? 'var(--success)' : 'var(--warning)' }}>
+                                        {s.velocity} pts
+                                    </span>
+                                    <div className="w-full rounded-t-lg transition-all hover:opacity-80 relative" style={{
+                                        height: `${Math.max(pct, 4)}%`,
+                                        background: isAboveAvg ? 'var(--accent-gradient)' : 'linear-gradient(135deg, #F59E0B, #F43F5E)',
+                                        minHeight: '4px'
+                                    }} />
+                                    <span className="text-[10px] text-text-muted font-bold truncate w-full text-center" title={s.name}>
+                                        {s.name?.replace('Sprint ', 'S')}
+                                    </span>
                                 </div>
-                                {tracks.map((track, trackIdx) => {
-                                    const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length];
-                                    const items = track.items || [];
+                            );
+                        })}
+                        {/* Average line indicator */}
+                        <div className="absolute left-0 right-0 border-t-2 border-dashed pointer-events-none" style={{
+                            borderColor: 'var(--primary)',
+                            bottom: `${((velocity.avg_velocity || 0) / maxVelocity) * 100}%`,
+                            opacity: 0.4
+                        }} />
+                    </div>
+                    <div className="flex justify-center mt-2">
+                        <span className="text-xs text-primary font-bold">— Avg: {velocity.avg_velocity} pts/sprint —</span>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Planning Notes ── */}
+            {data.planning_notes && (
+                <div className="glass-card p-5 mb-8 border-l-4 border-primary bg-primary-dim/30">
+                    <div className="flex items-start gap-3">
+                        <Icon name="Sparkles" size={18} className="text-primary shrink-0 mt-0.5" />
+                        <p className="text-sm font-semibold text-text-main leading-relaxed">{data.planning_notes}</p>
+                    </div>
+                </div>
+            )}
+
+            {/* ══════ GANTT VIEW ══════ */}
+            {viewMode === 'gantt' && (
+                <div className="glass-card overflow-hidden shadow-xl mb-8">
+                    <div className="overflow-x-auto hide-scroll">
+                        <div style={{ minWidth: `${250 + timeline.length * 120}px` }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${timeline.length}, 1fr)` }}>
+                                <div className="roadmap-header text-left px-4">Track</div>
+                                {timeline.map((w, i) => {
+                                    const bucket = sprintBuckets[i];
+                                    const allocated = bucket ? bucket.allocated_points : 0;
+                                    const capacity = velocity.avg_velocity || 0;
+                                    const fillPct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : 0;
                                     return (
-                                        <div key={trackIdx} className="border-b border-border last:border-0" style={{ position: 'relative', minHeight: `${Math.max(80, 12 + items.length * 40 + 20)}px` }}>
-                                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${timeline.length}, 1fr)`, height: '100%', position: 'absolute', inset: 0 }}>
-                                                <div className="p-4 font-bold text-sm text-text-main border-r border-border flex items-center gap-3 bg-bg-card z-10"><span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }}></span><span className="truncate">{track.name}</span></div>
-                                                {timeline.map((_, ci) => (<div key={ci} className="border-r border-border/30" style={{ background: ci % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}></div>))}
-                                            </div>
-                                            <div style={{ position: 'absolute', left: '250px', right: 0, top: 0, bottom: 0, pointerEvents: 'none' }}>
-                                                {items.map((item, itemIdx) => {
-                                                    const start = Math.max(0, Math.min(item.start || 0, timeline.length - 1));
-                                                    const duration = Math.max(1, Math.min(item.duration || 1, timeline.length - start));
-                                                    const leftPct = (start / timeline.length) * 100;
-                                                    const widthPct = (duration / timeline.length) * 100;
-                                                    const isDone = (item.status || '').toLowerCase().includes('done');
-                                                    return (<div key={itemIdx} className="roadmap-item" style={{ left: `calc(${leftPct}% + 4px)`, width: `calc(${widthPct}% - 8px)`, top: `${12 + itemIdx * 40}px`, background: isDone ? '#334155' : color, opacity: isDone ? 0.6 : 1, pointerEvents: 'auto', border: selectedItem?.key === item.key ? '2px solid white' : '2px solid transparent' }} title={`${item.key}: ${item.summary}`} onClick={() => setSelectedItem(selectedItem?.key === item.key ? null : item)}><span className="truncate text-xs font-bold">{item.key}: {item.summary}</span>{isDone && <Icon name="CheckCircle" size={12} className="ml-2 opacity-70 shrink-0" />}</div>);
-                                                })}
-                                            </div>
-                                            <div style={{ minHeight: `${Math.max(80, 12 + items.length * 40 + 20)}px` }}></div>
+                                        <div key={w} className="roadmap-header flex flex-col items-center gap-1">
+                                            <span>{w}</span>
+                                            {bucket && (
+                                                <div className="flex items-center gap-1 mt-1">
+                                                    <div className="w-16 h-1.5 bg-border rounded-full overflow-hidden">
+                                                        <div className="h-full rounded-full" style={{
+                                                            width: `${fillPct}%`,
+                                                            background: fillPct > 100 ? 'var(--danger)' : fillPct > 85 ? 'var(--warning)' : 'var(--success)'
+                                                        }} />
+                                                    </div>
+                                                    <span className="text-[9px] font-bold" style={{
+                                                        color: fillPct > 100 ? 'var(--danger)' : fillPct > 85 ? 'var(--warning)' : 'var(--success)'
+                                                    }}>{allocated}/{capacity}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
                             </div>
+                            {tracks.map((track, trackIdx) => {
+                                const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length];
+                                const items = track.items || [];
+                                return (
+                                    <div key={trackIdx} className="border-b border-border last:border-0" style={{ position: 'relative', minHeight: `${Math.max(80, 12 + items.length * 40 + 20)}px` }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${timeline.length}, 1fr)`, height: '100%', position: 'absolute', inset: 0 }}>
+                                            <div className="p-4 font-bold text-sm text-text-main border-r border-border flex items-center gap-3 bg-bg-card z-10">
+                                                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }}></span>
+                                                <span className="truncate">{track.name}</span>
+                                            </div>
+                                            {timeline.map((_, ci) => (
+                                                <div key={ci} className="border-r border-border/30" style={{ background: ci % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}></div>
+                                            ))}
+                                        </div>
+                                        <div style={{ position: 'absolute', left: '250px', right: 0, top: 0, bottom: 0, pointerEvents: 'none' }}>
+                                            {items.map((item, itemIdx) => {
+                                                const start = Math.max(0, Math.min(item.start || 0, timeline.length - 1));
+                                                const duration = Math.max(1, Math.min(item.duration || 1, timeline.length - start));
+                                                const leftPct = (start / timeline.length) * 100;
+                                                const widthPct = (duration / timeline.length) * 100;
+                                                const isDone = (item.status || '').toLowerCase().includes('done');
+                                                return (
+                                                    <div key={itemIdx} className="roadmap-item" style={{
+                                                        left: `calc(${leftPct}% + 4px)`,
+                                                        width: `calc(${widthPct}% - 8px)`,
+                                                        top: `${12 + itemIdx * 40}px`,
+                                                        background: isDone ? '#334155' : color,
+                                                        opacity: isDone ? 0.6 : 1,
+                                                        pointerEvents: 'auto',
+                                                        border: selectedItem?.key === item.key ? '2px solid white' : '2px solid transparent'
+                                                    }} title={`${item.key}: ${item.summary} (${item.points || 0} pts)`}
+                                                        onClick={() => setSelectedItem(selectedItem?.key === item.key ? null : item)}>
+                                                        <span className="truncate text-xs font-bold">
+                                                            {item.key}: {item.summary}
+                                                            {item.points > 0 && <span className="ml-2 opacity-70">({item.points}pt)</span>}
+                                                        </span>
+                                                        {isDone && <Icon name="CheckCircle" size={12} className="ml-2 opacity-70 shrink-0" />}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <div style={{ minHeight: `${Math.max(80, 12 + items.length * 40 + 20)}px` }}></div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
-                    <AnimatePresence>
-                        {selectedItem && (
-                            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={{ type: "spring", bounce: 0.3 }} className="glass-card p-8 border-l-4 border-primary">
-                                <div className="flex justify-between items-start gap-6">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-3 flex-wrap">
-                                            <span className="text-xs font-black text-primary bg-primary-dim px-3 py-1 rounded-full">{selectedItem.key}</span>
-                                            <span className="text-xs font-bold px-3 py-1 rounded-full" style={{ background: `${PRIORITY_COLORS[selectedItem.priority] || 'var(--border)'}22`, color: PRIORITY_COLORS[selectedItem.priority] || 'var(--text-muted)' }}>{selectedItem.priority || 'Medium'} Priority</span>
-                                            <span className="text-xs font-bold px-3 py-1 rounded-full bg-border/30 text-text-muted border border-border">{selectedItem.status || 'To Do'}</span>
-                                        </div>
-                                        <h3 className="text-xl font-extrabold text-text-main mb-2">{selectedItem.summary}</h3>
-                                        <div className="flex gap-6 text-sm font-bold text-text-muted">
-                                            <span>Start: <span className="text-text-main">Week {(selectedItem.start || 0) + 1}</span></span>
-                                            <span>Duration: <span className="text-text-main">{selectedItem.duration || 1} week(s)</span></span>
+                </div>
+            )}
+
+            {/* ══════ SPRINT BUCKETS VIEW ══════ */}
+            {viewMode === 'buckets' && (
+                <div className="space-y-6 mb-8">
+                    {sprintBuckets.map((bucket, bi) => {
+                        const allocated = bucket.allocated_points || 0;
+                        const capacity = bucket.target_capacity || velocity.avg_velocity || 1;
+                        const fillPct = Math.min(100, (allocated / capacity) * 100);
+                        const isOver = allocated > capacity;
+                        return (
+                            <motion.div key={bi} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: bi * 0.05 }}
+                                className="glass-card overflow-hidden">
+                                {/* Sprint Bucket Header */}
+                                <div className="p-5 flex justify-between items-center border-b border-border" style={{ background: isOver ? 'rgba(244,63,94,0.05)' : 'transparent' }}>
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{
+                                            background: isOver ? 'var(--danger)' : 'var(--accent-gradient)'
+                                        }}>{bi + 1}</div>
+                                        <div>
+                                            <h4 className="font-extrabold text-text-main text-lg">{bucket.sprint_label}</h4>
+                                            <p className="text-xs text-text-muted font-medium">{(bucket.items || []).length} items</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => setSelectedItem(null)} className="p-2 text-text-muted hover:text-text-main transition bg-bg-body rounded-lg border border-border shrink-0"><Icon name="X" size={18} /></button>
+                                    <div className="flex items-center gap-6">
+                                        {/* Capacity bar */}
+                                        <div className="w-48">
+                                            <div className="flex justify-between text-xs font-bold mb-1">
+                                                <span className="text-text-muted">Capacity</span>
+                                                <span style={{ color: isOver ? 'var(--danger)' : 'var(--success)' }}>
+                                                    {allocated}/{capacity} pts
+                                                    {isOver && <span className="ml-1">⚠️</span>}
+                                                </span>
+                                            </div>
+                                            <div className="w-full h-2.5 bg-border rounded-full overflow-hidden">
+                                                <div className="h-full rounded-full transition-all" style={{
+                                                    width: `${fillPct}%`,
+                                                    background: isOver ? 'var(--danger)' : fillPct > 85 ? 'var(--warning)' : 'var(--success)'
+                                                }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {/* Items */}
+                                <div className="p-4 space-y-2">
+                                    {(bucket.items || []).map((item, ii) => (
+                                        <div key={ii} className="flex items-center gap-4 p-3 bg-bg-body rounded-xl border border-border hover:border-primary transition-colors cursor-pointer"
+                                            onClick={() => setSelectedItem(selectedItem?.key === item.key ? null : item)}>
+                                            <span className="text-xs font-black text-primary bg-primary-dim px-2.5 py-1 rounded-full shrink-0">{item.key}</span>
+                                            <span className="flex-1 text-sm font-bold text-text-main truncate">{item.summary}</span>
+                                            <span className="text-xs font-bold px-2 py-1 rounded-full shrink-0" style={{
+                                                background: `${PRIORITY_COLORS[item.priority] || 'var(--border)'}22`,
+                                                color: PRIORITY_COLORS[item.priority] || 'var(--text-muted)'
+                                            }}>{item.priority}</span>
+                                            <span className="text-xs font-black text-primary bg-primary-dim px-2.5 py-1 rounded-full shrink-0">
+                                                {item.points || 0} pts
+                                            </span>
+                                        </div>
+                                    ))}
                                 </div>
                             </motion.div>
-                        )}
-                    </AnimatePresence>
+                        );
+                    })}
                 </div>
-            );
-        }
+            )}
+
+            {/* Unscheduled Items */}
+            {unscheduled.length > 0 && (
+                <div className="glass-card p-6 mb-8 border-l-4 border-warning">
+                    <h3 className="text-sm font-black uppercase tracking-widest text-warning mb-4 flex items-center gap-2">
+                        <Icon name="AlertTriangle" size={16} /> Unscheduled ({unscheduled.length})
+                    </h3>
+                    <div className="space-y-2">
+                        {unscheduled.map((item, i) => (
+                            <div key={i} className="flex items-center gap-3 text-sm text-text-muted">
+                                <span className="font-bold text-text-main">{item.key}</span>
+                                <span>{item.summary}</span>
+                                {item.reason && <span className="text-xs italic">— {item.reason}</span>}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Selected Item Detail */}
+            <AnimatePresence>
+                {selectedItem && (
+                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={{ type: "spring", bounce: 0.3 }}
+                        className="glass-card p-8 border-l-4 border-primary">
+                        <div className="flex justify-between items-start gap-6">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-3 mb-3 flex-wrap">
+                                    <span className="text-xs font-black text-primary bg-primary-dim px-3 py-1 rounded-full">{selectedItem.key}</span>
+                                    <span className="text-xs font-bold px-3 py-1 rounded-full" style={{
+                                        background: `${PRIORITY_COLORS[selectedItem.priority] || 'var(--border)'}22`,
+                                        color: PRIORITY_COLORS[selectedItem.priority] || 'var(--text-muted)'
+                                    }}>{selectedItem.priority || 'Medium'} Priority</span>
+                                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-border/30 text-text-muted border border-border">{selectedItem.status || 'To Do'}</span>
+                                    {selectedItem.points > 0 && <span className="text-xs font-black text-primary">{selectedItem.points} story points</span>}
+                                </div>
+                                <h3 className="text-xl font-extrabold text-text-main mb-2">{selectedItem.summary}</h3>
+                                {selectedItem.sprint_bucket && <span className="text-sm font-bold text-text-muted">Scheduled in: {selectedItem.sprint_bucket}</span>}
+                            </div>
+                            <button onClick={() => setSelectedItem(null)} className="p-2 text-text-muted hover:text-text-main transition bg-bg-body rounded-lg border border-border shrink-0">
+                                <Icon name="X" size={18} />
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
 
         /* ══════════════════════════════════════════════════════════════════
            ★ PREMIUM SLIDE SYSTEM — Rich Corporate Deck with Geometric Art

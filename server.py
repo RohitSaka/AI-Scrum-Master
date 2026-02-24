@@ -459,18 +459,464 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
 
 @app.get("/roadmap/{project_key}")
 def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
-    jql = f'project="{project_key}" AND statusCategory != Done ORDER BY priority DESC'
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "priority", "issuetype", "status"]})
-    context_data = [{"key": i.get('key'), "summary": i.get('fields', {}).get('summary', 'Unknown'), "type": i.get('fields', {}).get('issuetype', {}).get('name') if i.get('fields', {}).get('issuetype') else "Task", "priority": i.get('fields', {}).get('priority', {}).get('name') if i.get('fields', {}).get('priority') else "Medium", "status": i.get('fields', {}).get('status', {}).get('name') if i.get('fields', {}).get('status') else "To Do"} for i in res.json().get('issues', []) if res is not None and res.status_code == 200]
-    prompt = f"Elite Release Train Engineer. Analyze this Jira backlog: {json.dumps(context_data)}. Group into 3 Tracks over 12 weeks. Return EXACT JSON: {{\"timeline\": [\"W1\"...], \"tracks\": [{{\"name\": \"...\", \"items\": [{{\"key\": \"...\", \"summary\": \"...\", \"start\": 0, \"duration\": 2, \"priority\": \"High\", \"status\": \"To Do\"}}]}}]}}"
+    """
+    Sprint-History Based Roadmap Generator.
+    1. Fetches last N completed sprints + their issues
+    2. Calculates per-sprint velocity (completed points)
+    3. Fetches current backlog (not done, not in active sprint)
+    4. AI groups backlog into future sprint-sized buckets based on avg velocity
+    """
+    sp_field = get_story_point_field(creds)
+
+    # ── Step 1: Discover all sprints in this project ──
+    sprint_discovery_res = jira_request("POST", "search/jql", creds, {
+        "jql": f'project="{project_key}" AND sprint is not EMPTY ORDER BY updated DESC',
+        "maxResults": 100,
+        "fields": ["customfield_10020"]
+    })
+    all_sprints = {}
+    if sprint_discovery_res and sprint_discovery_res.status_code == 200:
+        for issue in sprint_discovery_res.json().get('issues', []):
+            for s in (issue.get('fields') or {}).get('customfield_10020') or []:
+                if s.get('id') not in all_sprints:
+                    all_sprints[s['id']] = {
+                        "id": s['id'], "name": s['name'], "state": s['state'],
+                        "startDate": s.get('startDate', ''), "endDate": s.get('endDate', '')
+                    }
+
+    # Separate closed vs active sprints
+    closed_sprints = sorted(
+        [s for s in all_sprints.values() if s['state'] == 'closed'],
+        key=lambda x: x.get('endDate', '') or x.get('id', 0),
+        reverse=True
+    )[:8]  # Last 8 completed sprints
+    closed_sprints.reverse()  # Chronological order
+
+    active_sprints = [s for s in all_sprints.values() if s['state'] == 'active']
+
+    # ── Step 2: For each closed sprint, calculate velocity ──
+    sprint_history = []
+    safe_fields = ["summary", "status", "priority", "issuetype", "assignee",
+                   "customfield_10016", "customfield_10026", "customfield_10028",
+                   "customfield_10004", sp_field]
+
+    for sprint in closed_sprints:
+        res = jira_request("POST", "search/jql", creds, {
+            "jql": f'project="{project_key}" AND sprint={sprint["id"]}',
+            "maxResults": 100,
+            "fields": safe_fields
+        })
+        if not res or res.status_code != 200:
+            continue
+
+        issues = res.json().get('issues', [])
+        completed_pts = 0.0
+        total_pts = 0.0
+        completed_count = 0
+        total_count = len(issues)
+        completed_items = []
+
+        for iss in issues:
+            f = iss.get('fields') or {}
+            pts = extract_story_points(f, sp_field)
+            total_pts += pts
+            status_cat = (f.get('status') or {}).get('statusCategory', {}).get('key', '')
+            if status_cat == 'done':
+                completed_pts += pts
+                completed_count += 1
+                completed_items.append({
+                    "key": iss.get('key'),
+                    "summary": f.get('summary', ''),
+                    "points": pts,
+                    "type": (f.get('issuetype') or {}).get('name', 'Task'),
+                    "priority": (f.get('priority') or {}).get('name', 'Medium')
+                })
+
+        sprint_history.append({
+            "sprint_id": sprint['id'],
+            "sprint_name": sprint['name'],
+            "total_issues": total_count,
+            "completed_issues": completed_count,
+            "total_points": total_pts,
+            "completed_points": completed_pts,
+            "completion_rate": round((completed_count / max(total_count, 1)) * 100, 1),
+            "completed_items": completed_items
+        })
+
+    # ── Step 3: Calculate velocity metrics ──
+    velocities = [s['completed_points'] for s in sprint_history if s['completed_points'] > 0]
+    avg_velocity = round(sum(velocities) / max(len(velocities), 1), 1) if velocities else 20.0
+    min_velocity = round(min(velocities), 1) if velocities else 0
+    max_velocity = round(max(velocities), 1) if velocities else 0
+
+    # Trend: compare last 2 vs first 2
+    trend = "stable"
+    if len(velocities) >= 4:
+        early = sum(velocities[:2]) / 2
+        recent = sum(velocities[-2:]) / 2
+        if recent > early * 1.15:
+            trend = "improving"
+        elif recent < early * 0.85:
+            trend = "declining"
+
+    velocity_data = {
+        "avg_velocity": avg_velocity,
+        "min": min_velocity,
+        "max": max_velocity,
+        "trend": trend,
+        "sprints_analyzed": len(velocities)
+    }
+
+    # ── Step 4: Fetch backlog (not Done, prioritized) ──
+    # Get items not in any sprint OR in backlog state
+    backlog_jql = f'project="{project_key}" AND statusCategory != Done ORDER BY rank ASC, priority DESC'
+    backlog_res = jira_request("POST", "search/jql", creds, {
+        "jql": backlog_jql,
+        "maxResults": 60,
+        "fields": safe_fields + ["customfield_10020"]
+    })
+
+    backlog_items = []
+    active_sprint_ids = set(str(s['id']) for s in active_sprints)
+
+    if backlog_res and backlog_res.status_code == 200:
+        for iss in backlog_res.json().get('issues', []):
+            f = iss.get('fields') or {}
+            # Check if this issue is in the active sprint — if so, skip for roadmap
+            issue_sprints = f.get('customfield_10020') or []
+            in_active = False
+            for sp in issue_sprints:
+                if isinstance(sp, dict) and (str(sp.get('id', '')) in active_sprint_ids or sp.get('state') == 'active'):
+                    in_active = True
+                    break
+
+            if in_active:
+                continue
+
+            pts = extract_story_points(f, sp_field)
+            backlog_items.append({
+                "key": iss.get('key'),
+                "summary": f.get('summary', 'Untitled'),
+                "points": pts,
+                "type": (f.get('issuetype') or {}).get('name', 'Task'),
+                "priority": (f.get('priority') or {}).get('name', 'Medium'),
+                "status": (f.get('status') or {}).get('name', 'To Do')
+            })
+
+    # ── Step 5: AI groups backlog into sprint buckets ──
+    prompt = f"""You are an expert Release Train Engineer. Based on the team's ACTUAL historical velocity data, group the backlog items into future sprint-sized buckets.
+
+VELOCITY DATA:
+- Average velocity per sprint: {avg_velocity} story points
+- Velocity trend: {trend}
+- Min velocity: {min_velocity}, Max velocity: {max_velocity}
+- Sprints analyzed: {len(velocities)}
+
+SPRINT HISTORY (last {len(sprint_history)} completed sprints):
+{json.dumps([{{"name": s["sprint_name"], "velocity": s["completed_points"], "completion_rate": s["completion_rate"]}} for s in sprint_history], indent=2)}
+
+BACKLOG ITEMS TO SCHEDULE:
+{json.dumps(backlog_items[:40], indent=2)}
+
+RULES:
+1. Each future sprint bucket should NOT exceed {avg_velocity} story points (the team's average velocity)
+2. Respect priority ordering — higher priority items go into earlier sprints
+3. Items with 0 points: estimate them based on similar items in the backlog
+4. If an item has no points, assume 3 points
+5. Name each sprint as "Sprint N+1", "Sprint N+2", etc.
+6. Group into tracks by theme/type if possible (e.g., "Feature Track", "Tech Debt Track", "Bug Fix Track")
+
+Return EXACTLY this JSON structure:
+{{
+    "sprint_buckets": [
+        {{
+            "sprint_label": "Sprint N+1",
+            "target_capacity": {avg_velocity},
+            "allocated_points": 28,
+            "items": [
+                {{"key": "PROJ-123", "summary": "...", "points": 5, "priority": "High", "status": "To Do"}}
+            ]
+        }}
+    ],
+    "tracks": [
+        {{
+            "name": "Feature Development",
+            "items": [
+                {{"key": "PROJ-123", "summary": "...", "sprint_bucket": "Sprint N+1", "start": 0, "duration": 1, "points": 5, "priority": "High", "status": "To Do"}}
+            ]
+        }}
+    ],
+    "unscheduled": [
+        {{"key": "PROJ-999", "summary": "...", "reason": "Exceeds planning horizon"}}
+    ],
+    "planning_notes": "Brief planning notes about capacity allocation"
+}}"""
+
     try:
-        raw = generate_ai_response(prompt, temperature=0.2).replace('```json','').replace('```','').strip()
+        raw = generate_ai_response(prompt, temperature=0.2).replace('```json', '').replace('```', '').strip()
         parsed = json.loads(raw)
-        if "timeline" not in parsed or "tracks" not in parsed: raise ValueError("Missing keys")
-        return parsed
+
+        # Validate structure
+        if "sprint_buckets" not in parsed:
+            raise ValueError("Missing sprint_buckets key")
+
+        # Build timeline labels from sprint buckets
+        timeline = [b.get("sprint_label", f"Sprint +{i+1}") for i, b in enumerate(parsed.get("sprint_buckets", []))]
+
+        # Build tracks for the Gantt view
+        tracks = parsed.get("tracks", [])
+        if not tracks:
+            # Fallback: create single track from sprint buckets
+            all_items = []
+            for si, bucket in enumerate(parsed.get("sprint_buckets", [])):
+                for item in bucket.get("items", []):
+                    item["start"] = si
+                    item["duration"] = 1
+                    all_items.append(item)
+            tracks = [{"name": "Planned Work", "items": all_items}]
+
+        return {
+            "timeline": timeline,
+            "tracks": tracks,
+            "sprint_buckets": parsed.get("sprint_buckets", []),
+            "unscheduled": parsed.get("unscheduled", []),
+            "planning_notes": parsed.get("planning_notes", ""),
+            "velocity": velocity_data,
+            "sprint_history": [
+                {"name": s["sprint_name"], "velocity": s["completed_points"],
+                 "completion_rate": s["completion_rate"], "total_issues": s["total_issues"],
+                 "completed_issues": s["completed_issues"]}
+                for s in sprint_history
+            ],
+            "backlog_count": len(backlog_items),
+            "mode": "sprint_velocity"  # Flag so frontend knows this is the new format
+        }
+
     except Exception as e:
-        print(f"Roadmap Fallback Activated: {e}", flush=True)
-        return {"timeline": [f"W{i}" for i in range(1,13)], "tracks": [{"name": "Planned Track", "items": [{"key": i.get('key',''), "summary": i.get('summary',''), "start": 0, "duration": 3, "priority": i.get('priority',''), "status": i.get('status','')} for i in context_data[:5]]}]}
+        print(f"Roadmap AI Error: {e}", flush=True)
+        # Fallback: simple sprint bucketing without AI
+        buckets = []
+        current_bucket = {"sprint_label": "Sprint N+1", "target_capacity": avg_velocity, "allocated_points": 0, "items": []}
+        bucket_idx = 1
+
+        for item in backlog_items:
+            pts = item.get("points", 0) or 3  # Default 3 if no points
+            if current_bucket["allocated_points"] + pts > avg_velocity and current_bucket["items"]:
+                buckets.append(current_bucket)
+                bucket_idx += 1
+                current_bucket = {"sprint_label": f"Sprint N+{bucket_idx}", "target_capacity": avg_velocity, "allocated_points": 0, "items": []}
+            current_bucket["items"].append(item)
+            current_bucket["allocated_points"] += pts
+
+        if current_bucket["items"]:
+            buckets.append(current_bucket)
+
+        timeline = [b["sprint_label"] for b in buckets]
+        all_items_track = []
+        for si, bucket in enumerate(buckets):
+            for item in bucket["items"]:
+                all_items_track.append({**item, "start": si, "duration": 1})
+
+        return {
+            "timeline": timeline if timeline else ["Sprint N+1"],
+            "tracks": [{"name": "Planned Work", "items": all_items_track}],
+            "sprint_buckets": buckets,
+            "unscheduled": [],
+            "planning_notes": "Fallback mode: items grouped by velocity capacity.",
+            "velocity": velocity_data,
+            "sprint_history": [
+                {"name": s["sprint_name"], "velocity": s["completed_points"],
+                 "completion_rate": s["completion_rate"], "total_issues": s["total_issues"],
+                 "completed_issues": s["completed_issues"]}
+                for s in sprint_history
+            ],
+            "backlog_count": len(backlog_items),
+            "mode": "sprint_velocity"
+        }
+
+@app.get("/capacity_check/{project_key}")
+def capacity_check(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
+    """
+    Capacity Intelligence for Command Center.
+    Compares current sprint committed points vs historical velocity.
+    Returns warnings and per-person analysis.
+    """
+    sp_field = get_story_point_field(creds)
+
+    # ── 1. Discover sprints ──
+    sprint_disc = jira_request("POST", "search/jql", creds, {
+        "jql": f'project="{project_key}" AND sprint is not EMPTY ORDER BY updated DESC',
+        "maxResults": 100,
+        "fields": ["customfield_10020"]
+    })
+    all_sprints = {}
+    if sprint_disc and sprint_disc.status_code == 200:
+        for issue in sprint_disc.json().get('issues', []):
+            for s in (issue.get('fields') or {}).get('customfield_10020') or []:
+                all_sprints[s['id']] = {"id": s['id'], "name": s['name'], "state": s['state']}
+
+    closed_sprints = sorted(
+        [s for s in all_sprints.values() if s['state'] == 'closed'],
+        key=lambda x: x['id'], reverse=True
+    )[:6]
+
+    # ── 2. Calculate velocity from closed sprints ──
+    safe_fields = ["summary", "status", "assignee", "priority",
+                   "customfield_10016", "customfield_10026", "customfield_10028",
+                   "customfield_10004", sp_field]
+
+    sprint_velocities = []
+    person_history = {}  # name -> [pts_per_sprint]
+
+    for sprint in closed_sprints:
+        res = jira_request("POST", "search/jql", creds, {
+            "jql": f'project="{project_key}" AND sprint={sprint["id"]}',
+            "maxResults": 100,
+            "fields": safe_fields
+        })
+        if not res or res.status_code != 200:
+            continue
+
+        sprint_total = 0.0
+        person_sprint = {}
+
+        for iss in res.json().get('issues', []):
+            f = iss.get('fields') or {}
+            pts = extract_story_points(f, sp_field)
+            status_cat = (f.get('status') or {}).get('statusCategory', {}).get('key', '')
+            if status_cat == 'done':
+                sprint_total += pts
+                name = (f.get('assignee') or {}).get('displayName', 'Unassigned')
+                person_sprint[name] = person_sprint.get(name, 0) + pts
+
+        sprint_velocities.append(sprint_total)
+        for name, pts in person_sprint.items():
+            if name not in person_history:
+                person_history[name] = []
+            person_history[name].append(pts)
+
+    avg_velocity = round(sum(sprint_velocities) / max(len(sprint_velocities), 1), 1) if sprint_velocities else 0
+    person_avg = {name: round(sum(hist) / len(hist), 1) for name, hist in person_history.items()}
+
+    # ── 3. Get current sprint committed points ──
+    jql = f'project="{project_key}" AND sprint={sprint_id}' if sprint_id and sprint_id != "active" else f'project="{project_key}" AND sprint in openSprints()'
+    current_res = jira_request("POST", "search/jql", creds, {
+        "jql": jql,
+        "maxResults": 100,
+        "fields": safe_fields
+    })
+
+    total_committed = 0.0
+    total_completed = 0.0
+    total_remaining = 0.0
+    person_committed = {}
+    person_completed = {}
+    person_issues = {}
+
+    if current_res and current_res.status_code == 200:
+        for iss in current_res.json().get('issues', []):
+            f = iss.get('fields') or {}
+            pts = extract_story_points(f, sp_field)
+            name = (f.get('assignee') or {}).get('displayName', 'Unassigned')
+            status_cat = (f.get('status') or {}).get('statusCategory', {}).get('key', '')
+            status_name = (f.get('status') or {}).get('name', 'To Do')
+            priority_name = (f.get('priority') or {}).get('name', 'Medium')
+
+            total_committed += pts
+            person_committed[name] = person_committed.get(name, 0) + pts
+
+            if name not in person_issues:
+                person_issues[name] = []
+            person_issues[name].append({
+                "key": iss.get('key'),
+                "summary": f.get('summary', ''),
+                "points": pts,
+                "status": status_name,
+                "priority": priority_name
+            })
+
+            if status_cat == 'done':
+                total_completed += pts
+                person_completed[name] = person_completed.get(name, 0) + pts
+            else:
+                total_remaining += pts
+
+    # ── 4. Calculate capacity utilization ──
+    utilization_pct = round((total_committed / max(avg_velocity, 1)) * 100, 1) if avg_velocity > 0 else 0
+
+    # Determine severity
+    if utilization_pct > 120:
+        severity = "critical"
+        warning = f"Sprint is significantly over-capacity at {utilization_pct}%! The team has committed {total_committed} points against an average velocity of {avg_velocity}. Consider removing {round(total_committed - avg_velocity, 1)} points of work."
+    elif utilization_pct > 100:
+        severity = "warning"
+        warning = f"Sprint is over-capacity at {utilization_pct}%. The team has committed {total_committed} points but historically delivers ~{avg_velocity}. There's a risk of carryover."
+    elif utilization_pct > 85:
+        severity = "caution"
+        warning = f"Sprint is at {utilization_pct}% capacity ({total_committed}/{avg_velocity} pts). This is ambitious but achievable if the team maintains focus."
+    elif utilization_pct > 0:
+        severity = "healthy"
+        warning = f"Sprint is at {utilization_pct}% capacity ({total_committed}/{avg_velocity} pts). The team has room for additional work."
+    else:
+        severity = "empty"
+        warning = "No velocity data or no committed work found."
+
+    # Per-person breakdown
+    person_capacity = {}
+    for name in set(list(person_committed.keys()) + list(person_avg.keys())):
+        committed = person_committed.get(name, 0)
+        completed = person_completed.get(name, 0)
+        hist_avg = person_avg.get(name, 0)
+        util = round((committed / max(hist_avg, 1)) * 100, 1) if hist_avg > 0 else 0
+
+        person_status = "healthy"
+        if util > 120:
+            person_status = "overloaded"
+        elif util > 100:
+            person_status = "at_risk"
+        elif util < 50 and hist_avg > 0:
+            person_status = "underutilized"
+
+        person_capacity[name] = {
+            "committed": committed,
+            "completed": completed,
+            "remaining": committed - completed,
+            "historical_avg": hist_avg,
+            "utilization_pct": util,
+            "status": person_status,
+            "issues": person_issues.get(name, [])
+        }
+
+    # ── 5. AI Recommendations ──
+    recommendations = []
+    overloaded = [n for n, c in person_capacity.items() if c["status"] == "overloaded" and n != "Unassigned"]
+    underutilized = [n for n, c in person_capacity.items() if c["status"] == "underutilized" and n != "Unassigned"]
+
+    if overloaded:
+        recommendations.append(f"{'These members are' if len(overloaded) > 1 else 'This member is'} over-capacity: {', '.join(overloaded)}. Consider redistributing work.")
+    if underutilized:
+        recommendations.append(f"{'These members have' if len(underutilized) > 1 else 'This member has'} available bandwidth: {', '.join(underutilized)}.")
+    if severity in ["critical", "warning"]:
+        excess = round(total_committed - avg_velocity, 1)
+        recommendations.append(f"Remove approximately {excess} story points from this sprint to match team velocity.")
+    if total_remaining > 0 and total_completed > 0:
+        progress_pct = round((total_completed / total_committed) * 100, 1)
+        recommendations.append(f"Sprint progress: {progress_pct}% complete ({total_completed}/{total_committed} pts).")
+
+    return {
+        "severity": severity,
+        "warning": warning,
+        "utilization_pct": utilization_pct,
+        "total_committed": total_committed,
+        "total_completed": total_completed,
+        "total_remaining": total_remaining,
+        "avg_velocity": avg_velocity,
+        "velocity_history": sprint_velocities,
+        "person_capacity": person_capacity,
+        "recommendations": recommendations,
+        "sprints_analyzed": len(sprint_velocities)
+    }
+
 
 @app.post("/timeline/generate_story")
 async def generate_timeline_story(payload: dict, creds: dict = Depends(get_jira_creds)):
