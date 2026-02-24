@@ -8,7 +8,9 @@ from dotenv import load_dotenv
 import urllib.parse
 import io
 import base64
-
+import csv, io, math, calendar
+from pydantic import BaseModel
+from typing import List, Optional
 # --- NATIVE PPTX GENERATION (v5 Engine) ---
 from pptx_engine_v5 import generate_native_editable_pptx, THEMES
 
@@ -84,6 +86,20 @@ class MeetingSession(Base):
     platform = Column(String)           # google_meet/teams/zoom/manual
 
 Base.metadata.create_all(bind=engine_db)
+
+class FeatureRoadmapRequest(BaseModel):
+    tech_stack: str
+    features: List[str]
+    target_duration_value: int         # e.g. 90, 6, 2
+    target_duration_unit: str          # "days" | "months" | "years"
+    project_key: Optional[str] = None
+    start_date: Optional[str] = None   # ISO date string, defaults to today
+
+class JiraPushRequest(BaseModel):
+    epics: List[dict]
+
+class XLSXDownloadRequest(BaseModel):
+    data: dict
 
 def get_db():
     db = SessionLocal()
@@ -1229,6 +1245,697 @@ def save_team(project_key: str, payload: dict, creds: dict = Depends(get_jira_cr
     
     jira_request("PUT", f"project/{project_key.upper()}/properties/ig_agile_team", creds, team_data)
     return {"status": "saved", "count": len(team_members)}
+
+@app.post("/feature_roadmap")
+def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(get_jira_creds)):
+
+    # ── Normalize target duration to working days ──
+    unit = req.target_duration_unit.lower()
+    val = req.target_duration_value
+    if unit == "days":
+        target_working_days = val
+    elif unit == "months":
+        target_working_days = int(val * 22)  # ~22 working days/month
+    elif unit == "years":
+        target_working_days = int(val * 260)  # ~260 working days/year
+    else:
+        target_working_days = int(val * 22)
+
+    target_months = round(target_working_days / 22, 1)
+    target_sprints = math.ceil(target_working_days / 10)  # 10 working days per 2-week sprint
+
+    features_text = "\n".join([f"{i+1}. {f}" for i, f in enumerate(req.features)])
+    num_features = len(req.features)
+    start_date = req.start_date or datetime.now().strftime('%Y-%m-%d')
+
+    prompt = f"""You are a world-class Technical Project Manager, Solutions Architect, and Agile Delivery Lead with 20+ years of experience estimating enterprise software projects.
+
+CONTEXT:
+- Tech Stack: {req.tech_stack}
+- Number of Features: {num_features}
+- Client Target Deadline: {target_working_days} working days ({target_months} months, ~{target_sprints} sprints)
+- Project Start Date: {start_date}
+
+CLIENT FEATURES TO BUILD:
+{features_text}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL: TARGET DURATION RESOURCE SCALING LOGIC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The client wants this done in {target_months} months.
+- First, estimate total story points WITHOUT time constraint
+- Then calculate how many PARALLEL STREAMS are needed to fit within {target_working_days} working days
+- MORE parallel streams = MORE team members needed (but shorter calendar time)
+- FEWER parallel streams = FEWER team members (but longer calendar time)
+- Each stream needs its own set of roles (dev, QA, BA minimum)
+- Factor in: dependencies between features may prevent full parallelization
+
+RESOURCE SCALING RULES:
+- If 1 stream can finish in X days but target is X/2 days → need ~2 parallel streams → ~2x team size
+- If target is generous (>1.5x single-stream time) → use 1 stream, smaller team
+- Maximum practical parallel streams: 4 (beyond that, coordination overhead dominates)
+- Each additional stream adds: 1 Tech Lead overhead, 10% coordination tax
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Analyze ALL features and return ONLY valid JSON (no markdown, no backticks) with this EXACT structure:
+
+{{
+    "sizing_legend": [
+        {{"size": "XXS", "days": 1, "story_points": 1, "sprints_equivalent": "0.1 sprint"}},
+        {{"size": "SMALL", "days": 2, "story_points": 2, "sprints_equivalent": "0.2 sprint"}},
+        {{"size": "MEDIUM", "days": 3, "story_points": 3, "sprints_equivalent": "0.3 sprint"}},
+        {{"size": "LARGE", "days": 5, "story_points": 5, "sprints_equivalent": "0.5 sprint"}},
+        {{"size": "XL", "days": 8, "story_points": 8, "sprints_equivalent": "0.8 sprint"}},
+        {{"size": "XXL", "days": 13, "story_points": 13, "sprints_equivalent": "1.3 sprints"}},
+        {{"size": "XXXL", "days": 21, "story_points": 21, "sprints_equivalent": "2.1 sprints"}}
+    ],
+    "feature_analysis": [
+        {{
+            "id": 1,
+            "feature": "Exact feature name from input",
+            "feature_type": "Application (UI)",
+            "technical_scope": "Detailed technical scope based on {req.tech_stack} (2-3 sentences)",
+            "size": "XXL",
+            "story_points": 13,
+            "days": 13,
+            "roles_needed": "PP, QA, BA, INT",
+            "est_team": "XXL – PP, QA, BA, INT",
+            "est_conservative": "L – PP, QA, BA",
+            "dependencies": "Feature #3, Feature #5",
+            "start_day": 1,
+            "end_day": 13,
+            "sprint_allocation": "SP1-SP2"
+        }}
+    ],
+    "total_story_points": 0,
+    "total_working_days_sequential": 0,
+    "team_composition": [
+        {{
+            "role": "Program Manager (PgM)",
+            "headcount": 1,
+            "billable": true,
+            "justification": "Overall delivery coordination",
+            "ramp_up_notes": "From Day 1",
+            "stream_allocation": "All streams"
+        }}
+    ],
+    "total_team_size": 0,
+    "parallel_stream_analysis": {{
+        "single_stream_days": 0,
+        "single_stream_months": 0,
+        "recommended_streams": 0,
+        "actual_parallel_days": 0,
+        "actual_parallel_months": 0,
+        "target_days": {target_working_days},
+        "target_months": {target_months},
+        "fits_target": true,
+        "coordination_overhead_pct": 10,
+        "notes": "With N parallel streams, the project fits within the target of {target_months} months. Team size scaled accordingly."
+    }},
+    "timeline": {{
+        "total_story_points": 0,
+        "team_velocity_per_sprint": 0,
+        "sprint_duration_weeks": 2,
+        "total_sprints": 0,
+        "total_working_days": 0,
+        "total_months": 0,
+        "start_date": "{start_date}",
+        "end_date": "YYYY-MM-DD",
+        "assumptions": "Based on N parallel streams with team of X"
+    }},
+    "sprint_mapping": [
+        {{
+            "sprint": "SP1",
+            "start_day": 1,
+            "end_day": 10,
+            "month": "M1",
+            "calendar_month": "Mar 2026",
+            "features_in_sprint": ["Feature #1", "Feature #2"],
+            "points_in_sprint": 25
+        }}
+    ],
+    "gantt_phases": [
+        {{
+            "phase": "Planning & Discovery",
+            "assigned_roles": "PgM, Architect, Tech Lead",
+            "dependencies": "None",
+            "start_day": 1,
+            "end_day": 5,
+            "start_week": 1,
+            "end_week": 1,
+            "duration_days": 5,
+            "phase_type": "planning"
+        }}
+    ],
+    "resource_loading": [
+        {{
+            "day": 1,
+            "sprint": "SP1",
+            "month": "M1",
+            "active_features": 2,
+            "team_members_needed": 4,
+            "roles_active": "PP, QA, BA, PM"
+        }}
+    ],
+    "uat_milestones": [
+        {{
+            "name": "UAT 1",
+            "sprint": "SP8",
+            "day": 80,
+            "scope": "Core modules: Auth, Dashboard, Client Management",
+            "duration_days": 5,
+            "exit_criteria": "All P1 defects resolved, 85% test pass rate"
+        }}
+    ],
+    "pilot_hypercare": {{
+        "pilot": {{
+            "start_day": 0,
+            "end_day": 0,
+            "duration_days": 15,
+            "description": "Limited production deployment with select users",
+            "team_needed": "PM, 1 Dev, 1 QA, 1 BA"
+        }},
+        "hypercare": {{
+            "start_day": 0,
+            "end_day": 0,
+            "duration_days": 15,
+            "description": "Full production support, monitoring, defect resolution",
+            "team_needed": "PM, 2 Dev, 1 QA"
+        }}
+    }},
+    "epics": [
+        {{
+            "epic_name": "User Authentication & Authorization",
+            "epic_description": "All features related to user access control",
+            "feature_type": "Application (UI)",
+            "total_points": 13,
+            "stories": [
+                {{
+                    "summary": "Implement user registration with email verification",
+                    "description": "As a new user, I want to register with my email so I can access the platform.\\n\\nAcceptance Criteria:\\n- Email + password registration form\\n- Email verification flow\\n- Error handling for duplicate emails",
+                    "story_points": 5,
+                    "priority": "High"
+                }}
+            ]
+        }}
+    ],
+    "feature_type_summary": {{
+        "Application (UI)": {{"count": 0, "total_points": 0}},
+        "Systems Integration": {{"count": 0, "total_points": 0}},
+        "Reporting": {{"count": 0, "total_points": 0}},
+        "Process Automation": {{"count": 0, "total_points": 0}},
+        "Data & Backend": {{"count": 0, "total_points": 0}}
+    }}
+}}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTIMATION RULES:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. T-Shirt sizes: XXS=1, SMALL=2, MEDIUM=3, LARGE=5, XL=8, XXL=13, XXXL=21 (Fibonacci ONLY)
+2. Each feature gets: size, points, days (same as points), roles_needed, dual estimation
+3. Feature types: "Application (UI)", "Systems Integration", "Reporting", "Process Automation", "Data & Backend"
+4. est_team = your team-level estimate with roles (e.g. "XXL – PP, QA, BA, INT")
+5. est_conservative = a more conservative/TA estimate (often 1 size smaller)
+6. Per-feature scheduling: start_day and end_day for EVERY feature (day-level Gantt)
+7. Features with dependencies start AFTER their dependency ends
+8. Parallel features share the same day range ONLY if role assignments don't conflict
+9. Resource loading: for every 10th day, show team members needed
+10. UAT gates: place UAT checkpoints every ~4-6 sprints, plus a FINAL UAT before pilot
+11. Pilot: 10-15 working days after all development + final UAT
+12. Hypercare: 10-15 working days after pilot
+13. Sprint mapping: SP1 starts Day 1-10, SP2 Day 11-20, etc.
+14. All {num_features} features MUST be present in feature_analysis
+15. Calendar months should start from {start_date}
+16. Ensure resource_loading has entries for day 1, 10, 20, 30... up to total_working_days
+17. gantt_phases must include: Planning, Setup/CI-CD, Development (grouped by sprint), Testing/QA, each UAT, Pilot, Hypercare
+18. Parallel stream analysis must show: what if 1 stream vs recommended streams"""
+
+    try:
+        ai_result = generate_ai_response(prompt, temperature=0.2)
+        if not ai_result:
+            raise ValueError("AI returned empty response")
+
+        raw = ai_result.replace('```json', '').replace('```', '').strip()
+        parsed = json.loads(raw)
+
+        # ── Post-process: validate & fix totals ──
+        fa = parsed.get("feature_analysis", [])
+        total_pts = sum(f.get("story_points", 0) for f in fa)
+        parsed["total_story_points"] = total_pts
+        parsed["total_working_days_sequential"] = sum(f.get("days", 0) for f in fa)
+
+        # Fix timeline math
+        tl = parsed.get("timeline", {})
+        tl["total_story_points"] = total_pts
+        tl["start_date"] = start_date
+
+        # Ensure parallel stream analysis has target
+        psa = parsed.get("parallel_stream_analysis", {})
+        psa["target_days"] = target_working_days
+        psa["target_months"] = target_months
+
+        # Add metadata
+        parsed["_meta"] = {
+            "tech_stack": req.tech_stack,
+            "target_duration_value": req.target_duration_value,
+            "target_duration_unit": req.target_duration_unit,
+            "target_working_days": target_working_days,
+            "target_months": target_months,
+            "target_sprints": target_sprints,
+            "num_features": num_features,
+            "start_date": start_date,
+            "generated_at": datetime.now().isoformat()
+        }
+
+        return parsed
+
+    except json.JSONDecodeError as e:
+        print(f"Feature Roadmap V2 JSON Error: {e}", flush=True)
+        return {"error": f"AI response was not valid JSON. Please try again.", "raw_snippet": str(e)}
+    except Exception as e:
+        print(f"Feature Roadmap V2 Error: {e}", flush=True)
+        return {"error": str(e)}
+    
+@app.post("/feature_roadmap/push_jira/{project_key}")
+def push_feature_roadmap_to_jira(project_key: str, req: JiraPushRequest, creds: dict = Depends(get_jira_creds)):
+    sp_field = get_story_point_field(creds)
+    created = []
+    errors = []
+
+    for epic in req.epics:
+        epic_name = epic.get("epic_name", "Unnamed Epic")
+        epic_desc = epic.get("epic_description", "")
+
+        epic_payload = {
+            "fields": {
+                "project": {"key": project_key},
+                "summary": epic_name,
+                "description": {
+                    "type": "doc", "version": 1,
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": epic_desc}]}]
+                },
+                "issuetype": {"name": "Epic"},
+            }
+        }
+        for epic_name_field in ["customfield_10011", "customfield_10004"]:
+            try: epic_payload["fields"][epic_name_field] = epic_name
+            except: pass
+
+        epic_res = jira_request("POST", "issue", creds, epic_payload)
+        if not epic_res or epic_res.status_code not in [200, 201]:
+            error_detail = ""
+            if epic_res:
+                try: error_detail = epic_res.json()
+                except: error_detail = epic_res.text[:200]
+            errors.append({"epic": epic_name, "error": f"Failed to create epic: {error_detail}"})
+            continue
+
+        epic_key = epic_res.json().get("key", "UNKNOWN")
+        epic_id = epic_res.json().get("id", "")
+        created_stories = []
+
+        for story in epic.get("stories", []):
+            story_desc_text = story.get("description", "")
+            desc_content = []
+            for paragraph in story_desc_text.split("\n"):
+                if paragraph.strip():
+                    desc_content.append({"type": "paragraph", "content": [{"type": "text", "text": paragraph.strip()}]})
+
+            story_payload = {
+                "fields": {
+                    "project": {"key": project_key},
+                    "summary": story.get("summary", "Untitled Story"),
+                    "description": {
+                        "type": "doc", "version": 1,
+                        "content": desc_content if desc_content else [{"type": "paragraph", "content": [{"type": "text", "text": "No description"}]}]
+                    },
+                    "issuetype": {"name": "Story"},
+                    "priority": {"name": story.get("priority", "Medium")},
+                }
+            }
+            if epic_id:
+                story_payload["fields"]["parent"] = {"id": epic_id}
+            pts = story.get("story_points", 0)
+            if pts > 0 and sp_field:
+                story_payload["fields"][sp_field] = float(pts)
+
+            story_res = jira_request("POST", "issue", creds, story_payload)
+            if story_res and story_res.status_code in [200, 201]:
+                story_key = story_res.json().get("key", "UNKNOWN")
+                created_stories.append({"key": story_key, "summary": story.get("summary", ""), "points": pts})
+            else:
+                error_detail = ""
+                if story_res:
+                    try: error_detail = story_res.json()
+                    except: error_detail = story_res.text[:200]
+                errors.append({"epic": epic_name, "story": story.get("summary", ""), "error": f"Failed: {error_detail}"})
+
+        created.append({"epic_key": epic_key, "epic_name": epic_name, "stories_created": len(created_stories), "stories": created_stories})
+
+    return {
+        "success": True,
+        "created_epics": len(created),
+        "created_stories": sum(e["stories_created"] for e in created),
+        "details": created,
+        "errors": errors
+    }
+
+@app.post("/feature_roadmap/download_xlsx")
+def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = Workbook()
+    data = req.data
+    meta = data.get("_meta", {})
+    fa = data.get("feature_analysis", [])
+    team = data.get("team_composition", [])
+    tl = data.get("timeline", {})
+    gantt = data.get("gantt_phases", [])
+    epics = data.get("epics", [])
+    sprint_map = data.get("sprint_mapping", [])
+    resource_load = data.get("resource_loading", [])
+    uat = data.get("uat_milestones", [])
+    ph = data.get("pilot_hypercare", {})
+    psa = data.get("parallel_stream_analysis", {})
+    sizing = data.get("sizing_legend", [])
+    ft_summary = data.get("feature_type_summary", {})
+
+    # ── Styles ──
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill("solid", fgColor="2563EB")
+    subheader_fill = PatternFill("solid", fgColor="DBEAFE")
+    subheader_font = Font(bold=True, size=10)
+    thin_border = Border(
+        left=Side(style='thin'), right=Side(style='thin'),
+        top=Side(style='thin'), bottom=Side(style='thin')
+    )
+    size_colors = {
+        'XXS': 'E0F7FA', 'SMALL': 'E8F5E9', 'MEDIUM': 'E3F2FD',
+        'LARGE': 'FFF8E1', 'XL': 'FFF3E0', 'XXL': 'FCE4EC', 'XXXL': 'FFEBEE'
+    }
+
+    def write_header(ws, row, headers, col_start=1):
+        for i, h in enumerate(headers):
+            cell = ws.cell(row=row, column=col_start + i, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', wrap_text=True)
+            cell.border = thin_border
+
+    def auto_width(ws, min_w=10, max_w=40):
+        for col_cells in ws.columns:
+            max_len = 0
+            col_letter = get_column_letter(col_cells[0].column)
+            for cell in col_cells:
+                if cell.value:
+                    max_len = max(max_len, len(str(cell.value)))
+            ws.column_dimensions[col_letter].width = min(max(max_len + 2, min_w), max_w)
+
+    # ═══════════ SHEET 1: Project Summary ═══════════
+    ws1 = wb.active
+    ws1.title = "Project Summary"
+    ws1.sheet_properties.tabColor = "2563EB"
+
+    # Title
+    ws1['A1'] = "FEATURE ROADMAP — PROJECT ESTIMATION"
+    ws1['A1'].font = Font(bold=True, size=16, color="2563EB")
+    ws1.merge_cells('A1:F1')
+    ws1['A2'] = f"Tech Stack: {meta.get('tech_stack', 'N/A')} | Target: {meta.get('target_duration_value', '')} {meta.get('target_duration_unit', '')} | Generated: {meta.get('generated_at', '')[:10]}"
+    ws1['A2'].font = Font(italic=True, size=10, color="666666")
+    ws1.merge_cells('A2:F2')
+
+    # Sizing Legend
+    r = 4
+    ws1.cell(row=r, column=1, value="T-SHIRT SIZING LEGEND").font = Font(bold=True, size=12, color="2563EB")
+    r += 1
+    write_header(ws1, r, ["Size", "Days", "Story Points", "Sprint Equivalent"])
+    r += 1
+    for s in sizing:
+        ws1.cell(row=r, column=1, value=s.get("size", "")).border = thin_border
+        ws1.cell(row=r, column=1).fill = PatternFill("solid", fgColor=size_colors.get(s.get("size", ""), "FFFFFF"))
+        ws1.cell(row=r, column=2, value=s.get("days", 0)).border = thin_border
+        ws1.cell(row=r, column=3, value=s.get("story_points", 0)).border = thin_border
+        ws1.cell(row=r, column=4, value=s.get("sprints_equivalent", "")).border = thin_border
+        r += 1
+
+    # Team Composition
+    r += 1
+    ws1.cell(row=r, column=1, value="TEAM COMPOSITION").font = Font(bold=True, size=12, color="2563EB")
+    r += 1
+    write_header(ws1, r, ["Role", "Headcount", "Billable", "Justification", "Ramp-Up Notes", "Stream Allocation"])
+    r += 1
+    for t in team:
+        ws1.cell(row=r, column=1, value=t.get("role", "")).border = thin_border
+        ws1.cell(row=r, column=2, value=t.get("headcount", 1)).border = thin_border
+        ws1.cell(row=r, column=3, value="Yes" if t.get("billable", True) else "No").border = thin_border
+        ws1.cell(row=r, column=4, value=t.get("justification", "")).border = thin_border
+        ws1.cell(row=r, column=5, value=t.get("ramp_up_notes", "")).border = thin_border
+        ws1.cell(row=r, column=6, value=t.get("stream_allocation", "")).border = thin_border
+        r += 1
+    ws1.cell(row=r, column=1, value="TOTAL TEAM SIZE").font = Font(bold=True)
+    ws1.cell(row=r, column=2, value=data.get("total_team_size", sum(t.get("headcount", 1) for t in team))).font = Font(bold=True, color="2563EB", size=14)
+
+    # Parallel Stream Analysis
+    r += 2
+    ws1.cell(row=r, column=1, value="PARALLEL STREAM ANALYSIS").font = Font(bold=True, size=12, color="2563EB")
+    r += 1
+    for label, key in [
+        ("Sequential (1 Stream) Days", "single_stream_days"),
+        ("Sequential (1 Stream) Months", "single_stream_months"),
+        ("Recommended Parallel Streams", "recommended_streams"),
+        ("Actual Duration (Parallel) Days", "actual_parallel_days"),
+        ("Actual Duration (Parallel) Months", "actual_parallel_months"),
+        ("Client Target Days", "target_days"),
+        ("Client Target Months", "target_months"),
+        ("Fits Target?", "fits_target"),
+        ("Coordination Overhead", "coordination_overhead_pct"),
+    ]:
+        ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
+        ws1.cell(row=r, column=1).border = thin_border
+        val = psa.get(key, "")
+        if key == "fits_target":
+            val = "✅ YES" if val else "❌ NO"
+        elif key == "coordination_overhead_pct":
+            val = f"{val}%"
+        ws1.cell(row=r, column=2, value=str(val)).border = thin_border
+        r += 1
+    if psa.get("notes"):
+        ws1.cell(row=r, column=1, value="Notes:").font = Font(italic=True)
+        ws1.cell(row=r, column=2, value=psa.get("notes", ""))
+        ws1.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
+
+    # Timeline
+    r += 2
+    ws1.cell(row=r, column=1, value="TIMELINE SUMMARY").font = Font(bold=True, size=12, color="2563EB")
+    r += 1
+    for label, val in [
+        ("Total Story Points", tl.get("total_story_points", data.get("total_story_points", 0))),
+        ("Team Velocity/Sprint", tl.get("team_velocity_per_sprint", "")),
+        ("Sprint Duration", "2 weeks"),
+        ("Total Sprints", tl.get("total_sprints", "")),
+        ("Total Working Days", tl.get("total_working_days", "")),
+        ("Total Calendar Months", tl.get("total_months", "")),
+        ("Start Date", tl.get("start_date", "")),
+        ("End Date", tl.get("end_date", "")),
+        ("Assumptions", tl.get("assumptions", "")),
+    ]:
+        ws1.cell(row=r, column=1, value=label).font = Font(bold=True)
+        ws1.cell(row=r, column=1).border = thin_border
+        ws1.cell(row=r, column=2, value=str(val)).border = thin_border
+        r += 1
+
+    auto_width(ws1)
+
+    # ═══════════ SHEET 2: Feature Schedule (THE BIG ONE) ═══════════
+    ws2 = wb.create_sheet("Feature Schedule")
+    ws2.sheet_properties.tabColor = "10B981"
+
+    total_days = max((f.get("end_day", 0) for f in fa), default=10)
+    pilot = ph.get("pilot", {})
+    hypercare = ph.get("hypercare", {})
+    if hypercare.get("end_day", 0) > total_days:
+        total_days = hypercare["end_day"]
+    total_days = max(total_days, 10)
+
+    # Row 1: Sprint headers
+    static_cols = ["ID", "Feature Name", "Type", "Days", "Sizing", "Est. TEAM", "Est. Conservative", "Roles", "Dependencies"]
+    num_static = len(static_cols)
+    write_header(ws2, 1, static_cols)
+
+    # Sprint header row across day columns
+    for d in range(1, total_days + 1):
+        col = num_static + d
+        sprint_num = math.ceil(d / 10)
+        if (d - 1) % 10 == 0:
+            cell = ws2.cell(row=1, column=col, value=f"SP{sprint_num}")
+            cell.font = Font(bold=True, size=8, color="2563EB")
+            cell.alignment = Alignment(horizontal='center')
+
+    # Row 2: Day numbers
+    for d in range(1, total_days + 1):
+        cell = ws2.cell(row=2, column=num_static + d, value=d)
+        cell.font = Font(size=7, color="999999")
+        cell.alignment = Alignment(horizontal='center')
+
+    # Feature rows (starting row 3)
+    gantt_fill_colors = ['4FC3F7', '81C784', 'FFB74D', 'E57373', 'BA68C8', '4DD0E1', 'F06292', 'AED581']
+    for idx, f in enumerate(fa):
+        r = 3 + idx
+        ws2.cell(row=r, column=1, value=f.get("id", idx + 1)).border = thin_border
+        ws2.cell(row=r, column=2, value=f.get("feature", "")).border = thin_border
+        ws2.cell(row=r, column=3, value=f.get("feature_type", "")).border = thin_border
+        ws2.cell(row=r, column=4, value=f.get("days", 0)).border = thin_border
+
+        size_val = f.get("size", "")
+        size_cell = ws2.cell(row=r, column=5, value=size_val)
+        size_cell.border = thin_border
+        size_cell.fill = PatternFill("solid", fgColor=size_colors.get(size_val, "FFFFFF"))
+
+        ws2.cell(row=r, column=6, value=f.get("est_team", "")).border = thin_border
+        ws2.cell(row=r, column=7, value=f.get("est_conservative", "")).border = thin_border
+        ws2.cell(row=r, column=8, value=f.get("roles_needed", "")).border = thin_border
+        ws2.cell(row=r, column=9, value=f.get("dependencies", "None")).border = thin_border
+
+        # Day-by-day Gantt cells
+        start_d = f.get("start_day", 1)
+        end_d = f.get("end_day", start_d + f.get("days", 1) - 1)
+        color = gantt_fill_colors[idx % len(gantt_fill_colors)]
+        for d in range(start_d, min(end_d + 1, total_days + 1)):
+            col = num_static + d
+            cell = ws2.cell(row=r, column=col, value=1)
+            cell.fill = PatternFill("solid", fgColor=color)
+            cell.font = Font(size=7, color=color)
+            cell.alignment = Alignment(horizontal='center')
+
+    # Resource loading row at bottom
+    r_load_row = 3 + len(fa) + 1
+    ws2.cell(row=r_load_row, column=1, value="RESOURCE").font = Font(bold=True, color="FFFFFF")
+    ws2.cell(row=r_load_row, column=1).fill = PatternFill("solid", fgColor="EF4444")
+    ws2.cell(row=r_load_row, column=2, value="Daily Team Count").font = Font(bold=True)
+    for rl in resource_load:
+        d = rl.get("day", 1)
+        if 1 <= d <= total_days:
+            col = num_static + d
+            members = rl.get("team_members_needed", 0)
+            cell = ws2.cell(row=r_load_row, column=col, value=members)
+            cell.font = Font(bold=True, size=8)
+            cell.alignment = Alignment(horizontal='center')
+
+    # UAT milestone row
+    uat_row = r_load_row + 1
+    ws2.cell(row=uat_row, column=1, value="UAT").font = Font(bold=True, color="FFFFFF")
+    ws2.cell(row=uat_row, column=1).fill = PatternFill("solid", fgColor="8B5CF6")
+    for u in uat:
+        d = u.get("day", 0)
+        if 1 <= d <= total_days:
+            col = num_static + d
+            cell = ws2.cell(row=uat_row, column=col, value=u.get("name", "UAT"))
+            cell.fill = PatternFill("solid", fgColor="DDD6FE")
+            cell.font = Font(bold=True, size=8, color="6D28D9")
+
+    # Pilot row
+    pilot_row = uat_row + 1
+    ws2.cell(row=pilot_row, column=1, value="PILOT").font = Font(bold=True, color="FFFFFF")
+    ws2.cell(row=pilot_row, column=1).fill = PatternFill("solid", fgColor="F59E0B")
+    p_start = pilot.get("start_day", 0)
+    p_end = pilot.get("end_day", 0)
+    for d in range(max(1, p_start), min(p_end + 1, total_days + 1)):
+        cell = ws2.cell(row=pilot_row, column=num_static + d, value=1)
+        cell.fill = PatternFill("solid", fgColor="FEF3C7")
+        cell.font = Font(size=7, color="FEF3C7")
+
+    # Hypercare row
+    hc_row = pilot_row + 1
+    ws2.cell(row=hc_row, column=1, value="HYPERCARE").font = Font(bold=True, color="FFFFFF")
+    ws2.cell(row=hc_row, column=1).fill = PatternFill("solid", fgColor="06B6D4")
+    h_start = hypercare.get("start_day", 0)
+    h_end = hypercare.get("end_day", 0)
+    for d in range(max(1, h_start), min(h_end + 1, total_days + 1)):
+        cell = ws2.cell(row=hc_row, column=num_static + d, value=1)
+        cell.fill = PatternFill("solid", fgColor="CFFAFE")
+        cell.font = Font(size=7, color="CFFAFE")
+
+    # Set column widths for Feature Schedule
+    ws2.column_dimensions['A'].width = 5
+    ws2.column_dimensions['B'].width = 45
+    ws2.column_dimensions['C'].width = 18
+    ws2.column_dimensions['D'].width = 6
+    ws2.column_dimensions['E'].width = 14
+    ws2.column_dimensions['F'].width = 22
+    ws2.column_dimensions['G'].width = 22
+    ws2.column_dimensions['H'].width = 16
+    ws2.column_dimensions['I'].width = 18
+    for d in range(1, total_days + 1):
+        ws2.column_dimensions[get_column_letter(num_static + d)].width = 3.5
+
+    # Freeze panes
+    ws2.freeze_panes = ws2.cell(row=3, column=num_static + 1)
+
+    # ═══════════ SHEET 3: Gantt Phases ═══════════
+    ws3 = wb.create_sheet("Gantt Phases")
+    ws3.sheet_properties.tabColor = "F59E0B"
+    write_header(ws3, 1, ["Phase", "Assigned Roles", "Dependencies", "Start Day", "End Day", "Start Week", "End Week", "Duration (days)", "Phase Type"])
+    for i, g in enumerate(gantt):
+        r = i + 2
+        ws3.cell(row=r, column=1, value=g.get("phase", "")).border = thin_border
+        ws3.cell(row=r, column=2, value=g.get("assigned_roles", "")).border = thin_border
+        ws3.cell(row=r, column=3, value=g.get("dependencies", "")).border = thin_border
+        ws3.cell(row=r, column=4, value=g.get("start_day", 0)).border = thin_border
+        ws3.cell(row=r, column=5, value=g.get("end_day", 0)).border = thin_border
+        ws3.cell(row=r, column=6, value=g.get("start_week", 0)).border = thin_border
+        ws3.cell(row=r, column=7, value=g.get("end_week", 0)).border = thin_border
+        ws3.cell(row=r, column=8, value=g.get("duration_days", 0)).border = thin_border
+        ws3.cell(row=r, column=9, value=g.get("phase_type", "")).border = thin_border
+    auto_width(ws3)
+
+    # ═══════════ SHEET 4: Jira Breakdown ═══════════
+    ws4 = wb.create_sheet("Jira Breakdown")
+    ws4.sheet_properties.tabColor = "8B5CF6"
+    write_header(ws4, 1, ["Epic Name", "Feature Type", "Epic Points", "Story Summary", "Description", "Story Points", "Priority"])
+    r = 2
+    for epic in epics:
+        for story in epic.get("stories", []):
+            ws4.cell(row=r, column=1, value=epic.get("epic_name", "")).border = thin_border
+            ws4.cell(row=r, column=2, value=epic.get("feature_type", "")).border = thin_border
+            ws4.cell(row=r, column=3, value=epic.get("total_points", 0)).border = thin_border
+            ws4.cell(row=r, column=4, value=story.get("summary", "")).border = thin_border
+            ws4.cell(row=r, column=5, value=story.get("description", "").replace("\n", " | ")[:500]).border = thin_border
+            ws4.cell(row=r, column=6, value=story.get("story_points", 0)).border = thin_border
+            ws4.cell(row=r, column=7, value=story.get("priority", "Medium")).border = thin_border
+            r += 1
+    auto_width(ws4)
+
+    # ═══════════ SHEET 5: Sprint Map ═══════════
+    ws5 = wb.create_sheet("Sprint Map")
+    ws5.sheet_properties.tabColor = "06B6D4"
+    write_header(ws5, 1, ["Sprint", "Start Day", "End Day", "Month", "Calendar Month", "Features", "Points"])
+    for i, sm in enumerate(sprint_map):
+        r = i + 2
+        ws5.cell(row=r, column=1, value=sm.get("sprint", "")).border = thin_border
+        ws5.cell(row=r, column=2, value=sm.get("start_day", 0)).border = thin_border
+        ws5.cell(row=r, column=3, value=sm.get("end_day", 0)).border = thin_border
+        ws5.cell(row=r, column=4, value=sm.get("month", "")).border = thin_border
+        ws5.cell(row=r, column=5, value=sm.get("calendar_month", "")).border = thin_border
+        features_str = ", ".join(sm.get("features_in_sprint", []))
+        ws5.cell(row=r, column=6, value=features_str).border = thin_border
+        ws5.cell(row=r, column=7, value=sm.get("points_in_sprint", 0)).border = thin_border
+    auto_width(ws5)
+
+    # ── Save & return ──
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"Feature_Roadmap_{meta.get('tech_stack', 'Project').replace(' ', '_')[:20]}_{datetime.now().strftime('%Y%m%d')}.xlsx"
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 @app.post("/team/generate_email")
 def generate_team_email(payload: dict, creds: dict = Depends(get_jira_creds)):

@@ -649,6 +649,7 @@
                                 <div><h1 className="text-xl font-extrabold tracking-tight leading-none text-text-main">Agile Scrum</h1></div>
                             </div>
                             <nav className="space-y-2">
+                                <NavBtn id="feature_roadmap" icon="FileText" label="Feature Roadmap" active={view} set={setView} disabled={isGlobalLoading}/>
                                 <NavBtn id="smartdeck" icon="Layers" label="AI Sprint Deck" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="timeline" icon="Zap" label="Sprint Dynamics & Build" active={view} set={setView} disabled={isGlobalLoading} />
@@ -666,6 +667,7 @@
                     <main className="flex-1 flex flex-col overflow-hidden relative transition-colors duration-300 bg-bg-body" style={{ padding: view === 'smartdeck' ? '0' : '2.5rem' }}>
                         {activeProject ? (
                             <div className="flex-1 min-h-0 relative h-full">
+                                {view === 'feature_roadmap' && <FeatureRoadmapView project={selectedProject} setIsLoading={setIsLoading} />}
                                 {view === 'smartdeck' && <SmartDeckView project={activeProject} endpoint={`/super_deck/${activeProject}?sprint_id=active`} isFullScreenLayout={true} />}
                                 {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                                 {view === 'roadmap' && <RoadmapView project={activeProject} setIsLoading={setIsGlobalLoading} />}
@@ -685,6 +687,837 @@
         const NavBtn = ({ id, icon, label, active, set, disabled }) => (<button onClick={() => set(id)} disabled={disabled} className={`nav-btn w-full ${active === id ? 'active' : ''} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}><Icon name={icon} size={20} /> {label}</button>);
         function ThemeToggle({ theme, setTheme, fullWidth }) { return (<button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-3 rounded-lg border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-3 transition hover:bg-bg-hover border-border text-text-muted bg-bg-card ${fullWidth ? 'w-full' : ''}`}><Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={16} /> {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</button>); }
         function MetricCard({ label, value, color, isDanger }) { return (<div className="glass-card p-6 border-l-4 transition-all hover:scale-[1.02]" style={{ borderLeftColor: isDanger ? 'var(--danger)' : `var(--${color})` }}><div className="text-xs font-bold uppercase tracking-widest mb-2 text-text-muted">{label}</div><div className="text-4xl font-extrabold text-text-main">{value}</div></div>); }
+
+    function FeatureRoadmapView({ project, setIsLoading }) {
+    const [techStack, setTechStack] = useState('');
+    const [customStack, setCustomStack] = useState('');
+    const [featuresText, setFeaturesText] = useState('');
+    const [durationValue, setDurationValue] = useState(6);
+    const [durationUnit, setDurationUnit] = useState('months');
+    const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+    const [data, setData] = useState(null);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [activeSection, setActiveSection] = useState('analysis');
+    const [pushingJira, setPushingJira] = useState(false);
+    const [jiraResult, setJiraResult] = useState(null);
+    const [downloadingXLSX, setDownloadingXLSX] = useState(false);
+    const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
+
+    const TECH_STACKS = [
+        'React + Node.js + PostgreSQL',
+        'React + Python (FastAPI) + PostgreSQL',
+        'Next.js + Node.js + MongoDB',
+        'Angular + Java Spring Boot + MySQL',
+        'Vue.js + Django + PostgreSQL',
+        'React Native + Node.js + Firebase',
+        'Flutter + Dart + Firebase',
+        'MERN Stack (MongoDB, Express, React, Node)',
+        '.NET Core + Angular + SQL Server',
+        'Salesforce + Apex + Lightning',
+        'SAP + ABAP + HANA',
+        'Power Platform + Dataverse + Azure',
+        'Custom (specify below)'
+    ];
+
+    const DURATION_PRESETS = {
+        days:   [30, 45, 60, 90, 120, 150, 180],
+        months: [2, 3, 4, 6, 8, 10, 12, 14, 18, 24],
+        years:  [1, 1.5, 2, 2.5, 3, 4]
+    };
+
+    const SIZE_CONFIG = {
+        'XXS': { color: '#06B6D4', bg: 'rgba(6,182,212,0.12)', pts: 1 },
+        'SMALL': { color: '#10B981', bg: 'rgba(16,185,129,0.12)', pts: 2 },
+        'MEDIUM': { color: '#3B82F6', bg: 'rgba(59,130,246,0.12)', pts: 3 },
+        'LARGE': { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)', pts: 5 },
+        'XL': { color: '#F97316', bg: 'rgba(249,115,22,0.12)', pts: 8 },
+        'XXL': { color: '#F43F5E', bg: 'rgba(244,63,94,0.12)', pts: 13 },
+        'XXXL': { color: '#DC2626', bg: 'rgba(220,38,38,0.12)', pts: 21 },
+    };
+
+    const TYPE_COLORS = {
+        'Application (UI)': '#3B82F6',
+        'Systems Integration': '#8B5CF6',
+        'Reporting': '#10B981',
+        'Process Automation': '#F59E0B',
+        'Data & Backend': '#06B6D4',
+    };
+
+    const SECTIONS = [
+        { id: 'analysis', label: 'Feature Analysis', icon: 'ClipboardList' },
+        { id: 'team', label: 'Team & Streams', icon: 'Users' },
+        { id: 'timeline', label: 'Timeline', icon: 'Clock' },
+        { id: 'gantt', label: 'Day-Level Gantt', icon: 'BarChart3' },
+        { id: 'sprints', label: 'Sprint Map', icon: 'Calendar' },
+        { id: 'jira', label: 'Jira Breakdown', icon: 'Layers' },
+    ];
+
+    const selectedStack = techStack === 'Custom (specify below)' ? customStack : techStack;
+
+    // ── Generate ──
+    const handleGenerate = async () => {
+        if (!selectedStack || !featuresText.trim() || !durationValue) return;
+        const features = featuresText.split('\n').map(f => f.replace(/^[-•*\d.)\s]+/, '').trim()).filter(f => f.length > 0);
+        if (features.length === 0) return;
+
+        setLoading(true); setError(null); setData(null); setJiraResult(null); setIsLoading(true);
+        try {
+            const res = await secureFetch('/feature_roadmap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tech_stack: selectedStack,
+                    features,
+                    target_duration_value: Number(durationValue),
+                    target_duration_unit: durationUnit,
+                    project_key: project,
+                    start_date: startDate
+                })
+            });
+            const result = await res.json();
+            if (result.error) { setError(result.error); }
+            else { setData(result); setActiveSection('analysis'); }
+        } catch (e) { setError('Failed to generate roadmap. Please try again.'); }
+        setLoading(false); setIsLoading(false);
+    };
+
+    // ── Push to Jira ──
+    const handlePushToJira = async () => {
+        if (!data?.epics || !project) return;
+        setPushingJira(true); setJiraResult(null);
+        try {
+            const res = await secureFetch(`/feature_roadmap/push_jira/${project}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ epics: data.epics })
+            });
+            setJiraResult(await res.json());
+        } catch (e) { setJiraResult({ success: false, errors: [{ error: 'Network error' }] }); }
+        setPushingJira(false);
+    };
+
+    // ── Download XLSX ──
+    const handleDownloadXLSX = async () => {
+        if (!data) return;
+        setDownloadingXLSX(true);
+        try {
+            const res = await secureFetch('/feature_roadmap/download_xlsx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data })
+            });
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `Feature_Roadmap_${selectedStack.replace(/\s/g, '_').substring(0, 20)}.xlsx`;
+            a.click(); window.URL.revokeObjectURL(url);
+        } catch (e) { console.error('XLSX download failed', e); }
+        setDownloadingXLSX(false);
+    };
+
+    // ── CSV Upload ──
+    const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const lines = evt.target.result.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+            const features = lines.map(line => {
+                const cols = line.split(',');
+                return cols.find(c => c.trim().length > 3 && !/^(id|#|sr|no|feature|name|desc)/i.test(c.trim())) || cols[0];
+            }).filter(f => f && f.trim().length > 2);
+            setFeaturesText(features.join('\n'));
+        };
+        reader.readAsText(file);
+    };
+
+    // ═══════════════════════════════════════════════
+    // INPUT FORM
+    // ═══════════════════════════════════════════════
+    if (!data) {
+        return (
+            <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4">
+                <header className="pb-6 border-b border-border mb-8">
+                    <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Feature Roadmap</h2>
+                    <p className="text-base font-medium mt-2 text-text-muted">
+                        AI-Powered Pre-SOW Project Estimator &middot; Expert PM-Grade Analysis &middot; Project <span className="text-primary font-black">{project}</span>
+                    </p>
+                </header>
+
+                {error && (
+                    <div className="glass-card p-5 mb-6 border-l-4 border-danger">
+                        <div className="flex items-center gap-3">
+                            <Icon name="AlertTriangle" size={20} className="text-danger" />
+                            <p className="text-sm font-bold text-danger">{error}</p>
+                        </div>
+                    </div>
+                )}
+
+                <div className="max-w-5xl space-y-6">
+                    {/* Step 1: Tech Stack */}
+                    <div className="glass-card p-7">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: 'var(--accent-gradient)' }}>1</div>
+                            <div>
+                                <h3 className="text-base font-extrabold text-text-main">Technology Stack</h3>
+                                <p className="text-xs text-text-muted font-medium">Choose the stack for accurate scope & role estimation</p>
+                            </div>
+                        </div>
+                        <select value={techStack} onChange={e => setTechStack(e.target.value)}
+                            className="w-full p-3.5 rounded-xl border bg-bg-body text-text-main font-bold shadow-sm outline-none cursor-pointer hover:border-primary transition-colors border-border text-sm">
+                            <option value="">— Select Tech Stack —</option>
+                            {TECH_STACKS.map(ts => <option key={ts} value={ts}>{ts}</option>)}
+                        </select>
+                        {techStack === 'Custom (specify below)' && (
+                            <input type="text" value={customStack} onChange={e => setCustomStack(e.target.value)}
+                                placeholder="e.g., Svelte + Go + CockroachDB"
+                                className="w-full mt-3 p-3.5 rounded-xl border bg-bg-body text-text-main font-bold shadow-sm outline-none hover:border-primary transition-colors border-border text-sm" />
+                        )}
+                    </div>
+
+                    {/* Step 2: Target Duration — THE KEY NEW INPUT */}
+                    <div className="glass-card p-7">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: 'var(--accent-gradient)' }}>2</div>
+                            <div>
+                                <h3 className="text-base font-extrabold text-text-main">Target Duration & Start Date</h3>
+                                <p className="text-xs text-text-muted font-medium">Client's desired timeline — shorter = more resources, longer = fewer resources</p>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4 mb-4">
+                            {/* Duration Unit */}
+                            <div>
+                                <label className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2 block">Unit</label>
+                                <div className="flex bg-bg-body p-1 rounded-xl border border-border gap-1">
+                                    {['days', 'months', 'years'].map(u => (
+                                        <button key={u} onClick={() => { setDurationUnit(u); setDurationValue(DURATION_PRESETS[u][Math.min(2, DURATION_PRESETS[u].length - 1)]); }}
+                                            className={`flex-1 px-3 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${durationUnit === u ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>
+                                            {u}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Duration Value */}
+                            <div>
+                                <label className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2 block">Duration</label>
+                                <select value={durationValue} onChange={e => setDurationValue(e.target.value)}
+                                    className="w-full p-3 rounded-xl border bg-bg-body text-text-main font-bold shadow-sm outline-none cursor-pointer hover:border-primary transition-colors border-border text-sm">
+                                    {DURATION_PRESETS[durationUnit].map(v => (
+                                        <option key={v} value={v}>{v} {durationUnit}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Start Date */}
+                            <div>
+                                <label className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2 block">Start Date</label>
+                                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                                    className="w-full p-3 rounded-xl border bg-bg-body text-text-main font-bold shadow-sm outline-none hover:border-primary transition-colors border-border text-sm" />
+                            </div>
+                        </div>
+
+                        {/* Duration visual indicator */}
+                        <div className="flex items-center gap-4 p-3 bg-bg-body rounded-xl border border-border mt-2">
+                            <Icon name="Clock" size={16} className="text-primary" />
+                            <span className="text-sm font-bold text-text-main">
+                                {durationValue} {durationUnit} = ~{
+                                    durationUnit === 'days' ? Math.round(durationValue / 22) :
+                                    durationUnit === 'months' ? durationValue :
+                                    Math.round(durationValue * 12)
+                                } months = ~{
+                                    durationUnit === 'days' ? Math.ceil(durationValue / 10) :
+                                    durationUnit === 'months' ? Math.ceil(durationValue * 22 / 10) :
+                                    Math.ceil(durationValue * 260 / 10)
+                                } sprints
+                            </span>
+                            <span className="text-xs text-text-muted ml-auto font-medium">
+                                {durationUnit === 'months' && durationValue <= 4 ? '⚡ Aggressive — Will need larger team' :
+                                 durationUnit === 'months' && durationValue <= 8 ? '⚖️ Balanced — Standard team size' :
+                                 durationUnit === 'years' && durationValue >= 2 ? '🐢 Relaxed — Minimal team possible' :
+                                 '📊 AI will optimize team size'}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Step 3: Features */}
+                    <div className="glass-card p-7">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: 'var(--accent-gradient)' }}>3</div>
+                            <div className="flex-1">
+                                <h3 className="text-base font-extrabold text-text-main">Client Features</h3>
+                                <p className="text-xs text-text-muted font-medium">Paste features (one per line) or upload CSV</p>
+                            </div>
+                            <label className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-dim text-primary font-bold text-xs cursor-pointer hover:bg-primary hover:text-white transition-all border border-primary/30">
+                                <Icon name="Upload" size={14} /> Upload CSV
+                                <input type="file" accept=".csv,.txt,.xlsx" onChange={handleFileUpload} className="hidden" />
+                            </label>
+                        </div>
+                        <textarea value={featuresText} onChange={e => setFeaturesText(e.target.value)}
+                            placeholder={"User Authentication (Login, Register, Password Reset)\nDashboard with real-time analytics\nPayment Gateway Integration (Stripe)\nUser Role Management (Admin, Manager, User)\nNotification System (Email + Push)\nReport Generation & Export (PDF/Excel)\nAPI Integration with 3rd party CRM\nSearch & Filter with Elasticsearch\nMulti-language support (i18n)\nAudit Logging & Compliance"}
+                            rows={10}
+                            className="w-full p-4 rounded-xl border bg-bg-body text-text-main font-medium shadow-sm outline-none hover:border-primary transition-colors border-border text-sm leading-relaxed resize-none font-mono" />
+                        <span className="text-xs text-text-muted font-bold mt-2 block">
+                            {featuresText.split('\n').filter(l => l.trim()).length} features detected
+                        </span>
+                    </div>
+
+                    {/* Generate Button */}
+                    <motion.button onClick={handleGenerate} disabled={loading || !selectedStack || !featuresText.trim()}
+                        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
+                        className="w-full p-5 rounded-2xl text-white font-black text-lg flex items-center justify-center gap-3 shadow-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{ background: loading ? 'var(--border)' : 'var(--accent-gradient)' }}>
+                        {loading ? (
+                            <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Analyzing {featuresText.split('\n').filter(l => l.trim()).length} Features for {durationValue} {durationUnit} Timeline...</>
+                        ) : (
+                            <><Icon name="Sparkles" size={22} /> Generate Expert-Grade Feature Roadmap</>
+                        )}
+                    </motion.button>
+                </div>
+            </div>
+        );
+    }
+
+    // ═══════════════════════════════════════════════
+    // RESULTS VIEW — All 12 Dimensions
+    // ═══════════════════════════════════════════════
+    const analysis = data.feature_analysis || [];
+    const team = data.team_composition || [];
+    const timeline = data.timeline || {};
+    const gantt = data.gantt_phases || [];
+    const epics = data.epics || [];
+    const sprintMap = data.sprint_mapping || [];
+    const resourceLoad = data.resource_loading || [];
+    const uatMilestones = data.uat_milestones || [];
+    const pilotHypercare = data.pilot_hypercare || {};
+    const psa = data.parallel_stream_analysis || {};
+    const ftSummary = data.feature_type_summary || {};
+    const meta = data._meta || {};
+    const totalPts = data.total_story_points || 0;
+    const totalStories = epics.reduce((sum, e) => sum + (e.stories || []).length, 0);
+    const maxDay = Math.max(1, ...analysis.map(f => f.end_day || 0), (pilotHypercare.hypercare || {}).end_day || 0);
+
+    return (
+        <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4">
+            {/* Header */}
+            <header className="flex justify-between items-end pb-6 border-b border-border mb-6">
+                <div>
+                    <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Feature Roadmap</h2>
+                    <p className="text-base font-medium mt-2 text-text-muted">
+                        <span className="text-primary font-black">{selectedStack}</span>
+                        &middot; {analysis.length} features &middot; <span className="font-black text-primary">{totalPts} pts</span>
+                        &middot; Target: <span className="font-black">{meta.target_duration_value} {meta.target_duration_unit}</span>
+                    </p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button onClick={handleDownloadXLSX} disabled={downloadingXLSX}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white font-bold text-xs shadow-lg transition-all hover:opacity-90"
+                        style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                        <Icon name="Download" size={14} />
+                        {downloadingXLSX ? 'Generating...' : 'Download XLSX'}
+                    </button>
+                    <button onClick={() => { setData(null); setJiraResult(null); }}
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-bg-card text-text-muted font-bold text-xs border border-border hover:border-primary transition-all">
+                        <Icon name="RotateCcw" size={14} /> New Analysis
+                    </button>
+                </div>
+            </header>
+
+            {/* Summary Cards — 6 columns */}
+            <div className="grid grid-cols-6 gap-3 mb-6">
+                {[
+                    { label: 'Total Points', value: totalPts, sub: 'story points', color: '#3B82F6' },
+                    { label: 'Duration', value: timeline.total_months || psa.actual_parallel_months || '—', sub: 'months', color: '#10B981' },
+                    { label: 'Sprints', value: timeline.total_sprints || '—', sub: '2-week', color: '#F59E0B' },
+                    { label: 'Team Size', value: data.total_team_size || team.reduce((s, t) => s + (t.headcount || 1), 0), sub: 'members', color: '#8B5CF6' },
+                    { label: 'Streams', value: psa.recommended_streams || 1, sub: 'parallel', color: '#06B6D4' },
+                    { label: 'Epics', value: epics.length, sub: `${totalStories} stories`, color: '#F43F5E' },
+                ].map((card, i) => (
+                    <div key={i} className="glass-card p-4 border-l-4" style={{ borderLeftColor: card.color }}>
+                        <div className="text-[10px] font-bold uppercase tracking-widest mb-1 text-text-muted">{card.label}</div>
+                        <div className="text-2xl font-extrabold text-text-main">{card.value}</div>
+                        <div className="text-[10px] text-text-muted mt-0.5">{card.sub}</div>
+                    </div>
+                ))}
+            </div>
+
+            {/* Parallel Stream Analysis Banner */}
+            {psa.notes && (
+                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+                    className="rounded-2xl p-5 mb-6 shadow-lg"
+                    style={{
+                        background: psa.fits_target ? 'rgba(16,185,129,0.08)' : 'rgba(244,63,94,0.08)',
+                        border: `2px solid ${psa.fits_target ? 'var(--success)' : 'var(--danger)'}`
+                    }}>
+                    <div className="flex items-center gap-4">
+                        <Icon name={psa.fits_target ? "CheckCircle" : "AlertTriangle"} size={24}
+                            style={{ color: psa.fits_target ? 'var(--success)' : 'var(--danger)' }} />
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-1">
+                                <span className="text-sm font-black text-text-main">Parallel Stream Analysis</span>
+                                <span className="text-xs font-black px-2 py-0.5 rounded-full" style={{
+                                    background: psa.fits_target ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)',
+                                    color: psa.fits_target ? 'var(--success)' : 'var(--danger)'
+                                }}>{psa.fits_target ? '✅ FITS TARGET' : '⚠️ EXCEEDS TARGET'}</span>
+                            </div>
+                            <p className="text-xs font-medium text-text-muted">{psa.notes}</p>
+                        </div>
+                        <div className="flex gap-6 shrink-0">
+                            <div className="text-center">
+                                <div className="text-xs text-text-muted font-bold">Sequential</div>
+                                <div className="text-lg font-black text-text-main">{psa.single_stream_months || '—'}m</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-xs text-text-muted font-bold">{psa.recommended_streams || 1} Streams</div>
+                                <div className="text-lg font-black text-primary">{psa.actual_parallel_months || '—'}m</div>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-xs text-text-muted font-bold">Target</div>
+                                <div className="text-lg font-black" style={{ color: psa.fits_target ? 'var(--success)' : 'var(--danger)' }}>{psa.target_months || '—'}m</div>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
+            {/* Section Tabs */}
+            <div className="flex bg-bg-card p-1 rounded-2xl border border-border mb-6 gap-1">
+                {SECTIONS.map(sec => (
+                    <button key={sec.id} onClick={() => setActiveSection(sec.id)}
+                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all ${activeSection === sec.id ? 'bg-primary text-white shadow-lg' : 'text-text-muted hover:text-text-main hover:bg-bg-body'}`}>
+                        <Icon name={sec.icon} size={13} /> {sec.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* ══════════ SECTION 1: Feature Analysis ══════════ */}
+            {activeSection === 'analysis' && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                    {/* Feature Type Summary */}
+                    {Object.keys(ftSummary).length > 0 && (
+                        <div className="flex gap-3 mb-2">
+                            {Object.entries(ftSummary).filter(([, v]) => v.count > 0).map(([type, v]) => (
+                                <div key={type} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-border bg-bg-body">
+                                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: TYPE_COLORS[type] || '#999' }}></span>
+                                    <span className="text-xs font-bold text-text-main">{type}</span>
+                                    <span className="text-[10px] font-black text-primary">{v.count}</span>
+                                    <span className="text-[10px] text-text-muted">{v.total_points}pts</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Feature Table */}
+                    <div className="glass-card overflow-hidden shadow-xl">
+                        <div className="grid gap-0" style={{ gridTemplateColumns: '50px 1.5fr 110px 1.5fr 100px 80px 1fr 1fr 120px' }}>
+                            {['#', 'Feature', 'Type', 'Technical Scope', 'Size', 'Pts', 'Est. Team', 'Est. Conservative', 'Schedule'].map(h => (
+                                <div key={h} className="p-3 text-[10px] font-black uppercase tracking-widest text-text-muted border-b border-border bg-bg-card">{h}</div>
+                            ))}
+                        </div>
+                        {analysis.map((f, i) => {
+                            const sizeConf = SIZE_CONFIG[f.size] || SIZE_CONFIG['MEDIUM'];
+                            const typeColor = TYPE_COLORS[f.feature_type] || '#999';
+                            return (
+                                <motion.div key={i} initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.02 }}
+                                    className="grid gap-0 border-b border-border/50 hover:bg-primary/5 transition-colors"
+                                    style={{ gridTemplateColumns: '50px 1.5fr 110px 1.5fr 100px 80px 1fr 1fr 120px' }}>
+                                    <div className="p-3 text-xs font-bold text-text-muted">{f.id || i + 1}</div>
+                                    <div className="p-3 text-xs font-bold text-text-main leading-snug">{f.feature}</div>
+                                    <div className="p-3">
+                                        <span className="text-[9px] font-bold px-2 py-1 rounded-full" style={{ background: `${typeColor}18`, color: typeColor }}>{f.feature_type}</span>
+                                    </div>
+                                    <div className="p-3 text-[10px] text-text-muted font-medium leading-relaxed">{f.technical_scope}</div>
+                                    <div className="p-3 flex items-center justify-center">
+                                        <span className="text-[9px] font-black px-2.5 py-1 rounded-full" style={{ background: sizeConf.bg, color: sizeConf.color, border: `1px solid ${sizeConf.color}33` }}>{f.size}</span>
+                                    </div>
+                                    <div className="p-3 text-center"><span className="text-base font-black text-primary">{f.story_points}</span></div>
+                                    <div className="p-3 text-[10px] font-bold text-text-main">{f.est_team}</div>
+                                    <div className="p-3 text-[10px] font-medium text-text-muted">{f.est_conservative}</div>
+                                    <div className="p-3 text-[10px] font-bold text-primary">D{f.start_day}→D{f.end_day} <span className="text-text-muted">({f.sprint_allocation})</span></div>
+                                </motion.div>
+                            );
+                        })}
+                        {/* Total Row */}
+                        <div className="grid gap-0" style={{ gridTemplateColumns: '50px 1.5fr 110px 1.5fr 100px 80px 1fr 1fr 120px', background: 'rgba(59,130,246,0.06)' }}>
+                            <div className="p-3"></div>
+                            <div className="p-3 text-xs font-black text-primary">TOTAL — {analysis.length} features</div>
+                            <div className="p-3"></div><div className="p-3"></div><div className="p-3"></div>
+                            <div className="p-3 text-center"><span className="text-xl font-black text-primary">{totalPts}</span></div>
+                            <div className="p-3"></div><div className="p-3"></div><div className="p-3"></div>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
+            {/* ══════════ SECTION 2: Team & Streams ══════════ */}
+            {activeSection === 'team' && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                        {team.map((t, i) => {
+                            const roleColor = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#F43F5E', '#06B6D4', '#EC4899'][i % 7];
+                            return (
+                                <motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }}
+                                    className="glass-card p-5 border-l-4 hover:shadow-xl transition-all" style={{ borderLeftColor: roleColor }}>
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-black text-lg" style={{ background: roleColor }}>{t.headcount}</div>
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary-dim text-primary">{t.headcount > 1 ? `${t.headcount} members` : '1 member'}</span>
+                                            {!t.billable && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-warning/10 text-warning">Non-billable</span>}
+                                        </div>
+                                    </div>
+                                    <h4 className="font-extrabold text-text-main text-sm mb-1">{t.role}</h4>
+                                    <p className="text-[10px] text-text-muted font-medium leading-relaxed mb-2">{t.justification}</p>
+                                    {t.ramp_up_notes && <p className="text-[10px] font-bold text-primary">{t.ramp_up_notes}</p>}
+                                    {t.stream_allocation && <p className="text-[10px] text-text-muted mt-1">Stream: {t.stream_allocation}</p>}
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+
+                    {/* UAT Milestones */}
+                    {uatMilestones.length > 0 && (
+                        <div className="glass-card p-6">
+                            <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2">
+                                <Icon name="Shield" size={14} /> UAT Milestone Gates
+                            </h3>
+                            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                                {uatMilestones.map((u, i) => (
+                                    <div key={i} className="p-4 rounded-xl border border-border bg-bg-body hover:border-primary transition-colors">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <span className="text-xs font-black px-2.5 py-1 rounded-full" style={{ background: 'rgba(139,92,246,0.12)', color: '#8B5CF6' }}>{u.name}</span>
+                                            <span className="text-[10px] text-text-muted font-bold">{u.sprint} — Day {u.day}</span>
+                                        </div>
+                                        <p className="text-[10px] font-medium text-text-main mb-1">{u.scope}</p>
+                                        <p className="text-[10px] text-text-muted">{u.exit_criteria}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Pilot & Hypercare */}
+                    <div className="grid grid-cols-2 gap-4">
+                        {pilotHypercare.pilot && (
+                            <div className="glass-card p-5 border-l-4 border-warning">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Icon name="Rocket" size={16} className="text-warning" />
+                                    <span className="font-black text-text-main">PILOT</span>
+                                    <span className="text-xs text-text-muted font-bold">Day {pilotHypercare.pilot.start_day}→{pilotHypercare.pilot.end_day} ({pilotHypercare.pilot.duration_days} days)</span>
+                                </div>
+                                <p className="text-xs text-text-muted font-medium">{pilotHypercare.pilot.description}</p>
+                                <p className="text-[10px] font-bold text-warning mt-2">Team: {pilotHypercare.pilot.team_needed}</p>
+                            </div>
+                        )}
+                        {pilotHypercare.hypercare && (
+                            <div className="glass-card p-5 border-l-4" style={{ borderLeftColor: '#06B6D4' }}>
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Icon name="HeartPulse" size={16} style={{ color: '#06B6D4' }} />
+                                    <span className="font-black text-text-main">HYPERCARE</span>
+                                    <span className="text-xs text-text-muted font-bold">Day {pilotHypercare.hypercare.start_day}→{pilotHypercare.hypercare.end_day} ({pilotHypercare.hypercare.duration_days} days)</span>
+                                </div>
+                                <p className="text-xs text-text-muted font-medium">{pilotHypercare.hypercare.description}</p>
+                                <p className="text-[10px] font-bold mt-2" style={{ color: '#06B6D4' }}>Team: {pilotHypercare.hypercare.team_needed}</p>
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
+            )}
+
+            {/* ══════════ SECTION 3: Timeline ══════════ */}
+            {activeSection === 'timeline' && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                    <div className="grid grid-cols-3 gap-5">
+                        {[
+                            { icon: 'Calendar', label: 'Working Days', value: timeline.total_working_days || '—', color: '#3B82F6' },
+                            { icon: 'Clock', label: 'Months', value: timeline.total_months || '—', color: '#10B981' },
+                            { icon: 'Repeat', label: 'Sprints (2-week)', value: timeline.total_sprints || '—', color: '#F59E0B' },
+                        ].map((card, i) => (
+                            <div key={i} className="glass-card p-7 text-center border-t-4" style={{ borderTopColor: card.color }}>
+                                <Icon name={card.icon} size={28} style={{ color: card.color }} className="mx-auto mb-2 opacity-80" />
+                                <div className="text-3xl font-black text-text-main mb-1">{card.value}</div>
+                                <div className="text-sm font-bold text-text-muted">{card.label}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="glass-card p-6">
+                        <h3 className="text-xs font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2">
+                            <Icon name="Calculator" size={14} /> Calculation Breakdown
+                        </h3>
+                        <div className="space-y-2">
+                            {[
+                                ['Total Story Points', totalPts],
+                                ['Parallel Streams', psa.recommended_streams || 1],
+                                ['Team Velocity / Sprint', `${timeline.team_velocity_per_sprint || '—'} pts`],
+                                ['Sprint Duration', '2 weeks (10 working days)'],
+                                ['Total Sprints', timeline.total_sprints || '—'],
+                                ['Working Days', `${timeline.total_working_days || '—'} days`],
+                                ['Calendar Duration', `${timeline.total_months || '—'} months`],
+                                ['Start Date', timeline.start_date || '—'],
+                                ['Projected End Date', timeline.end_date || '—'],
+                                ['Client Target', `${meta.target_duration_value} ${meta.target_duration_unit} (${meta.target_working_days} working days)`],
+                                ['Sequential (No Parallel)', `${psa.single_stream_days || '—'} days (${psa.single_stream_months || '—'} months)`],
+                                ['Coordination Overhead', `${psa.coordination_overhead_pct || 0}%`],
+                            ].map(([label, value], i) => (
+                                <div key={i} className="flex justify-between items-center p-3 bg-bg-body rounded-xl border border-border">
+                                    <span className="text-sm font-bold text-text-muted">{label}</span>
+                                    <span className="text-sm font-black text-text-main">{value}</span>
+                                </div>
+                            ))}
+                        </div>
+                        {timeline.assumptions && (
+                            <div className="mt-4 p-3 bg-primary-dim rounded-xl border border-primary/20">
+                                <p className="text-xs font-bold text-primary flex items-center gap-2">
+                                    <Icon name="Info" size={14} /> {timeline.assumptions}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </motion.div>
+            )}
+
+            {/* ══════════ SECTION 4: Day-Level Gantt ══════════ */}
+            {activeSection === 'gantt' && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                    <div className="glass-card overflow-hidden shadow-xl">
+                        <div className="overflow-x-auto" style={{ maxHeight: '70vh' }}>
+                            <div style={{ minWidth: `${300 + maxDay * 18}px` }}>
+                                {/* Sprint header */}
+                                <div className="flex sticky top-0 z-20 bg-bg-card border-b border-border">
+                                    <div className="w-[300px] shrink-0 p-3 text-xs font-black uppercase tracking-widest text-text-muted border-r border-border">Feature</div>
+                                    <div className="flex-1 flex">
+                                        {Array.from({ length: Math.ceil(maxDay / 10) }, (_, si) => {
+                                            const sprintStart = si * 10 + 1;
+                                            const width = Math.min(10, maxDay - si * 10) * 18;
+                                            return (
+                                                <div key={si} className="text-center border-r border-border/30" style={{ width: `${width}px` }}>
+                                                    <span className="text-[9px] font-black text-primary">SP{si + 1}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Feature Gantt rows */}
+                                {analysis.map((f, idx) => {
+                                    const ganttColors = ['#4FC3F7', '#81C784', '#FFB74D', '#E57373', '#BA68C8', '#4DD0E1', '#F06292', '#AED581'];
+                                    const barColor = ganttColors[idx % ganttColors.length];
+                                    return (
+                                        <div key={idx} className="flex border-b border-border/30 hover:bg-primary/5 transition-colors group" style={{ height: '28px' }}>
+                                            <div className="w-[300px] shrink-0 px-3 flex items-center gap-2 border-r border-border bg-bg-card">
+                                                <span className="text-[10px] font-bold text-text-muted w-5">{f.id || idx + 1}</span>
+                                                <span className="text-[10px] font-bold text-text-main truncate flex-1" title={f.feature}>{f.feature}</span>
+                                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0" style={{ background: (SIZE_CONFIG[f.size] || {}).bg, color: (SIZE_CONFIG[f.size] || {}).color }}>{f.size}</span>
+                                            </div>
+                                            <div className="flex-1 relative">
+                                                {/* Background grid */}
+                                                {Array.from({ length: maxDay }, (_, d) => (
+                                                    <div key={d} className="absolute top-0 bottom-0" style={{ left: `${d * 18}px`, width: '18px', borderRight: (d + 1) % 10 === 0 ? '1px solid rgba(var(--border-rgb, 200,200,200), 0.3)' : 'none' }} />
+                                                ))}
+                                                {/* Gantt bar */}
+                                                <div className="absolute top-1 bottom-1 rounded-sm transition-opacity group-hover:opacity-90" style={{
+                                                    left: `${((f.start_day || 1) - 1) * 18}px`,
+                                                    width: `${((f.end_day || f.start_day || 1) - (f.start_day || 1) + 1) * 18}px`,
+                                                    background: barColor,
+                                                    opacity: 0.8
+                                                }}>
+                                                    <span className="text-[7px] font-bold text-white px-1 truncate block leading-[20px]">{f.story_points}pt</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {/* UAT markers row */}
+                                {uatMilestones.length > 0 && (
+                                    <div className="flex border-b border-border" style={{ height: '24px' }}>
+                                        <div className="w-[300px] shrink-0 px-3 flex items-center border-r border-border bg-bg-card">
+                                            <span className="text-[10px] font-black" style={{ color: '#8B5CF6' }}>UAT MILESTONES</span>
+                                        </div>
+                                        <div className="flex-1 relative">
+                                            {uatMilestones.map((u, i) => (
+                                                <div key={i} className="absolute top-0 bottom-0 flex items-center justify-center" style={{ left: `${((u.day || 1) - 1) * 18}px`, width: `${(u.duration_days || 5) * 18}px`, background: 'rgba(139,92,246,0.2)' }}>
+                                                    <span className="text-[7px] font-black" style={{ color: '#8B5CF6' }}>{u.name}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Pilot row */}
+                                {pilotHypercare.pilot && pilotHypercare.pilot.start_day > 0 && (
+                                    <div className="flex border-b border-border" style={{ height: '24px' }}>
+                                        <div className="w-[300px] shrink-0 px-3 flex items-center border-r border-border bg-bg-card">
+                                            <span className="text-[10px] font-black text-warning">PILOT</span>
+                                        </div>
+                                        <div className="flex-1 relative">
+                                            <div className="absolute top-0 bottom-0 rounded-sm" style={{
+                                                left: `${(pilotHypercare.pilot.start_day - 1) * 18}px`,
+                                                width: `${pilotHypercare.pilot.duration_days * 18}px`,
+                                                background: 'rgba(245,158,11,0.25)'
+                                            }} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Hypercare row */}
+                                {pilotHypercare.hypercare && pilotHypercare.hypercare.start_day > 0 && (
+                                    <div className="flex border-b border-border" style={{ height: '24px' }}>
+                                        <div className="w-[300px] shrink-0 px-3 flex items-center border-r border-border bg-bg-card">
+                                            <span className="text-[10px] font-black" style={{ color: '#06B6D4' }}>HYPERCARE</span>
+                                        </div>
+                                        <div className="flex-1 relative">
+                                            <div className="absolute top-0 bottom-0 rounded-sm" style={{
+                                                left: `${(pilotHypercare.hypercare.start_day - 1) * 18}px`,
+                                                width: `${pilotHypercare.hypercare.duration_days * 18}px`,
+                                                background: 'rgba(6,182,212,0.25)'
+                                            }} />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Resource loading row */}
+                                {resourceLoad.length > 0 && (
+                                    <div className="flex border-t-2 border-danger/30" style={{ height: '32px' }}>
+                                        <div className="w-[300px] shrink-0 px-3 flex items-center border-r border-border bg-bg-card">
+                                            <span className="text-[10px] font-black text-danger">RESOURCE LOADING</span>
+                                        </div>
+                                        <div className="flex-1 relative flex items-end">
+                                            {resourceLoad.map((rl, i) => {
+                                                const maxMembers = Math.max(1, ...resourceLoad.map(r => r.team_members_needed || 0));
+                                                const pct = ((rl.team_members_needed || 0) / maxMembers) * 100;
+                                                return (
+                                                    <div key={i} className="absolute bottom-0 flex items-end justify-center"
+                                                        style={{ left: `${((rl.day || 1) - 1) * 18}px`, width: '18px' }}>
+                                                        <div className="w-3 rounded-t-sm" style={{ height: `${Math.max(pct * 0.28, 2)}px`, background: pct > 80 ? '#EF4444' : pct > 50 ? '#F59E0B' : '#10B981' }} />
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 flex justify-end">
+                        <button onClick={handleDownloadXLSX} disabled={downloadingXLSX}
+                            className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm text-white transition-all hover:shadow-lg"
+                            style={{ background: 'linear-gradient(135deg, #10B981, #059669)' }}>
+                            <Icon name="Download" size={16} />
+                            {downloadingXLSX ? 'Generating...' : 'Download Full Excel (Expert PM Format)'}
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+
+            {/* ══════════ SECTION 5: Sprint Map ══════════ */}
+            {activeSection === 'sprints' && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+                    <div className="glass-card overflow-hidden shadow-xl">
+                        <div className="grid gap-0" style={{ gridTemplateColumns: '80px 80px 80px 80px 120px 2fr 80px' }}>
+                            {['Sprint', 'Start Day', 'End Day', 'Month', 'Calendar', 'Features', 'Points'].map(h => (
+                                <div key={h} className="p-3 text-[10px] font-black uppercase tracking-widest text-text-muted border-b border-border bg-bg-card">{h}</div>
+                            ))}
+                        </div>
+                        {sprintMap.map((sm, i) => (
+                            <div key={i} className="grid gap-0 border-b border-border/50 hover:bg-primary/5 transition-colors"
+                                style={{ gridTemplateColumns: '80px 80px 80px 80px 120px 2fr 80px' }}>
+                                <div className="p-3 text-xs font-black text-primary">{sm.sprint}</div>
+                                <div className="p-3 text-xs font-bold text-text-main">{sm.start_day}</div>
+                                <div className="p-3 text-xs font-bold text-text-main">{sm.end_day}</div>
+                                <div className="p-3 text-xs font-bold text-text-muted">{sm.month}</div>
+                                <div className="p-3 text-xs font-bold text-text-main">{sm.calendar_month}</div>
+                                <div className="p-3 text-[10px] text-text-muted font-medium">{(sm.features_in_sprint || []).join(', ')}</div>
+                                <div className="p-3 text-center"><span className="text-sm font-black text-primary">{sm.points_in_sprint}</span></div>
+                            </div>
+                        ))}
+                    </div>
+                </motion.div>
+            )}
+
+            {/* ══════════ SECTION 6: Jira Breakdown ══════════ */}
+            {activeSection === 'jira' && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                    {/* Jira Push Result */}
+                    {jiraResult && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+                            className="rounded-2xl p-5 shadow-lg"
+                            style={{
+                                background: jiraResult.success ? 'rgba(16,185,129,0.12)' : 'rgba(244,63,94,0.12)',
+                                border: `2px solid ${jiraResult.success ? 'var(--success)' : 'var(--danger)'}`
+                            }}>
+                            <div className="flex items-center gap-3 mb-2">
+                                <Icon name={jiraResult.success ? "CheckCircle" : "AlertTriangle"} size={22} style={{ color: jiraResult.success ? 'var(--success)' : 'var(--danger)' }} />
+                                <span className="font-black text-text-main">
+                                    {jiraResult.success ? `Created ${jiraResult.created_epics} Epics & ${jiraResult.created_stories} Stories!` : 'Some issues occurred'}
+                                </span>
+                            </div>
+                            {jiraResult.details && jiraResult.details.map((d, i) => (
+                                <div key={i} className="flex items-center gap-2 text-sm font-bold text-text-main ml-8 mb-1">
+                                    <span className="text-xs font-black text-primary bg-primary-dim px-2 py-0.5 rounded-full">{d.epic_key}</span>
+                                    <span>{d.epic_name}</span> <span className="text-text-muted">→ {d.stories_created} stories</span>
+                                </div>
+                            ))}
+                        </motion.div>
+                    )}
+
+                    {/* Epics */}
+                    {epics.map((epic, ei) => {
+                        const epicColor = ['#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#F43F5E', '#06B6D4', '#EC4899'][ei % 7];
+                        return (
+                            <motion.div key={ei} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: ei * 0.04 }}
+                                className="glass-card overflow-hidden shadow-lg">
+                                <div className="p-4 flex justify-between items-center" style={{ borderBottom: `3px solid ${epicColor}` }}>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: epicColor }}>E{ei + 1}</div>
+                                        <div>
+                                            <h4 className="font-extrabold text-text-main text-base">{epic.epic_name}</h4>
+                                            <p className="text-[10px] text-text-muted">{epic.epic_description}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-3 shrink-0">
+                                        {epic.feature_type && <span className="text-[9px] font-bold px-2 py-1 rounded-full" style={{ background: `${TYPE_COLORS[epic.feature_type] || '#999'}18`, color: TYPE_COLORS[epic.feature_type] || '#999' }}>{epic.feature_type}</span>}
+                                        <span className="text-[10px] font-black px-2 py-1 rounded-full" style={{ background: `${epicColor}22`, color: epicColor }}>{(epic.stories || []).length} stories</span>
+                                        <span className="text-lg font-black text-primary">{epic.total_points} pts</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    {(epic.stories || []).map((story, si) => (
+                                        <div key={si} className="flex items-center gap-4 p-3 border-b border-border/30 hover:bg-primary/5 transition-colors">
+                                            <span className="flex-1 text-xs font-bold text-text-main">{story.summary}</span>
+                                            <span className="text-xs font-black text-primary shrink-0">{story.story_points} pts</span>
+                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{
+                                                background: story.priority === 'High' ? 'rgba(244,63,94,0.12)' : story.priority === 'Low' ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)',
+                                                color: story.priority === 'High' ? '#F43F5E' : story.priority === 'Low' ? '#10B981' : '#F59E0B',
+                                            }}>{story.priority}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </motion.div>
+                        );
+                    })}
+
+                    {/* Push to Jira */}
+                    <motion.button onClick={handlePushToJira} disabled={pushingJira || !project}
+                        whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}
+                        className="w-full p-5 rounded-2xl text-white font-black text-lg flex items-center justify-center gap-3 shadow-xl transition-all disabled:opacity-40"
+                        style={{ background: pushingJira ? 'var(--border)' : 'linear-gradient(135deg, #3B82F6, #8B5CF6)' }}>
+                        {pushingJira ? (
+                            <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            Creating {epics.length} Epics & {totalStories} Stories in Jira...</>
+                        ) : (
+                            <><Icon name="Rocket" size={22} /> Push to Jira — Create {epics.length} Epics & {totalStories} Stories</>
+                        )}
+                    </motion.button>
+                </motion.div>
+            )}
+        </div>
+    );
+}
 
         /* ================================================================
            DASHBOARD VIEW — Command Center
