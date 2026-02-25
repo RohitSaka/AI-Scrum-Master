@@ -1835,8 +1835,9 @@ def _post_process_roadmap(parsed, req, start_date, target_working_days, target_m
     """Validate, fix totals, and add metadata to roadmap result."""
     fa = parsed.get("feature_analysis", [])
     total_pts = sum(f.get("story_points", 0) for f in fa)
+    total_seq_days = sum(f.get("days", 0) for f in fa)
     parsed["total_story_points"] = total_pts
-    parsed["total_working_days_sequential"] = sum(f.get("days", 0) for f in fa)
+    parsed["total_working_days_sequential"] = total_seq_days
 
     # Fix timeline math
     tl = parsed.get("timeline", {})
