@@ -1897,359 +1897,669 @@
         /* ================================================================
            ROADMAP VIEW
            ================================================================ */
-        function RoadmapView({ project, setIsLoading }) {
-    const [data, setData] = useState(null);
-    const [error, setError] = useState(null);
-    const [selectedItem, setSelectedItem] = useState(null);
-    const [viewMode, setViewMode] = useState('gantt'); // gantt | buckets
+        // ═══════════════════════════════════════════════════════════════════
+// STRATEGIC ROADMAP — The "Golden Thread" Alignment View
+// ═══════════════════════════════════════════════════════════════════
 
-    useEffect(() => {
+const STRATEGIC_COLORS = {
+    primary: "#2563EB",
+    primaryDim: "#2563EB22",
+    success: "#10B981",
+    successDim: "#10B98122",
+    warning: "#F59E0B",
+    warningDim: "#F59E0B22",
+    danger: "#F43F5E",
+    dangerDim: "#F43F5E22",
+    purple: "#8B5CF6",
+    purpleDim: "#8B5CF622",
+    cyan: "#06B6D4",
+    cyanDim: "#06B6D422",
+    bg: "#0B0F1A",
+    bgCard: "#111827",
+    bgElevated: "#1A2035",
+    border: "#1E293B",
+    borderLight: "#334155",
+    textMain: "#F1F5F9",
+    textMuted: "#94A3B8",
+    textDim: "#64748B",
+};
+
+const BUCKET_COLORS = {
+    new_features: "#3B82F6",
+    tech_debt: "#F59E0B",
+    bug_fixes: "#F43F5E",
+    innovation: "#8B5CF6",
+};
+
+// ── Micro-Components ──
+const StrategicIcon = ({ name, size = 16, color, className = "" }) => {
+    const icons = {
+        Activity: <path d="M22 12h-4l-3 9L9 3l-3 9H2" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+        AlertTriangle: <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+        Target: <><circle cx="12" cy="12" r="10" strokeWidth="2" stroke="currentColor" fill="none"/><circle cx="12" cy="12" r="6" strokeWidth="2" stroke="currentColor" fill="none"/><circle cx="12" cy="12" r="2" strokeWidth="2" stroke="currentColor" fill="none"/></>,
+        TrendingUp: <path d="M23 6l-9.5 9.5-5-5L1 18" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+        Shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+        Layers: <><polygon points="12 2 2 7 12 12 22 7 12 2" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/><polyline points="2 17 12 22 22 17" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/><polyline points="2 12 12 17 22 12" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/></>,
+        Zap: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+        Link: <><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/></>,
+        ChevronDown: <polyline points="6 9 12 15 18 9" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+        Check: <polyline points="20 6 9 17 4 12" strokeWidth="2" stroke="currentColor" fill="none" strokeLinecap="round" strokeLinejoin="round"/>,
+        X: <><line x1="18" y1="6" x2="6" y2="18" strokeWidth="2" stroke="currentColor" strokeLinecap="round"/><line x1="6" y1="6" x2="18" y2="18" strokeWidth="2" stroke="currentColor" strokeLinecap="round"/></>,
+        PieChart: <><path d="M21.21 15.89A10 10 0 118 2.83" strokeWidth="2" stroke="currentColor" fill="none"/><path d="M22 12A10 10 0 0012 2v10z" strokeWidth="2" stroke="currentColor" fill="none"/></>,
+        BarChart: <><line x1="12" y1="20" x2="12" y2="10" strokeWidth="2" stroke="currentColor" strokeLinecap="round"/><line x1="18" y1="20" x2="18" y2="4" strokeWidth="2" stroke="currentColor" strokeLinecap="round"/><line x1="6" y1="20" x2="6" y2="16" strokeWidth="2" stroke="currentColor" strokeLinecap="round"/></>,
+        GitBranch: <><line x1="6" y1="3" x2="6" y2="15" strokeWidth="2" stroke="currentColor" strokeLinecap="round"/><circle cx="18" cy="6" r="3" strokeWidth="2" stroke="currentColor" fill="none"/><circle cx="6" cy="18" r="3" strokeWidth="2" stroke="currentColor" fill="none"/><path d="M18 9a9 9 0 01-9 9" strokeWidth="2" stroke="currentColor" fill="none"/></>,
+    };
+    return (
+        <svg width={size} height={size} viewBox="0 0 24 24" className={className} style={{ color }}>
+            {icons[name] || icons.Activity}
+        </svg>
+    );
+};
+
+const HealthRing = ({ score = 0, size = 120 }) => {
+    const radius = (size - 12) / 2;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (Math.min(Math.max(score, 0), 100) / 100) * circumference;
+    const color = score >= 75 ? STRATEGIC_COLORS.success : score >= 50 ? STRATEGIC_COLORS.warning : STRATEGIC_COLORS.danger;
+
+    return (
+        <div style={{ position: "relative", width: size, height: size }}>
+            <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+                <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={STRATEGIC_COLORS.border} strokeWidth="6"/>
+                <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: "stroke-dashoffset 1.2s ease-out" }} />
+            </svg>
+            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: size * 0.28, fontWeight: 900, color: STRATEGIC_COLORS.textMain, lineHeight: 1 }}>{score}</span>
+                <span style={{ fontSize: size * 0.1, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Health</span>
+            </div>
+        </div>
+    );
+};
+
+const DonutChart = ({ buckets = {}, size = 180 }) => {
+    const radius = 65;
+    const circumference = 2 * Math.PI * radius;
+    let cumulativeOffset = 0;
+
+    const segments = Object.entries(buckets).map(([key, bucket]) => {
+        const pct = bucket.actual_pct || 0;
+        const segmentLength = (pct / 100) * circumference;
+        const segment = { key, pct, color: BUCKET_COLORS[key] || "#666", offset: cumulativeOffset, length: segmentLength, label: bucket.label };
+        cumulativeOffset += segmentLength;
+        return segment;
+    });
+
+    return (
+        <svg width={size} height={size} viewBox="0 0 180 180">
+            <circle cx="90" cy="90" r={radius} fill="none" stroke={STRATEGIC_COLORS.border} strokeWidth="22"/>
+            {segments.map((seg, i) => (
+                <circle key={seg.key} cx="90" cy="90" r={radius} fill="none" stroke={seg.color} strokeWidth="22" strokeLinecap="butt" strokeDasharray={`${Math.max(0, seg.length)} ${Math.max(0, circumference - seg.length)}`} strokeDashoffset={-seg.offset} style={{ transform: "rotate(-90deg)", transformOrigin: "center", transition: "all 0.8s ease-out", transitionDelay: `${i * 0.15}s` }} />
+            ))}
+            <text x="90" y="85" textAnchor="middle" fill={STRATEGIC_COLORS.textMain} fontSize="22" fontWeight="900">
+                {Object.values(buckets).reduce((s, b) => s + (b.item_count || 0), 0)}
+            </text>
+            <text x="90" y="102" textAnchor="middle" fill={STRATEGIC_COLORS.textMuted} fontSize="10" fontWeight="700" textTransform="uppercase">items</text>
+        </svg>
+    );
+};
+
+const VelocitySparkline = ({ history = [], avgVelocity = 0, width = 280, height = 80 }) => {
+    if (!history || history.length === 0) return null;
+    const maxV = Math.max(...history.map(s => s.velocity || 0), avgVelocity || 1);
+    const padding = 4;
+    const w = width - padding * 2;
+    const h = height - padding * 2;
+    const points = history.map((s, i) => ({
+        x: padding + (i / Math.max(history.length - 1, 1)) * w,
+        y: padding + h - ((s.velocity || 0) / maxV) * h,
+        velocity: s.velocity || 0,
+        name: s.name,
+    }));
+
+    const avgY = padding + h - ((avgVelocity || 0) / maxV) * h;
+    const pathD = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+    const areaD = pathD + ` L ${points[points.length-1].x} ${padding + h} L ${points[0].x} ${padding + h} Z`;
+
+    return (
+        <svg width={width} height={height} style={{ overflow: "visible" }}>
+            <defs>
+                <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={STRATEGIC_COLORS.primary} stopOpacity="0.3"/>
+                    <stop offset="100%" stopColor={STRATEGIC_COLORS.primary} stopOpacity="0"/>
+                </linearGradient>
+            </defs>
+            <path d={areaD} fill="url(#sparkGrad)"/>
+            <line x1={padding} y1={avgY} x2={width - padding} y2={avgY} stroke={STRATEGIC_COLORS.warning} strokeWidth="1" strokeDasharray="4 3" opacity="0.6"/>
+            <path d={pathD} fill="none" stroke={STRATEGIC_COLORS.primary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            {points.map((p, i) => (
+                <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={p.velocity >= (avgVelocity || 0) ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning} stroke={STRATEGIC_COLORS.bgCard} strokeWidth="1.5"/>
+            ))}
+        </svg>
+    );
+};
+
+// ── Main Production Component ──
+function RoadmapView({ project, setIsLoading }) {
+    const [data, setData] = React.useState(null);
+    const [error, setError] = React.useState(null);
+    const [activeTab, setActiveTab] = React.useState("overview");
+    const [expandedInitiative, setExpandedInitiative] = React.useState(null);
+    const [hoveredBucket, setHoveredBucket] = React.useState(null);
+
+    // Fetch REAL data from the backend
+    React.useEffect(() => {
         setData(null); setError(null); setIsLoading(true);
-        secureFetch(`/roadmap/${project}`).then(r => r?.json()).then(d => {
-            if (d && (d.sprint_buckets || d.tracks)) { setData(d); }
-            else { setError("AI could not generate roadmap data."); }
-            setIsLoading(false);
-        }).catch(() => { setError("Network error loading roadmap."); setIsLoading(false); });
-    }, [project]);
+        secureFetch(`/roadmap/${project}`)
+            .then(r => r.json())
+            .then(d => {
+                if (d && !d.error) { setData(d); }
+                else { setError(d?.error || "AI could not generate roadmap data."); }
+                setIsLoading(false);
+            }).catch((e) => { 
+                console.error("Roadmap fetch error:", e);
+                setError("Network error loading roadmap. Please check backend server."); 
+                setIsLoading(false); 
+            });
+    }, [project, setIsLoading]);
 
-    if (!data && !error) return <LoadingScreen msg="Analyzing Sprint History & Building Roadmap..." />;
+    if (!data && !error) return <LoadingScreen msg="Analyzing Sprint History & Aligning Roadmaps..." />;
     if (error) return (
         <div className="animate-fade-in h-full flex items-center justify-center">
-            <div className="glass-card p-12 max-w-lg text-center">
-                <Icon name="AlertTriangle" size={48} className="text-warning mx-auto mb-4 opacity-80" />
+            <div className="glass-card p-12 max-w-lg text-center border border-border bg-bg-card">
+                <StrategicIcon name="AlertTriangle" size={48} color={STRATEGIC_COLORS.warning} className="mx-auto mb-4 opacity-80" />
                 <h3 className="text-xl font-extrabold text-text-main mb-3">Roadmap Unavailable</h3>
                 <p className="text-text-muted font-medium">{error}</p>
             </div>
         </div>
     );
 
-    const TRACK_COLORS = ['#3B82F6', '#8B5CF6', '#10B981', '#F43F5E', '#F59E0B', '#06B6D4'];
-    const PRIORITY_COLORS = { High: '#F43F5E', Highest: '#F43F5E', Critical: '#F43F5E', Medium: '#F59E0B', Low: '#10B981', Lowest: '#8B9DC3' };
+    // Safe destructuring of API payload
     const velocity = data.velocity || {};
+    const slippage = data.slippage || { avg_completion_rate: 0, slippage_events: [] };
     const sprintHistory = data.sprint_history || [];
-    const sprintBuckets = data.sprint_buckets || [];
-    const timeline = data.timeline || [];
-    const tracks = data.tracks || [];
-    const unscheduled = data.unscheduled || [];
-    const maxVelocity = Math.max(1, ...sprintHistory.map(s => s.velocity || 0));
+    const investmentBuckets = data.investment_buckets || {};
+    const capacityAlloc = data.capacity_allocation || { allocations: {} };
+    const deltaAnalysis = data.delta_analysis || { deltas: [], resolution_options: [] };
+    const featureAlign = data.feature_alignment || {};
+    const initiatives = data.initiatives || [];
+
+    const tabs = [
+        { id: "overview", label: "Command Center", icon: "Target" },
+        { id: "alignment", label: "Alignment & Delta", icon: "Link" },
+        { id: "investment", label: "Investment Buckets", icon: "PieChart" },
+        { id: "initiatives", label: "Strategic Initiatives", icon: "Layers" },
+        { id: "velocity", label: "Velocity & Capacity", icon: "BarChart" },
+    ];
+
+    const statusColors = { in_progress: STRATEGIC_COLORS.primary, planned: STRATEGIC_COLORS.warning, backlog: STRATEGIC_COLORS.textDim, completed: STRATEGIC_COLORS.success };
+    const statusLabels = { in_progress: "In Progress", planned: "Planned", backlog: "Backlog", completed: "Completed" };
 
     return (
-        <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4">
-            <header className="flex justify-between items-end pb-6 border-b border-border mb-8">
+        <div style={{ background: STRATEGIC_COLORS.bg, minHeight: "100vh", color: STRATEGIC_COLORS.textMain, fontFamily: "'DM Sans', 'SF Pro Display', -apple-system, sans-serif", borderRadius: '16px', overflow: 'hidden' }}>
+            <style>{`
+                .strat-card { background: ${STRATEGIC_COLORS.bgCard}; border: 1px solid ${STRATEGIC_COLORS.border}; border-radius: 16px; }
+                .strat-card-elevated { background: ${STRATEGIC_COLORS.bgElevated}; border: 1px solid ${STRATEGIC_COLORS.borderLight}; border-radius: 16px; }
+                .strat-glow { box-shadow: 0 0 30px rgba(37,99,235,0.08); }
+                .strat-tab-active { background: ${STRATEGIC_COLORS.primary}; color: white; box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
+                .strat-tab-inactive { background: transparent; color: ${STRATEGIC_COLORS.textMuted}; border: 1px solid ${STRATEGIC_COLORS.border}; }
+                .strat-tab-inactive:hover { color: ${STRATEGIC_COLORS.textMain}; border-color: ${STRATEGIC_COLORS.borderLight}; background: ${STRATEGIC_COLORS.bgElevated}; }
+                .strat-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+                .strat-mono { font-family: 'JetBrains Mono', monospace; }
+                @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+                .animate-in { animation: fadeSlideIn 0.4s ease-out forwards; }
+                .initiative-row:hover { background: ${STRATEGIC_COLORS.bgElevated}; }
+            `}</style>
+
+            {/* ═══ HEADER ═══ */}
+            <header style={{ borderBottom: `1px solid ${STRATEGIC_COLORS.border}`, padding: "24px 40px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                    <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Strategic Roadmap</h2>
-                    <p className="text-base font-medium mt-2 text-text-muted">
-                        Velocity-Based Sprint Planning &middot; Project <span className="text-primary font-black">{project}</span>
-                        {velocity.sprints_analyzed > 0 && (
-                            <span className="ml-3 text-xs font-black px-2.5 py-1 rounded-full bg-primary-dim text-primary">
-                                Based on {velocity.sprints_analyzed} completed sprints
-                            </span>
-                        )}
-                    </p>
-                </div>
-                <div className="flex gap-3 items-center">
-                    {/* View Mode Toggle */}
-                    <div className="flex bg-bg-card p-1 rounded-xl border border-border">
-                        <button onClick={() => setViewMode('gantt')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${viewMode === 'gantt' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>
-                            Gantt View
-                        </button>
-                        <button onClick={() => setViewMode('buckets')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${viewMode === 'buckets' ? 'bg-primary text-white shadow-md' : 'text-text-muted hover:text-text-main'}`}>
-                            Sprint Buckets
-                        </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: 12, background: "linear-gradient(135deg, #2563EB, #8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <StrategicIcon name="Target" size={20} color="white"/>
+                        </div>
+                        <div>
+                            <h1 style={{ fontSize: 24, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>Strategic Roadmap</h1>
+                            <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted, fontWeight: 500, marginTop: 2 }}>
+                                Project <span style={{ color: STRATEGIC_COLORS.primary, fontWeight: 900 }}>{project}</span> &middot; Aligned with Feature Roadmap
+                            </p>
+                        </div>
                     </div>
-                    <div className="flex gap-4 flex-wrap justify-end">
-                        {tracks.map((track, i) => (
-                            <span key={i} className="flex items-center gap-2 text-xs font-bold text-text-muted uppercase tracking-wider">
-                                <span className="w-3 h-3 rounded-full inline-block shrink-0" style={{ background: TRACK_COLORS[i % TRACK_COLORS.length] }}></span>
-                                {track.name}
-                            </span>
-                        ))}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                    <HealthRing score={data.health_score || 0} size={56}/>
+                    <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Roadmap Health</div>
+                        <div style={{ fontSize: 15, fontWeight: 900, color: (data.health_score || 0) >= 75 ? STRATEGIC_COLORS.success : (data.health_score || 0) >= 50 ? STRATEGIC_COLORS.warning : STRATEGIC_COLORS.danger }}>
+                            {(data.health_score || 0) >= 75 ? "Strong" : (data.health_score || 0) >= 50 ? "Needs Attention" : "At Risk"}
+                        </div>
                     </div>
                 </div>
             </header>
 
-            {/* ── Velocity Intelligence Panel ── */}
-            <div className="grid grid-cols-5 gap-4 mb-8">
-                <div className="glass-card p-5 border-l-4 border-primary">
-                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Avg Velocity</div>
-                    <div className="text-3xl font-extrabold text-text-main">
-                        {velocity.has_history === false ? '—' : (velocity.avg_velocity || '—')}
-                    </div>
-                    <div className="text-xs text-text-muted mt-1">
-                        {velocity.has_history === false ? 'no sprints completed' : 'pts/sprint'}
-                    </div>
-                </div>
-                <div className="glass-card p-5 border-l-4 border-success">
-                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Trend</div>
-                    <div className="text-3xl font-extrabold" style={{ color: velocity.trend === 'improving' ? 'var(--success)' : velocity.trend === 'declining' ? 'var(--danger)' : velocity.trend === 'no_data' ? 'var(--text-muted)' : 'var(--warning)' }}>
-                        {velocity.trend === 'improving' ? '▲' : velocity.trend === 'declining' ? '▼' : velocity.trend === 'no_data' ? '○' : '→'}
-                    </div>
-                    <div className="text-xs text-text-muted mt-1 capitalize">{velocity.trend === 'no_data' ? 'No data yet' : (velocity.trend || 'N/A')}</div>
-                </div>
-                <div className="glass-card p-5 border-l-4 border-warning">
-                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Velocity Range</div>
-                    <div className="text-3xl font-extrabold text-text-main">
-                        {velocity.has_history === false ? '—' : `${velocity.min}–${velocity.max}`}
-                    </div>
-                    <div className="text-xs text-text-muted mt-1">
-                        {velocity.has_history === false ? 'needs history' : 'min–max pts'}
-                    </div>
-                </div>
-                <div className="glass-card p-5 border-l-4" style={{ borderLeftColor: '#8B5CF6' }}>
-                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Backlog</div>
-                    <div className="text-3xl font-extrabold text-text-main">{data.backlog_count || 0}</div>
-                    <div className="text-xs text-text-muted mt-1">items to plan</div>
-                </div>
-                <div className="glass-card p-5 border-l-4" style={{ borderLeftColor: '#06B6D4' }}>
-                    <div className="text-xs font-bold uppercase tracking-widest mb-1 text-text-muted">Planned Sprints</div>
-                    <div className="text-3xl font-extrabold text-text-main">{sprintBuckets.length}</div>
-                    <div className="text-xs text-text-muted mt-1">future sprints</div>
-                </div>
-            </div>
+            {/* ═══ TAB NAV ═══ */}
+            <nav style={{ padding: "16px 40px 0", display: "flex", gap: 8, borderBottom: `1px solid ${STRATEGIC_COLORS.border}`, paddingBottom: 16 }}>
+                {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                        className={activeTab === tab.id ? "strat-tab-active" : "strat-tab-inactive"}
+                        style={{ padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}>
+                        <StrategicIcon name={tab.icon} size={15}/> {tab.label}
+                    </button>
+                ))}
+            </nav>
 
-            {/* ── Sprint Velocity History Chart ── */}
-            {sprintHistory.length > 0 && (
-                <div className="glass-card p-6 mb-8">
-                    <h3 className="text-sm font-black uppercase tracking-widest text-text-muted mb-4 flex items-center gap-2">
-                        <Icon name="TrendingUp" size={16} /> Sprint Velocity History
-                    </h3>
-                    <div className="flex items-end gap-3 h-32">
-                        {sprintHistory.map((s, i) => {
-                            const pct = ((s.velocity || 0) / maxVelocity) * 100;
-                            const isAboveAvg = (s.velocity || 0) >= (velocity.avg_velocity || 0);
-                            return (
-                                <div key={i} className="flex-1 flex flex-col items-center gap-2 group">
-                                    <span className="text-xs font-black opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: isAboveAvg ? 'var(--success)' : 'var(--warning)' }}>
-                                        {s.velocity} pts
-                                    </span>
-                                    <div className="w-full rounded-t-lg transition-all hover:opacity-80 relative" style={{
-                                        height: `${Math.max(pct, 4)}%`,
-                                        background: isAboveAvg ? 'var(--accent-gradient)' : 'linear-gradient(135deg, #F59E0B, #F43F5E)',
-                                        minHeight: '4px'
-                                    }} />
-                                    <span className="text-[10px] text-text-muted font-bold truncate w-full text-center" title={s.name}>
-                                        {s.name?.replace('Sprint ', 'S')}
-                                    </span>
+            {/* ═══ CONTENT ═══ */}
+            <main style={{ padding: "28px 40px 60px" }}>
+
+                {/* ────── OVERVIEW TAB ────── */}
+                {activeTab === "overview" && (
+                    <div className="animate-in">
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16, marginBottom: 28 }}>
+                            {[
+                                { label: "Avg Velocity", value: `${velocity.avg_velocity || '—'}`, unit: "pts/sprint", color: STRATEGIC_COLORS.primary, icon: "Zap" },
+                                { label: "Trend", value: velocity.trend === "improving" ? "▲ Up" : velocity.trend === "declining" ? "▼ Down" : "→ Stable", color: velocity.trend === "improving" ? STRATEGIC_COLORS.success : velocity.trend === "declining" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning, icon: "TrendingUp" },
+                                { label: "Completion Rate", value: `${slippage.avg_completion_rate || 0}%`, color: (slippage.avg_completion_rate || 0) >= 80 ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning, icon: "Check" },
+                                { label: "Backlog", value: data.backlog_count || 0, unit: `${data.total_backlog_pts || 0} pts`, color: STRATEGIC_COLORS.purple, icon: "Layers" },
+                                { label: "Features Linked", value: featureAlign.linked || 0, unit: `of ${(featureAlign.linked || 0) + (featureAlign.unlinked || 0)}`, color: (featureAlign.linked || 0) > 0 ? STRATEGIC_COLORS.cyan : STRATEGIC_COLORS.textDim, icon: "Link" },
+                            ].map((kpi, i) => (
+                                <div key={i} className="strat-card strat-glow" style={{ padding: 20, borderLeft: `3px solid ${kpi.color}` }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                                        <div style={{ fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>{kpi.label}</div>
+                                        <StrategicIcon name={kpi.icon} size={16} color={kpi.color}/>
+                                    </div>
+                                    <div style={{ fontSize: 28, fontWeight: 900, color: STRATEGIC_COLORS.textMain, marginTop: 8, lineHeight: 1 }}>{kpi.value}</div>
+                                    {kpi.unit && <div style={{ fontSize: 12, color: STRATEGIC_COLORS.textMuted, fontWeight: 600, marginTop: 4 }}>{kpi.unit}</div>}
                                 </div>
-                            );
-                        })}
-                        {/* Average line indicator */}
-                        <div className="absolute left-0 right-0 border-t-2 border-dashed pointer-events-none" style={{
-                            borderColor: 'var(--primary)',
-                            bottom: `${((velocity.avg_velocity || 0) / maxVelocity) * 100}%`,
-                            opacity: 0.4
-                        }} />
-                    </div>
-                    <div className="flex justify-center mt-2">
-                        <span className="text-xs text-primary font-bold">— Avg: {velocity.avg_velocity} pts/sprint —</span>
-                    </div>
-                </div>
-            )}
+                            ))}
+                        </div>
 
-            {/* ── Planning Notes ── */}
-            {data.planning_notes && (
-                <div className="glass-card p-5 mb-8 border-l-4 border-primary bg-primary-dim/30">
-                    <div className="flex items-start gap-3">
-                        <Icon name="Sparkles" size={18} className="text-primary shrink-0 mt-0.5" />
-                        <p className="text-sm font-semibold text-text-main leading-relaxed">{data.planning_notes}</p>
-                    </div>
-                </div>
-            )}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
+                            <div className="strat-card" style={{ padding: 24 }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                                    <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Sprint Velocity History</h3>
+                                    <span className="strat-mono strat-badge" style={{ background: STRATEGIC_COLORS.primaryDim, color: STRATEGIC_COLORS.primary }}>{velocity.sprints_analyzed || 0} sprints</span>
+                                </div>
+                                <VelocitySparkline history={sprintHistory} avgVelocity={velocity.avg_velocity} width={460} height={100}/>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                                    {sprintHistory.map((s, i) => (
+                                        <div key={i} style={{ textAlign: "center", flex: 1 }}>
+                                            <div className="strat-mono" style={{ fontSize: 12, fontWeight: 700, color: s.velocity >= (velocity.avg_velocity || 0) ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning }}>{s.velocity}</div>
+                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>{s.name?.replace("Sprint ", "S")}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
 
-            {/* ══════ GANTT VIEW ══════ */}
-            {viewMode === 'gantt' && (
-                <div className="glass-card overflow-hidden shadow-xl mb-8">
-                    <div className="overflow-x-auto hide-scroll">
-                        <div style={{ minWidth: `${250 + timeline.length * 120}px` }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${timeline.length}, 1fr)` }}>
-                                <div className="roadmap-header text-left px-4">Track</div>
-                                {timeline.map((w, i) => {
-                                    const bucket = sprintBuckets[i];
-                                    const allocated = bucket ? bucket.allocated_points : 0;
-                                    const capacity = velocity.avg_velocity || 0;
-                                    const fillPct = capacity > 0 ? Math.min(100, (allocated / capacity) * 100) : 0;
-                                    return (
-                                        <div key={w} className="roadmap-header flex flex-col items-center gap-1">
-                                            <span>{w}</span>
-                                            {bucket && (
-                                                <div className="flex items-center gap-1 mt-1">
-                                                    <div className="w-16 h-1.5 bg-border rounded-full overflow-hidden">
-                                                        <div className="h-full rounded-full" style={{
-                                                            width: `${fillPct}%`,
-                                                            background: fillPct > 100 ? 'var(--danger)' : fillPct > 85 ? 'var(--warning)' : 'var(--success)'
-                                                        }} />
+                            <div className="strat-card" style={{ padding: 24 }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Backlog Investment Split</h3>
+                                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                                    <DonutChart buckets={investmentBuckets}/>
+                                    <div style={{ flex: 1 }}>
+                                        {Object.entries(investmentBuckets).map(([key, bucket]) => {
+                                            const overTarget = bucket.actual_pct > bucket.target_pct + 5;
+                                            const underTarget = bucket.actual_pct < bucket.target_pct - 5;
+                                            return (
+                                                <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>
+                                                    <div style={{ width: 10, height: 10, borderRadius: 3, background: BUCKET_COLORS[key] || STRATEGIC_COLORS.textDim, flexShrink: 0 }}/>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ fontSize: 13, fontWeight: 700, color: STRATEGIC_COLORS.textMain }}>{bucket.label}</div>
+                                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim }}>
+                                                            Target: {bucket.target_pct}% &middot; Actual: <span style={{ color: overTarget ? STRATEGIC_COLORS.danger : underTarget ? STRATEGIC_COLORS.warning : STRATEGIC_COLORS.success, fontWeight: 800 }}>{bucket.actual_pct}%</span>
+                                                        </div>
                                                     </div>
-                                                    <span className="text-[9px] font-bold" style={{
-                                                        color: fillPct > 100 ? 'var(--danger)' : fillPct > 85 ? 'var(--warning)' : 'var(--success)'
-                                                    }}>{allocated}/{capacity}</span>
+                                                    <div className="strat-mono" style={{ fontSize: 13, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{bucket.actual_pts} pts</div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {(deltaAnalysis.deltas || []).length > 0 && (
+                            <div className="strat-card" style={{ padding: 24, borderLeft: `3px solid ${STRATEGIC_COLORS.warning}`, marginBottom: 28 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                                    <StrategicIcon name="AlertTriangle" size={18} color={STRATEGIC_COLORS.warning}/>
+                                    <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.warning, textTransform: "uppercase", letterSpacing: 1 }}>
+                                        Alignment Deltas Detected ({(deltaAnalysis.deltas || []).length})
+                                    </h3>
+                                </div>
+                                {(deltaAnalysis.deltas || []).map((d, i) => (
+                                    <div key={i} style={{ padding: "12px 16px", background: d.severity === "critical" ? STRATEGIC_COLORS.dangerDim : STRATEGIC_COLORS.warningDim, borderRadius: 10, marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                                        <div className="strat-badge" style={{ background: d.severity === "critical" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning, color: "white", flexShrink: 0 }}>{(d.type || "warning").replace(/_/g, " ").toUpperCase()}</div>
+                                        <span style={{ fontSize: 13, fontWeight: 600, color: STRATEGIC_COLORS.textMain }}>{d.message}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ────── ALIGNMENT & DELTA TAB ────── */}
+                {activeTab === "alignment" && (
+                    <div className="animate-in">
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 0, marginBottom: 28, alignItems: "stretch" }}>
+                            <div className="strat-card" style={{ padding: 28, borderRight: "none", borderRadius: "16px 0 0 16px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                                    <div style={{ width: 36, height: 36, borderRadius: 10, background: STRATEGIC_COLORS.primaryDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                        <StrategicIcon name="Target" size={18} color={STRATEGIC_COLORS.primary}/>
+                                    </div>
+                                    <div>
+                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Strategic Roadmap</h3>
+                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Based on Historical Velocity</div>
+                                    </div>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                    {[
+                                        { label: "Velocity", value: `${deltaAnalysis.strategic_velocity || 0} pts`, sub: "per sprint" },
+                                        { label: "Sprints", value: deltaAnalysis.strategic_forecast?.sprints || "—", sub: "to deliver" },
+                                        { label: "Duration", value: `${deltaAnalysis.strategic_forecast?.months || "—"} mo`, sub: "calendar" },
+                                        { label: "Source", value: "Jira", sub: `${velocity.sprints_analyzed || 0} sprints` },
+                                    ].map((item, i) => (
+                                        <div key={i} style={{ padding: 14, background: STRATEGIC_COLORS.bg, borderRadius: 10 }}>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{item.label}</div>
+                                            <div className="strat-mono" style={{ fontSize: 22, fontWeight: 900, color: STRATEGIC_COLORS.primary, marginTop: 4 }}>{item.value}</div>
+                                            <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim }}>{item.sub}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div style={{ background: STRATEGIC_COLORS.bgElevated, border: `1px solid ${STRATEGIC_COLORS.border}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 0" }}>
+                                <StrategicIcon name="GitBranch" size={24} color={STRATEGIC_COLORS.warning}/>
+                                <div style={{ fontSize: 10, fontWeight: 800, color: STRATEGIC_COLORS.warning, textTransform: "uppercase", letterSpacing: 1, marginTop: 8, writingMode: "vertical-lr", textOrientation: "mixed" }}>DELTA</div>
+                            </div>
+
+                            <div className="strat-card" style={{ padding: 28, borderLeft: "none", borderRadius: "0 16px 16px 0" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                                    <div style={{ width: 36, height: 36, borderRadius: 10, background: STRATEGIC_COLORS.cyanDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                        <StrategicIcon name="Layers" size={18} color={STRATEGIC_COLORS.cyan}/>
+                                    </div>
+                                    <div>
+                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Feature Roadmap</h3>
+                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Based on Team Estimation</div>
+                                    </div>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                                    {[
+                                        { label: "Velocity", value: `${deltaAnalysis.feature_roadmap_velocity || 0} pts`, sub: "per sprint" },
+                                        { label: "Sprints", value: deltaAnalysis.feature_forecast?.sprints || "—", sub: "to deliver" },
+                                        { label: "Duration", value: `${deltaAnalysis.feature_forecast?.months || "—"} mo`, sub: "calendar" },
+                                        { label: "Features", value: featureAlign.linked || 0, sub: `${featureAlign.total_feature_pts || 0} pts` },
+                                    ].map((item, i) => (
+                                        <div key={i} style={{ padding: 14, background: STRATEGIC_COLORS.bg, borderRadius: 10 }}>
+                                            <div style={{ fontSize: 10, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{item.label}</div>
+                                            <div className="strat-mono" style={{ fontSize: 22, fontWeight: 900, color: STRATEGIC_COLORS.cyan, marginTop: 4 }}>{item.value}</div>
+                                            <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim }}>{item.sub}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {(deltaAnalysis.deltas || []).length > 0 && (
+                            <div style={{ marginBottom: 28 }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Delta Analysis</h3>
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 16 }}>
+                                    {deltaAnalysis.deltas.map((delta, i) => (
+                                        <div key={i} className="strat-card" style={{ padding: 20, borderLeft: `3px solid ${delta.severity === "critical" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning}` }}>
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                                                <div className="strat-badge" style={{ background: delta.severity === "critical" ? STRATEGIC_COLORS.dangerDim : STRATEGIC_COLORS.warningDim, color: delta.severity === "critical" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning }}>
+                                                    {(delta.type || "warning").replace(/_/g, " ").toUpperCase()}
+                                                </div>
+                                            </div>
+                                            <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMain, fontWeight: 600, lineHeight: 1.6 }}>{delta.message}</p>
+                                            {delta.delta_pct !== undefined && (
+                                                <div className="strat-mono" style={{ fontSize: 28, fontWeight: 900, color: STRATEGIC_COLORS.warning, marginTop: 12 }}>+{delta.delta_pct}%</div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {(deltaAnalysis.resolution_options || []).length > 0 && (
+                            <div>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Resolution Options</h3>
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+                                    {deltaAnalysis.resolution_options.map((opt, i) => (
+                                        <div key={i} className="strat-card-elevated" style={{ padding: 24, cursor: "pointer", transition: "all 0.2s", position: "relative", overflow: "hidden" }}>
+                                            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: [STRATEGIC_COLORS.primary, STRATEGIC_COLORS.success, STRATEGIC_COLORS.warning][i % 3] }}/>
+                                            <h4 style={{ fontSize: 16, fontWeight: 900, color: STRATEGIC_COLORS.textMain, marginBottom: 8 }}>{opt.option}</h4>
+                                            <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted, fontWeight: 500, lineHeight: 1.6, marginBottom: 12 }}>{opt.description}</p>
+                                            <div className="strat-badge" style={{ background: STRATEGIC_COLORS.bg, color: STRATEGIC_COLORS.textDim, border: `1px solid ${STRATEGIC_COLORS.border}` }}>
+                                                {(opt.impact || "").replace(/_/g, " ")}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ────── INVESTMENT BUCKETS TAB ────── */}
+                {activeTab === "investment" && (
+                    <div className="animate-in">
+                        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 24, marginBottom: 28 }}>
+                            <div className="strat-card" style={{ padding: 28, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Actual Allocation</h3>
+                                <DonutChart buckets={investmentBuckets} size={200}/>
+                                <div style={{ marginTop: 20, width: "100%" }}>
+                                    {Object.entries(investmentBuckets).map(([key, b]) => (
+                                        <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0" }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                <div style={{ width: 8, height: 8, borderRadius: 2, background: BUCKET_COLORS[key] || STRATEGIC_COLORS.textDim }}/>
+                                                <span style={{ fontSize: 12, fontWeight: 600, color: STRATEGIC_COLORS.textMain }}>{b.label}</span>
+                                            </div>
+                                            <span className="strat-mono" style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted }}>{b.actual_pct}%</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="strat-card" style={{ padding: 28 }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>
+                                    Capacity Budget ({capacityAlloc.planned_sprints || 0} Sprints)
+                                </h3>
+                                {Object.entries(capacityAlloc.allocations || {}).map(([key, alloc]) => {
+                                    const bucket = investmentBuckets[key];
+                                    const used = bucket?.actual_pts || 0;
+                                    const available = alloc.total_pts_available || 0;
+                                    const usedPct = available > 0 ? Math.min(100, (used / available) * 100) : 0;
+                                    const isOver = used > available;
+                                    return (
+                                        <div key={key} style={{ marginBottom: 20 }}>
+                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
+                                                <div>
+                                                    <span style={{ fontSize: 15, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{alloc.label}</span>
+                                                    <span style={{ fontSize: 12, color: STRATEGIC_COLORS.textDim, marginLeft: 8 }}>{alloc.target_pct}% allocation</span>
+                                                </div>
+                                                <div style={{ textAlign: "right" }}>
+                                                    <span className="strat-mono" style={{ fontSize: 14, fontWeight: 800, color: isOver ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.textMain }}>
+                                                        {used} / {Math.round(available)} pts
+                                                    </span>
+                                                    <span style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim, marginLeft: 6 }}>({alloc.pts_per_sprint}/sprint)</span>
+                                                </div>
+                                            </div>
+                                            <div style={{ height: 10, background: STRATEGIC_COLORS.bg, borderRadius: 5, overflow: "hidden" }}>
+                                                <div style={{ height: "100%", borderRadius: 5, transition: "width 0.8s ease-out", width: `${usedPct}%`, background: isOver ? STRATEGIC_COLORS.danger : usedPct > 80 ? STRATEGIC_COLORS.warning : alloc.color || STRATEGIC_COLORS.primary }}/>
+                                            </div>
+                                            {isOver && (
+                                                <div style={{ fontSize: 11, color: STRATEGIC_COLORS.danger, fontWeight: 700, marginTop: 4 }}>
+                                                    ⚠ Over-allocated by {Math.round(used - available)} pts — consider rebalancing
                                                 </div>
                                             )}
                                         </div>
                                     );
                                 })}
                             </div>
-                            {tracks.map((track, trackIdx) => {
-                                const color = TRACK_COLORS[trackIdx % TRACK_COLORS.length];
-                                const items = track.items || [];
-                                return (
-                                    <div key={trackIdx} className="border-b border-border last:border-0" style={{ position: 'relative', minHeight: `${Math.max(80, 12 + items.length * 40 + 20)}px` }}>
-                                        <div style={{ display: 'grid', gridTemplateColumns: `250px repeat(${timeline.length}, 1fr)`, height: '100%', position: 'absolute', inset: 0 }}>
-                                            <div className="p-4 font-bold text-sm text-text-main border-r border-border flex items-center gap-3 bg-bg-card z-10">
-                                                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: color }}></span>
-                                                <span className="truncate">{track.name}</span>
-                                            </div>
-                                            {timeline.map((_, ci) => (
-                                                <div key={ci} className="border-r border-border/30" style={{ background: ci % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.01)' }}></div>
-                                            ))}
-                                        </div>
-                                        <div style={{ position: 'absolute', left: '250px', right: 0, top: 0, bottom: 0, pointerEvents: 'none' }}>
-                                            {items.map((item, itemIdx) => {
-                                                const start = Math.max(0, Math.min(item.start || 0, timeline.length - 1));
-                                                const duration = Math.max(1, Math.min(item.duration || 1, timeline.length - start));
-                                                const leftPct = (start / timeline.length) * 100;
-                                                const widthPct = (duration / timeline.length) * 100;
-                                                const isDone = (item.status || '').toLowerCase().includes('done');
-                                                return (
-                                                    <div key={itemIdx} className="roadmap-item" style={{
-                                                        left: `calc(${leftPct}% + 4px)`,
-                                                        width: `calc(${widthPct}% - 8px)`,
-                                                        top: `${12 + itemIdx * 40}px`,
-                                                        background: isDone ? '#334155' : color,
-                                                        opacity: isDone ? 0.6 : 1,
-                                                        pointerEvents: 'auto',
-                                                        border: selectedItem?.key === item.key ? '2px solid white' : '2px solid transparent'
-                                                    }} title={`${item.key}: ${item.summary} (${item.points || 0} pts)`}
-                                                        onClick={() => setSelectedItem(selectedItem?.key === item.key ? null : item)}>
-                                                        <span className="truncate text-xs font-bold">
-                                                            {item.key}: {item.summary}
-                                                            {item.points > 0 && <span className="ml-2 opacity-70">({item.points}pt)</span>}
-                                                        </span>
-                                                        {isDone && <Icon name="CheckCircle" size={12} className="ml-2 opacity-70 shrink-0" />}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                        <div style={{ minHeight: `${Math.max(80, 12 + items.length * 40 + 20)}px` }}></div>
-                                    </div>
-                                );
-                            })}
                         </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* ══════ SPRINT BUCKETS VIEW ══════ */}
-            {viewMode === 'buckets' && (
-                <div className="space-y-6 mb-8">
-                    {sprintBuckets.map((bucket, bi) => {
-                        const allocated = bucket.allocated_points || 0;
-                        const capacity = bucket.target_capacity || velocity.avg_velocity || 1;
-                        const fillPct = Math.min(100, (allocated / capacity) * 100);
-                        const isOver = allocated > capacity;
-                        return (
-                            <motion.div key={bi} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: bi * 0.05 }}
-                                className="glass-card overflow-hidden">
-                                {/* Sprint Bucket Header */}
-                                <div className="p-5 flex justify-between items-center border-b border-border" style={{ background: isOver ? 'rgba(244,63,94,0.05)' : 'transparent' }}>
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{
-                                            background: isOver ? 'var(--danger)' : 'var(--accent-gradient)'
-                                        }}>{bi + 1}</div>
-                                        <div>
-                                            <h4 className="font-extrabold text-text-main text-lg">{bucket.sprint_label}</h4>
-                                            <p className="text-xs text-text-muted font-medium">{(bucket.items || []).length} items</p>
-                                        </div>
+                {/* ────── STRATEGIC INITIATIVES TAB ────── */}
+                {activeTab === "initiatives" && (
+                    <div className="animate-in">
+                        <div style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <div>
+                                <h3 style={{ fontSize: 18, fontWeight: 900 }}>Strategic Initiatives</h3>
+                                <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted }}>Each initiative traces to Feature Roadmap epics and stories</p>
+                            </div>
+                            <div style={{ display: "flex", gap: 8 }}>
+                                {Object.entries(statusLabels).map(([key, label]) => (
+                                    <span key={key} className="strat-badge" style={{ background: `${statusColors[key]}22`, color: statusColors[key] }}>{label}</span>
+                                ))}
+                            </div>
+                        </div>
+
+                        {initiatives.map((init, i) => (
+                            <div key={init.id} className="strat-card" style={{ marginBottom: 12, overflow: "hidden" }}>
+                                <div className="initiative-row" style={{ padding: "20px 24px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, transition: "background 0.15s" }}
+                                    onClick={() => setExpandedInitiative(expandedInitiative === init.id ? null : init.id)}>
+                                    <div style={{ width: 44, height: 44, borderRadius: 12, background: `${[STRATEGIC_COLORS.primary, STRATEGIC_COLORS.cyan, STRATEGIC_COLORS.purple, STRATEGIC_COLORS.success][i % 4]}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                                        <span style={{ fontSize: 16, fontWeight: 900, color: [STRATEGIC_COLORS.primary, STRATEGIC_COLORS.cyan, STRATEGIC_COLORS.purple, STRATEGIC_COLORS.success][i % 4] }}>{init.id}</span>
                                     </div>
-                                    <div className="flex items-center gap-6">
-                                        {/* Capacity bar */}
-                                        <div className="w-48">
-                                            <div className="flex justify-between text-xs font-bold mb-1">
-                                                <span className="text-text-muted">Capacity</span>
-                                                <span style={{ color: isOver ? 'var(--danger)' : 'var(--success)' }}>
-                                                    {allocated}/{capacity} pts
-                                                    {isOver && <span className="ml-1">⚠️</span>}
-                                                </span>
-                                            </div>
-                                            <div className="w-full h-2.5 bg-border rounded-full overflow-hidden">
-                                                <div className="h-full rounded-full transition-all" style={{
-                                                    width: `${fillPct}%`,
-                                                    background: isOver ? 'var(--danger)' : fillPct > 85 ? 'var(--warning)' : 'var(--success)'
-                                                }} />
-                                            </div>
+                                    <div style={{ flex: 1 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                            <h4 style={{ fontSize: 16, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{init.theme}</h4>
+                                            <span className="strat-badge" style={{ background: `${statusColors[init.status] || STRATEGIC_COLORS.textDim}22`, color: statusColors[init.status] || STRATEGIC_COLORS.textDim }}>{statusLabels[init.status] || "Unknown"}</span>
                                         </div>
+                                        <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted, fontWeight: 500, marginTop: 2 }}>{init.objective}</p>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+                                        <div style={{ textAlign: "center" }}>
+                                            <div className="strat-mono" style={{ fontSize: 18, fontWeight: 900, color: STRATEGIC_COLORS.textMain }}>{init.total_points || 0}</div>
+                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>pts</div>
+                                        </div>
+                                        <div style={{ textAlign: "center" }}>
+                                            <div className="strat-mono" style={{ fontSize: 18, fontWeight: 900, color: STRATEGIC_COLORS.textMain }}>{init.feature_count || 0}</div>
+                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>features</div>
+                                        </div>
+                                        <div style={{ textAlign: "center" }}>
+                                            <div className="strat-mono" style={{ fontSize: 18, fontWeight: 900, color: STRATEGIC_COLORS.primary }}>{init.sprints_needed || 0}</div>
+                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>sprints</div>
+                                        </div>
+                                        <StrategicIcon name="ChevronDown" size={18} color={STRATEGIC_COLORS.textDim}/>
                                     </div>
                                 </div>
-                                {/* Items */}
-                                <div className="p-4 space-y-2">
-                                    {(bucket.items || []).map((item, ii) => (
-                                        <div key={ii} className="flex items-center gap-4 p-3 bg-bg-body rounded-xl border border-border hover:border-primary transition-colors cursor-pointer"
-                                            onClick={() => setSelectedItem(selectedItem?.key === item.key ? null : item)}>
-                                            <span className="text-xs font-black text-primary bg-primary-dim px-2.5 py-1 rounded-full shrink-0">{item.key}</span>
-                                            <span className="flex-1 text-sm font-bold text-text-main truncate">{item.summary}</span>
-                                            <span className="text-xs font-bold px-2 py-1 rounded-full shrink-0" style={{
-                                                background: `${PRIORITY_COLORS[item.priority] || 'var(--border)'}22`,
-                                                color: PRIORITY_COLORS[item.priority] || 'var(--text-muted)'
-                                            }}>{item.priority}</span>
-                                            <span className="text-xs font-black text-primary bg-primary-dim px-2.5 py-1 rounded-full shrink-0">
-                                                {item.points || 0} pts
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </motion.div>
-                        );
-                    })}
-                </div>
-            )}
 
-            {/* Unscheduled Items */}
-            {unscheduled.length > 0 && (
-                <div className="glass-card p-6 mb-8 border-l-4 border-warning">
-                    <h3 className="text-sm font-black uppercase tracking-widest text-warning mb-4 flex items-center gap-2">
-                        <Icon name="AlertTriangle" size={16} /> Unscheduled ({unscheduled.length})
-                    </h3>
-                    <div className="space-y-2">
-                        {unscheduled.map((item, i) => (
-                            <div key={i} className="flex items-center gap-3 text-sm text-text-muted">
-                                <span className="font-bold text-text-main">{item.key}</span>
-                                <span>{item.summary}</span>
-                                {item.reason && <span className="text-xs italic">— {item.reason}</span>}
+                                {expandedInitiative === init.id && (
+                                    <div style={{ borderTop: `1px solid ${STRATEGIC_COLORS.border}`, padding: "20px 24px", background: STRATEGIC_COLORS.bg }}>
+                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                                            <div>
+                                                <h5 style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Linked Features</h5>
+                                                {(init.features || []).map((f, fi) => (
+                                                    <div key={fi} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: STRATEGIC_COLORS.bgCard, borderRadius: 8, marginBottom: 6, border: `1px solid ${STRATEGIC_COLORS.border}` }}>
+                                                        <span className="strat-mono strat-badge" style={{ background: STRATEGIC_COLORS.primaryDim, color: STRATEGIC_COLORS.primary, fontSize: 10 }}>#{f.id || fi+1}</span>
+                                                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: STRATEGIC_COLORS.textMain }}>{f.name}</span>
+                                                        <span className="strat-badge" style={{ background: STRATEGIC_COLORS.bg, color: STRATEGIC_COLORS.textDim, border: `1px solid ${STRATEGIC_COLORS.border}` }}>{f.size || 'N/A'}</span>
+                                                        <span className="strat-mono" style={{ fontSize: 12, fontWeight: 800, color: STRATEGIC_COLORS.primary }}>{f.points || 0} pts</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div>
+                                                <h5 style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Jira Epics</h5>
+                                                {(init.epics || []).map((e, ei) => (
+                                                    <div key={ei} style={{ padding: 16, background: STRATEGIC_COLORS.bgCard, borderRadius: 10, marginBottom: 8, border: `1px solid ${STRATEGIC_COLORS.border}` }}>
+                                                        <div style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{e.name}</div>
+                                                        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                                                            <span style={{ fontSize: 12, color: STRATEGIC_COLORS.textMuted }}><strong style={{ color: STRATEGIC_COLORS.primary }}>{e.points || 0}</strong> pts</span>
+                                                            <span style={{ fontSize: 12, color: STRATEGIC_COLORS.textMuted }}><strong style={{ color: STRATEGIC_COLORS.cyan }}>{e.stories || 0}</strong> stories</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
-                </div>
-            )}
-
-            {/* Selected Item Detail */}
-            <AnimatePresence>
-                {selectedItem && (
-                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} transition={{ type: "spring", bounce: 0.3 }}
-                        className="glass-card p-8 border-l-4 border-primary">
-                        <div className="flex justify-between items-start gap-6">
-                            <div className="flex-1">
-                                <div className="flex items-center gap-3 mb-3 flex-wrap">
-                                    <span className="text-xs font-black text-primary bg-primary-dim px-3 py-1 rounded-full">{selectedItem.key}</span>
-                                    <span className="text-xs font-bold px-3 py-1 rounded-full" style={{
-                                        background: `${PRIORITY_COLORS[selectedItem.priority] || 'var(--border)'}22`,
-                                        color: PRIORITY_COLORS[selectedItem.priority] || 'var(--text-muted)'
-                                    }}>{selectedItem.priority || 'Medium'} Priority</span>
-                                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-border/30 text-text-muted border border-border">{selectedItem.status || 'To Do'}</span>
-                                    {selectedItem.points > 0 && <span className="text-xs font-black text-primary">{selectedItem.points} story points</span>}
-                                </div>
-                                <h3 className="text-xl font-extrabold text-text-main mb-2">{selectedItem.summary}</h3>
-                                {selectedItem.sprint_bucket && <span className="text-sm font-bold text-text-muted">Scheduled in: {selectedItem.sprint_bucket}</span>}
-                            </div>
-                            <button onClick={() => setSelectedItem(null)} className="p-2 text-text-muted hover:text-text-main transition bg-bg-body rounded-lg border border-border shrink-0">
-                                <Icon name="X" size={18} />
-                            </button>
-                        </div>
-                    </motion.div>
                 )}
-            </AnimatePresence>
+
+                {/* ────── VELOCITY & CAPACITY TAB ────── */}
+                {activeTab === "velocity" && (
+                    <div className="animate-in">
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+                            {[
+                                { label: "Avg Velocity", value: velocity.avg_velocity || '—', unit: "pts/sprint", color: STRATEGIC_COLORS.primary },
+                                { label: "Min / Max", value: `${velocity.min || 0} / ${velocity.max || 0}`, unit: "pts range", color: STRATEGIC_COLORS.warning },
+                                { label: "Completion", value: `${slippage.avg_completion_rate || 0}%`, unit: "avg rate", color: (slippage.avg_completion_rate || 0) >= 80 ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning },
+                                { label: "Slippage Risk", value: slippage.at_risk ? "YES" : "LOW", unit: slippage.trend || "stable", color: slippage.at_risk ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.success },
+                            ].map((kpi, i) => (
+                                <div key={i} className="strat-card" style={{ padding: 20, borderTop: `3px solid ${kpi.color}` }}>
+                                    <div style={{ fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{kpi.label}</div>
+                                    <div className="strat-mono" style={{ fontSize: 28, fontWeight: 900, color: STRATEGIC_COLORS.textMain, marginTop: 8 }}>{kpi.value}</div>
+                                    <div style={{ fontSize: 12, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>{kpi.unit}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="strat-card" style={{ overflow: "hidden", marginBottom: 28 }}>
+                            <div style={{ padding: "16px 24px", borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Sprint Performance History</h3>
+                            </div>
+                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                                <thead>
+                                    <tr style={{ background: STRATEGIC_COLORS.bg }}>
+                                        {["Sprint", "Velocity", "Completion", "Issues", "vs Avg", "Status"].map(h => (
+                                            <th key={h} style={{ padding: "12px 20px", fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1, textAlign: "left", borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {sprintHistory.map((s, i) => {
+                                        const vsAvg = (s.velocity || 0) - (velocity.avg_velocity || 0);
+                                        const isAbove = vsAvg >= 0;
+                                        return (
+                                            <tr key={i} style={{ borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>
+                                                <td style={{ padding: "14px 20px", fontSize: 14, fontWeight: 700, color: STRATEGIC_COLORS.textMain }}>{s.name}</td>
+                                                <td style={{ padding: "14px 20px" }}><span className="strat-mono" style={{ fontSize: 16, fontWeight: 900, color: STRATEGIC_COLORS.primary }}>{s.velocity}</span></td>
+                                                <td style={{ padding: "14px 20px" }}>
+                                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                        <div style={{ width: 60, height: 6, background: STRATEGIC_COLORS.bg, borderRadius: 3 }}>
+                                                            <div style={{ width: `${s.completion_rate || 0}%`, height: "100%", borderRadius: 3, background: (s.completion_rate || 0) >= 80 ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning }}/>
+                                                        </div>
+                                                        <span className="strat-mono" style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted }}>{s.completion_rate || 0}%</span>
+                                                    </div>
+                                                </td>
+                                                <td style={{ padding: "14px 20px", fontSize: 13, color: STRATEGIC_COLORS.textMuted }}>{s.completed_issues || 0}/{s.total_issues || 0}</td>
+                                                <td style={{ padding: "14px 20px" }}>
+                                                    <span className="strat-mono" style={{ fontSize: 13, fontWeight: 800, color: isAbove ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.danger }}>
+                                                        {isAbove ? "+" : ""}{vsAvg.toFixed(0)}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: "14px 20px" }}>
+                                                    <span className="strat-badge" style={{ background: isAbove ? STRATEGIC_COLORS.successDim : STRATEGIC_COLORS.warningDim, color: isAbove ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning }}>
+                                                        {isAbove ? "Above Avg" : "Below Avg"}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {(slippage.slippage_events || []).length > 0 && (
+                            <div className="strat-card" style={{ padding: 24, borderLeft: `3px solid ${STRATEGIC_COLORS.warning}` }}>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.warning, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+                                    <StrategicIcon name="AlertTriangle" size={16} color={STRATEGIC_COLORS.warning}/> Slippage Events
+                                </h3>
+                                {slippage.slippage_events.map((evt, i) => (
+                                    <div key={i} style={{ padding: "10px 16px", background: STRATEGIC_COLORS.warningDim, borderRadius: 8, marginBottom: 6 }}>
+                                        <span style={{ fontWeight: 700, color: STRATEGIC_COLORS.textMain }}>{evt.sprint}</span>
+                                        <span style={{ color: STRATEGIC_COLORS.textMuted, marginLeft: 8 }}>— {evt.completion_rate}% completion</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </main>
         </div>
     );
 }
-
         /* ══════════════════════════════════════════════════════════════════
            ★ PREMIUM SLIDE SYSTEM — Rich Corporate Deck with Geometric Art
            ══════════════════════════════════════════════════════════════════ */
