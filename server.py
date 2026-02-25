@@ -266,7 +266,7 @@ def create_adf_doc(text_content, ac_list=None):
     if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20, model=None):
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=30, model=None):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -279,7 +279,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     if model:
         models_to_try = [model, "gemini-2.5-flash"]
     else:
-        models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash"]
+        models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
     for m in models_to_try:
         try:
