@@ -1830,56 +1830,391 @@ def _build_fallback_structure(features, num_features, total_pts, total_seq_days,
     }
 
 
-
 def _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features):
-    """Validate, fix totals, and add metadata to roadmap result."""
+    """
+    SERVER-SIDE MATH ENFORCEMENT.
+    Treats AI output as a draft — recalculates all derived data deterministically.
+    """
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 0: Extract feature analysis (AI sizing is trusted)
+    # ═══════════════════════════════════════════════════════════
     fa = parsed.get("feature_analysis", [])
-    total_pts = sum(f.get("story_points", 0) for f in fa)
-    total_seq_days = sum(f.get("days", 0) for f in fa)
+
+    # Separate dev features from project phases (Pilot/Hypercare)
+    dev_features = []
+    phase_features = []
+    for f in fa:
+        name_lower = (f.get("feature", "") or "").lower().strip()
+        if name_lower in ("pilot", "hypercare", "pilot phase", "hypercare phase",
+                          "pilot & hypercare", "pilot and hypercare"):
+            phase_features.append(f)
+        else:
+            dev_features.append(f)
+
+    total_pts = sum(f.get("story_points", 0) or 0 for f in dev_features)
+    total_seq_days = sum(f.get("days", 0) or 0 for f in dev_features)
+
     parsed["total_story_points"] = total_pts
     parsed["total_working_days_sequential"] = total_seq_days
 
-    # Fix timeline math
-    tl = parsed.get("timeline", {})
-    tl["total_story_points"] = total_pts
-    tl["start_date"] = start_date
-    velocity = tl.get("team_velocity_per_sprint", 0)
+    # ═══════════════════════════════════════════════════════════
+    # STEP 1: Parallel streams (initial read)
+    # ═══════════════════════════════════════════════════════════
     psa = parsed.get("parallel_stream_analysis", {})
-    streams = psa.get("recommended_streams", 1) or 1
-    # Validate velocity = streams × 2 devs × 8 pts
-    expected_velocity = streams * 2 * 8
-    if velocity <= 0 or abs(velocity - expected_velocity) > expected_velocity * 0.3:
-        tl["team_velocity_per_sprint"] = expected_velocity
-        velocity = expected_velocity
-        # Validate sprint count
-    if velocity > 0:
-        correct_sprints = math.ceil(total_pts / velocity)
-        if tl.get("total_sprints", 0) != correct_sprints:
-            tl["total_sprints"] = correct_sprints
-            tl["total_working_days"] = correct_sprints * 10
-            tl["total_months"] = round((correct_sprints * 10) / 22, 1)
+    if not psa:
+        psa = {}
+        parsed["parallel_stream_analysis"] = psa
 
-    # Enforce: 1 stream → days = sequential
-    if streams == 1 and tl.get("total_working_days", 0) != total_seq_days:
-        correct_sprints_1s = math.ceil(total_seq_days / 10)
-        tl["total_working_days"] = correct_sprints_1s * 10
-        tl["total_sprints"] = correct_sprints_1s
-        tl["total_months"] = round((correct_sprints_1s * 10) / 22, 1)
-        tl["team_velocity_per_sprint"] = math.ceil(total_pts / correct_sprints_1s)
-
+    ai_streams = psa.get("recommended_streams", 1) or 1
     psa["single_stream_days"] = total_seq_days
     psa["single_stream_months"] = round(total_seq_days / 22, 1)
 
-    # Ensure parallel stream analysis has target
-    psa = parsed.get("parallel_stream_analysis", {})
+    # ═══════════════════════════════════════════════════════════
+    # STEP 2: Count actual developers from team_composition
+    # ═══════════════════════════════════════════════════════════
+    team = parsed.get("team_composition", [])
+    dev_count = 0
+    dev_role_keywords = ["developer", "dev ", "engineer", "programmer",
+                         "power platform", "bi developer", "frontend",
+                         "backend", "full stack", "fullstack"]
+    non_dev_keywords = ["manager", "analyst", "qa", "quality", "architect",
+                        "scrum", "product owner", "pgm", "program"]
+
+    for member in team:
+        role_lower = (member.get("role", "") or "").lower()
+        is_dev = any(kw in role_lower for kw in dev_role_keywords)
+        is_non_dev = any(kw in role_lower for kw in non_dev_keywords)
+        if is_dev and not is_non_dev:
+            hc = member.get("headcount", 1) or 1
+            dev_count += hc
+            print(f"[MATH] DEV: {member.get('role','')} x{hc}", flush=True)
+
+    if dev_count == 0:
+        dev_count = max(ai_streams, 1) * 2
+        print(f"[MATH] No dev roles detected, defaulting to {dev_count}", flush=True)
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 3: Deterministic velocity
+    # ═══════════════════════════════════════════════════════════
+    AVG_PTS_PER_DEV_PER_SPRINT = 8
+    velocity = dev_count * AVG_PTS_PER_DEV_PER_SPRINT
+    if velocity <= 0:
+        velocity = 16
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 4: Sprints and duration
+    # ═══════════════════════════════════════════════════════════
+    total_sprints = math.ceil(total_pts / velocity)
+    total_dev_days = total_sprints * 10
+
+    # Validate streams needed
+    if total_dev_days <= target_working_days:
+        streams = 1
+    else:
+        streams = min(4, max(1, math.ceil(total_dev_days / target_working_days)))
+
+    psa["recommended_streams"] = streams
     psa["target_days"] = target_working_days
     psa["target_months"] = target_months
 
-    # Ensure epics exist (even if empty)
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    except Exception:
+        start_dt = datetime.now()
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 5: REBUILD sprint_mapping (bin-packing)
+    # ═══════════════════════════════════════════════════════════
+    sorted_features = sorted(
+        dev_features,
+        key=lambda f: (f.get("start_day", 999), f.get("id", 999))
+    )
+
+    sprint_mapping = []
+    feature_queue = list(sorted_features)
+
+    for sp_num in range(1, total_sprints + 1):
+        sp_label = f"SP{sp_num}"
+        sp_start_day = (sp_num - 1) * 10 + 1
+        sp_end_day = sp_num * 10
+        sp_date = start_dt + timedelta(days=(sp_num - 1) * 14)
+        calendar_month = sp_date.strftime("%b %Y")
+        month_label = f"M{math.ceil(sp_num / 2)}"
+
+        sprint_pts = 0
+        sprint_features = []
+        remaining_queue = []
+
+        for feat in feature_queue:
+            feat_pts = feat.get("story_points", 0) or feat.get("days", 3) or 3
+            if sprint_pts + feat_pts <= velocity:
+                sprint_pts += feat_pts
+                feat_name = feat.get("feature", "Unknown")
+                if len(feat_name) > 60:
+                    feat_name = feat_name[:57] + "..."
+                sprint_features.append(feat_name)
+                feat["sprint_allocation"] = sp_label
+                feat["start_day"] = sp_start_day
+                feat["end_day"] = min(sp_start_day + feat_pts - 1, sp_end_day)
+            elif sprint_pts == 0 and feat_pts > velocity:
+                sprint_pts += feat_pts
+                feat_name = feat.get("feature", "Unknown")
+                if len(feat_name) > 60:
+                    feat_name = feat_name[:57] + "..."
+                sprint_features.append(feat_name)
+                feat["sprint_allocation"] = sp_label
+                feat["start_day"] = sp_start_day
+                feat["end_day"] = sp_end_day
+                print(f"[MATH] Oversized ({feat_pts}pts) in {sp_label}, cap={velocity}", flush=True)
+            else:
+                remaining_queue.append(feat)
+
+        feature_queue = remaining_queue
+        sprint_mapping.append({
+            "sprint": sp_label,
+            "start_day": sp_start_day,
+            "end_day": sp_end_day,
+            "month": month_label,
+            "calendar_month": calendar_month,
+            "features_in_sprint": sprint_features if sprint_features else ["Buffer"],
+            "points_in_sprint": sprint_pts
+        })
+
+    # Handle overflow
+    while feature_queue:
+        total_sprints += 1
+        sp_label = f"SP{total_sprints}"
+        sp_start_day = (total_sprints - 1) * 10 + 1
+        sp_end_day = total_sprints * 10
+        sp_date = start_dt + timedelta(days=(total_sprints - 1) * 14)
+
+        sprint_pts = 0
+        sprint_features = []
+        remaining = []
+        for feat in feature_queue:
+            feat_pts = feat.get("story_points", 0) or feat.get("days", 3) or 3
+            if sprint_pts + feat_pts <= velocity:
+                sprint_pts += feat_pts
+                feat_name = feat.get("feature", "Unknown")
+                sprint_features.append(feat_name[:57] + "..." if len(feat_name) > 60 else feat_name)
+                feat["sprint_allocation"] = sp_label
+                feat["start_day"] = sp_start_day
+                feat["end_day"] = min(sp_start_day + feat_pts - 1, sp_end_day)
+            elif sprint_pts == 0:
+                sprint_pts += feat_pts
+                feat_name = feat.get("feature", "Unknown")
+                sprint_features.append(feat_name[:57] + "..." if len(feat_name) > 60 else feat_name)
+                feat["sprint_allocation"] = sp_label
+            else:
+                remaining.append(feat)
+        feature_queue = remaining
+        sprint_mapping.append({
+            "sprint": sp_label,
+            "start_day": sp_start_day,
+            "end_day": sp_end_day,
+            "month": f"M{math.ceil(total_sprints / 2)}",
+            "calendar_month": sp_date.strftime("%b %Y"),
+            "features_in_sprint": sprint_features,
+            "points_in_sprint": sprint_pts
+        })
+        print(f"[MATH] Overflow {sp_label}: {sprint_pts}pts", flush=True)
+
+    total_dev_days = total_sprints * 10
+    parsed["sprint_mapping"] = sprint_mapping
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 6: UAT, Pilot, Hypercare (AFTER sprint count is final)
+    # ═══════════════════════════════════════════════════════════
+    uat_interval = min(6, max(3, total_sprints // 3))
+    uat_sprint_numbers = list(range(uat_interval, total_sprints, uat_interval))
+    if not uat_sprint_numbers or uat_sprint_numbers[-1] != total_sprints:
+        uat_sprint_numbers.append(total_sprints)
+
+    pilot_days = 15
+    hypercare_days = 15
+    uat_milestones = []
+    current_day = total_dev_days
+
+    for idx, uat_sp in enumerate(uat_sprint_numbers):
+        if idx == len(uat_sprint_numbers) - 1:
+            uat_milestones.append({
+                "name": "Final UAT",
+                "sprint": f"SP{uat_sp}",
+                "day": current_day + 1,
+                "scope": f"All {len(dev_features)} features — full regression",
+                "duration_days": 5,
+                "exit_criteria": "All P1/P2 resolved, 90% test pass, stakeholder sign-off"
+            })
+            current_day += 5
+        else:
+            uat_milestones.append({
+                "name": f"UAT {idx + 1}",
+                "sprint": f"SP{uat_sp}",
+                "day": uat_sp * 10 + 1,
+                "scope": f"Features in SP1–SP{uat_sp}",
+                "duration_days": 5,
+                "exit_criteria": "All P1 resolved, 85% test pass"
+            })
+
+    pilot_start = current_day + 1
+    pilot_end = pilot_start + pilot_days - 1
+    hypercare_start = pilot_end + 1
+    hypercare_end = hypercare_start + hypercare_days - 1
+    total_project_days = hypercare_end
+    total_project_months = round(total_project_days / 22, 1)
+    end_dt = start_dt + timedelta(days=int(total_project_days * 1.4))
+    end_date_str = end_dt.strftime("%Y-%m-%d")
+
+    parsed["uat_milestones"] = uat_milestones
+    parsed["pilot_hypercare"] = {
+        "pilot": {"start_day": pilot_start, "end_day": pilot_end,
+                  "duration_days": pilot_days,
+                  "description": "Limited production deployment with select user group",
+                  "team_needed": "PM, Dev Lead, 1 QA, 1 BA"},
+        "hypercare": {"start_day": hypercare_start, "end_day": hypercare_end,
+                      "duration_days": hypercare_days,
+                      "description": "Full production support, monitoring, defect triage",
+                      "team_needed": "PM, 2 Dev, 1 QA"}
+    }
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 7: REBUILD gantt_phases
+    # ═══════════════════════════════════════════════════════════
+    gantt_phases = []
+    gantt_phases.append({
+        "phase": "Planning & Discovery",
+        "assigned_roles": "PgM, Architect, BA",
+        "dependencies": "None",
+        "start_day": 1, "end_day": 5,
+        "start_week": 1, "end_week": 1,
+        "duration_days": 5,
+        "phase_type": "planning"
+    })
+
+    dev_phase_num = 1
+    dev_start = 1
+    for idx, uat in enumerate(uat_milestones):
+        if uat["name"].startswith("Final"):
+            dev_end = total_dev_days
+        else:
+            dev_end = uat_sprint_numbers[idx] * 10
+
+        if dev_end >= dev_start:
+            gantt_phases.append({
+                "phase": f"Development Phase {dev_phase_num}",
+                "assigned_roles": "Full Team",
+                "dependencies": "Planning" if dev_phase_num == 1 else f"UAT {dev_phase_num - 1}",
+                "start_day": dev_start, "end_day": dev_end,
+                "start_week": math.ceil(dev_start / 5),
+                "end_week": math.ceil(dev_end / 5),
+                "duration_days": dev_end - dev_start + 1,
+                "phase_type": "development"
+            })
+
+        uat_start_day = uat.get("day", dev_end + 1)
+        gantt_phases.append({
+            "phase": uat["name"],
+            "assigned_roles": "QA, BA, Business Users",
+            "dependencies": f"Development Phase {dev_phase_num}",
+            "start_day": uat_start_day, "end_day": uat_start_day + 4,
+            "start_week": math.ceil(uat_start_day / 5),
+            "end_week": math.ceil((uat_start_day + 4) / 5),
+            "duration_days": 5,
+            "phase_type": "uat"
+        })
+        dev_start = dev_end + 1 if not uat["name"].startswith("Final") else dev_end + 6
+        dev_phase_num += 1
+
+    gantt_phases.append({
+        "phase": "Pilot Deployment", "assigned_roles": "PM, Dev Lead, QA, BA",
+        "dependencies": "Final UAT",
+        "start_day": pilot_start, "end_day": pilot_end,
+        "start_week": math.ceil(pilot_start / 5), "end_week": math.ceil(pilot_end / 5),
+        "duration_days": pilot_days, "phase_type": "pilot"
+    })
+    gantt_phases.append({
+        "phase": "Hypercare & Stabilization", "assigned_roles": "PM, Dev, QA",
+        "dependencies": "Pilot",
+        "start_day": hypercare_start, "end_day": hypercare_end,
+        "start_week": math.ceil(hypercare_start / 5), "end_week": math.ceil(hypercare_end / 5),
+        "duration_days": hypercare_days, "phase_type": "hypercare"
+    })
+    parsed["gantt_phases"] = gantt_phases
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 8: REBUILD resource_loading
+    # ═══════════════════════════════════════════════════════════
+    total_team_size = sum(m.get("headcount", 1) or 1 for m in team) if team else (dev_count + 3)
+    resource_loading = []
+    for d in range(1, total_project_days + 1, 10):
+        sp_num = math.ceil(d / 10)
+        month_num = math.ceil(d / 22)
+        if d <= total_dev_days:
+            active = 0
+            for sm in sprint_mapping:
+                if sm["start_day"] <= d <= sm["end_day"]:
+                    active = len(sm.get("features_in_sprint", []))
+                    break
+            resource_loading.append({"day": d, "sprint": f"SP{sp_num}", "month": f"M{month_num}",
+                                     "active_features": active, "team_members_needed": total_team_size,
+                                     "roles_active": "PgM, Dev, QA, BA"})
+        elif d <= total_dev_days + 5:
+            resource_loading.append({"day": d, "sprint": "UAT", "month": f"M{month_num}",
+                                     "active_features": 0, "team_members_needed": max(3, total_team_size - dev_count + 1),
+                                     "roles_active": "QA, BA, PM"})
+        elif d <= pilot_end:
+            resource_loading.append({"day": d, "sprint": "Pilot", "month": f"M{month_num}",
+                                     "active_features": 0, "team_members_needed": 4,
+                                     "roles_active": "PM, Dev Lead, QA, BA"})
+        else:
+            resource_loading.append({"day": d, "sprint": "Hypercare", "month": f"M{month_num}",
+                                     "active_features": 0, "team_members_needed": 3,
+                                     "roles_active": "PM, Dev, QA"})
+    parsed["resource_loading"] = resource_loading
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 9: Fix timeline
+    # ═══════════════════════════════════════════════════════════
+    tl = parsed.get("timeline", {})
+    if not tl:
+        tl = {}
+        parsed["timeline"] = tl
+
+    tl["total_story_points"] = total_pts
+    tl["team_velocity_per_sprint"] = velocity
+    tl["sprint_duration_weeks"] = 2
+    tl["total_sprints"] = total_sprints
+    tl["total_working_days"] = total_dev_days
+    tl["total_months"] = round(total_dev_days / 22, 1)
+    tl["start_date"] = start_date
+    tl["end_date"] = end_date_str
+    tl["assumptions"] = (
+        f"{dev_count} developers × {AVG_PTS_PER_DEV_PER_SPRINT} pts/dev/sprint = "
+        f"{velocity} velocity. {total_sprints} dev sprints + "
+        f"{len(uat_milestones)} UAT gates + Pilot ({pilot_days}d) + Hypercare ({hypercare_days}d). "
+        f"Total project: {total_project_days} working days ({total_project_months} months)."
+    )
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 10: Fix parallel_stream_analysis
+    # ═══════════════════════════════════════════════════════════
+    psa["actual_parallel_days"] = total_dev_days
+    psa["actual_parallel_months"] = round(total_dev_days / 22, 1)
+    psa["fits_target"] = total_dev_days <= target_working_days
+    psa["coordination_overhead_pct"] = (streams - 1) * 10
+    psa["notes"] = (
+        f"{dev_count} devs × {AVG_PTS_PER_DEV_PER_SPRINT} pts = {velocity} pts/sprint. "
+        f"{total_sprints} sprints ({total_dev_days} days) for {total_pts} story points. "
+        f"{'Fits' if total_dev_days <= target_working_days else 'Exceeds'} "
+        f"the {target_working_days}-day ({target_months}m) target."
+    )
+
+    # ═══════════════════════════════════════════════════════════
+    # STEP 11: Ensure epics & feature_type_summary
+    # ═══════════════════════════════════════════════════════════
     if "epics" not in parsed:
         parsed["epics"] = []
-
-    # Ensure feature_type_summary exists
     if "feature_type_summary" not in parsed:
         ft_summary = {}
         for f in fa:
@@ -1890,7 +2225,17 @@ def _post_process_roadmap(parsed, req, start_date, target_working_days, target_m
             ft_summary[ft]["total_points"] += f.get("story_points", 0)
         parsed["feature_type_summary"] = ft_summary
 
-    # Add metadata
+    # ═══════════════════════════════════════════════════════════
+    # STEP 12: Metadata + Math Audit
+    # ═══════════════════════════════════════════════════════════
+    sprint_violations = []
+    sprint_point_sum = 0
+    for sm in sprint_mapping:
+        pts = sm.get("points_in_sprint", 0)
+        sprint_point_sum += pts
+        if pts > velocity * 1.1:
+            sprint_violations.append(f"{sm['sprint']}: {pts}pts (cap:{velocity})")
+
     parsed["_meta"] = {
         "tech_stack": req.tech_stack,
         "target_duration_value": req.target_duration_value,
@@ -1899,9 +2244,39 @@ def _post_process_roadmap(parsed, req, start_date, target_working_days, target_m
         "target_months": target_months,
         "target_sprints": target_sprints,
         "num_features": num_features,
+        "num_dev_features": len(dev_features),
+        "num_phase_features_excluded": len(phase_features),
         "start_date": start_date,
-        "generated_at": datetime.now().isoformat()
+        "generated_at": datetime.now().isoformat(),
+        "math_audit": {
+            "total_story_points": total_pts,
+            "total_sequential_days": total_seq_days,
+            "parallel_streams": streams,
+            "developers_detected": dev_count,
+            "velocity_formula": f"{dev_count} devs × {AVG_PTS_PER_DEV_PER_SPRINT} pts = {velocity} pts/sprint",
+            "sprints_formula": f"ceil({total_pts}/{velocity}) = {total_sprints}",
+            "total_dev_sprints": total_sprints,
+            "total_dev_days": total_dev_days,
+            "uat_gates": len(uat_milestones),
+            "pilot_days": pilot_days,
+            "hypercare_days": hypercare_days,
+            "total_project_days": total_project_days,
+            "total_project_months": total_project_months,
+            "sprint_point_sum": sprint_point_sum,
+            "sprint_violations": sprint_violations if sprint_violations else "None",
+            "end_date": end_date_str
+        }
     }
+
+    print(f"\n{'='*60}", flush=True)
+    print(f"📐 MATH ENFORCEMENT COMPLETE", flush=True)
+    print(f"   Features: {len(dev_features)} dev + {len(phase_features)} phase", flush=True)
+    print(f"   Points: {total_pts} | Seq Days: {total_seq_days}", flush=True)
+    print(f"   Devs: {dev_count} | Velocity: {velocity} pts/sprint", flush=True)
+    print(f"   Sprints: {total_sprints} | Dev Days: {total_dev_days}", flush=True)
+    print(f"   Project: {total_project_days}d ({total_project_months}m)", flush=True)
+    print(f"   Sprint Sum: {sprint_point_sum} | Violations: {len(sprint_violations)}", flush=True)
+    print(f"{'='*60}\n", flush=True)
 
     return parsed
 
