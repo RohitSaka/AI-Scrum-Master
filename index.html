@@ -1898,30 +1898,19 @@
            ROADMAP VIEW
            ================================================================ */
         // ═══════════════════════════════════════════════════════════════════
-// STRATEGIC ROADMAP — The "Golden Thread" Alignment View
-// ═══════════════════════════════════════════════════════════════════
 
-const STRATEGIC_COLORS = {
-    primary: "#2563EB",
-    primaryDim: "#2563EB22",
-    success: "#10B981",
-    successDim: "#10B98122",
-    warning: "#F59E0B",
-    warningDim: "#F59E0B22",
-    danger: "#F43F5E",
-    dangerDim: "#F43F5E22",
-    purple: "#8B5CF6",
-    purpleDim: "#8B5CF622",
-    cyan: "#06B6D4",
-    cyanDim: "#06B6D422",
-    bg: "#0B0F1A",
-    bgCard: "#111827",
-    bgElevated: "#1A2035",
-    border: "#1E293B",
-    borderLight: "#334155",
-    textMain: "#F1F5F9",
-    textMuted: "#94A3B8",
-    textDim: "#64748B",
+const THEME = {
+    primary: "var(--primary)",
+    success: "var(--success)",
+    warning: "var(--warning)",
+    danger: "var(--danger)",
+    purple: "#8B5CF6", // Static accent for charts
+    cyan: "#06B6D4",   // Static accent for charts
+    bg: "var(--bg-body)",
+    bgCard: "var(--bg-card)",
+    border: "var(--border)",
+    textMain: "var(--text-main)",
+    textMuted: "var(--text-muted)",
 };
 
 const BUCKET_COLORS = {
@@ -1960,17 +1949,17 @@ const HealthRing = ({ score = 0, size = 120 }) => {
     const radius = (size - 12) / 2;
     const circumference = 2 * Math.PI * radius;
     const offset = circumference - (Math.min(Math.max(score, 0), 100) / 100) * circumference;
-    const color = score >= 75 ? STRATEGIC_COLORS.success : score >= 50 ? STRATEGIC_COLORS.warning : STRATEGIC_COLORS.danger;
+    const color = score >= 75 ? THEME.success : score >= 50 ? THEME.warning : THEME.danger;
 
     return (
         <div style={{ position: "relative", width: size, height: size }}>
             <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-                <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={STRATEGIC_COLORS.border} strokeWidth="6"/>
+                <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={THEME.border} strokeWidth="6"/>
                 <circle cx={size/2} cy={size/2} r={radius} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition: "stroke-dashoffset 1.2s ease-out" }} />
             </svg>
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <span style={{ fontSize: size * 0.28, fontWeight: 900, color: STRATEGIC_COLORS.textMain, lineHeight: 1 }}>{score}</span>
-                <span style={{ fontSize: size * 0.1, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Health</span>
+                <span style={{ fontSize: size * 0.28, fontWeight: 900, color: THEME.textMain, lineHeight: 1 }}>{score}</span>
+                <span style={{ fontSize: size * 0.1, fontWeight: 700, color: THEME.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Health</span>
             </div>
         </div>
     );
@@ -1991,14 +1980,14 @@ const DonutChart = ({ buckets = {}, size = 180 }) => {
 
     return (
         <svg width={size} height={size} viewBox="0 0 180 180">
-            <circle cx="90" cy="90" r={radius} fill="none" stroke={STRATEGIC_COLORS.border} strokeWidth="22"/>
+            <circle cx="90" cy="90" r={radius} fill="none" stroke={THEME.border} strokeWidth="22"/>
             {segments.map((seg, i) => (
                 <circle key={seg.key} cx="90" cy="90" r={radius} fill="none" stroke={seg.color} strokeWidth="22" strokeLinecap="butt" strokeDasharray={`${Math.max(0, seg.length)} ${Math.max(0, circumference - seg.length)}`} strokeDashoffset={-seg.offset} style={{ transform: "rotate(-90deg)", transformOrigin: "center", transition: "all 0.8s ease-out", transitionDelay: `${i * 0.15}s` }} />
             ))}
-            <text x="90" y="85" textAnchor="middle" fill={STRATEGIC_COLORS.textMain} fontSize="22" fontWeight="900">
+            <text x="90" y="85" textAnchor="middle" fill={THEME.textMain} fontSize="22" fontWeight="900">
                 {Object.values(buckets).reduce((s, b) => s + (b.item_count || 0), 0)}
             </text>
-            <text x="90" y="102" textAnchor="middle" fill={STRATEGIC_COLORS.textMuted} fontSize="10" fontWeight="700" textTransform="uppercase">items</text>
+            <text x="90" y="102" textAnchor="middle" fill={THEME.textMuted} fontSize="10" fontWeight="700" textTransform="uppercase">items</text>
         </svg>
     );
 };
@@ -2024,15 +2013,15 @@ const VelocitySparkline = ({ history = [], avgVelocity = 0, width = 280, height 
         <svg width={width} height={height} style={{ overflow: "visible" }}>
             <defs>
                 <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={STRATEGIC_COLORS.primary} stopOpacity="0.3"/>
-                    <stop offset="100%" stopColor={STRATEGIC_COLORS.primary} stopOpacity="0"/>
+                    <stop offset="0%" stopColor={THEME.primary} stopOpacity="0.3"/>
+                    <stop offset="100%" stopColor={THEME.primary} stopOpacity="0"/>
                 </linearGradient>
             </defs>
             <path d={areaD} fill="url(#sparkGrad)"/>
-            <line x1={padding} y1={avgY} x2={width - padding} y2={avgY} stroke={STRATEGIC_COLORS.warning} strokeWidth="1" strokeDasharray="4 3" opacity="0.6"/>
-            <path d={pathD} fill="none" stroke={STRATEGIC_COLORS.primary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <line x1={padding} y1={avgY} x2={width - padding} y2={avgY} stroke={THEME.warning} strokeWidth="1" strokeDasharray="4 3" opacity="0.6"/>
+            <path d={pathD} fill="none" stroke={THEME.primary} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
             {points.map((p, i) => (
-                <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={p.velocity >= (avgVelocity || 0) ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning} stroke={STRATEGIC_COLORS.bgCard} strokeWidth="1.5"/>
+                <circle key={i} cx={p.x} cy={p.y} r="3.5" fill={p.velocity >= (avgVelocity || 0) ? THEME.success : THEME.warning} stroke={THEME.bgCard} strokeWidth="1.5"/>
             ))}
         </svg>
     );
@@ -2044,7 +2033,6 @@ function RoadmapView({ project, setIsLoading }) {
     const [error, setError] = React.useState(null);
     const [activeTab, setActiveTab] = React.useState("overview");
     const [expandedInitiative, setExpandedInitiative] = React.useState(null);
-    const [hoveredBucket, setHoveredBucket] = React.useState(null);
 
     // Fetch REAL data from the backend
     React.useEffect(() => {
@@ -2062,11 +2050,11 @@ function RoadmapView({ project, setIsLoading }) {
             });
     }, [project, setIsLoading]);
 
-    if (!data && !error) return <LoadingScreen msg="Analyzing Sprint History & Aligning Roadmaps..." />;
+    if (!data && !error) return <LoadingScreen msg="Analyzing Sprint History & Strategic Items..." />;
     if (error) return (
         <div className="animate-fade-in h-full flex items-center justify-center">
             <div className="glass-card p-12 max-w-lg text-center border border-border bg-bg-card">
-                <StrategicIcon name="AlertTriangle" size={48} color={STRATEGIC_COLORS.warning} className="mx-auto mb-4 opacity-80" />
+                <StrategicIcon name="AlertTriangle" size={48} color={THEME.warning} className="mx-auto mb-4 opacity-80" />
                 <h3 className="text-xl font-extrabold text-text-main mb-3">Roadmap Unavailable</h3>
                 <p className="text-text-muted font-medium">{error}</p>
             </div>
@@ -2078,57 +2066,51 @@ function RoadmapView({ project, setIsLoading }) {
     const slippage = data.slippage || { avg_completion_rate: 0, slippage_events: [] };
     const sprintHistory = data.sprint_history || [];
     const investmentBuckets = data.investment_buckets || {};
-    const capacityAlloc = data.capacity_allocation || { allocations: {} };
-    const deltaAnalysis = data.delta_analysis || { deltas: [], resolution_options: [] };
     const initiatives = data.initiatives || [];
 
+    // Removed the "Alignment/Delta" tab entirely. 
     const tabs = [
         { id: "overview", label: "Command Center", icon: "Target" },
-        { id: "alignment", label: "Forecast & Delta", icon: "Link" },
-        { id: "investment", label: "Investment Buckets", icon: "PieChart" },
+        { id: "investment", label: "Backlog Breakdown", icon: "PieChart" },
         { id: "initiatives", label: "Strategic Initiatives", icon: "Layers" },
         { id: "velocity", label: "Velocity & Capacity", icon: "BarChart" },
     ];
 
-    const statusColors = { in_progress: STRATEGIC_COLORS.primary, planned: STRATEGIC_COLORS.warning, backlog: STRATEGIC_COLORS.textDim, completed: STRATEGIC_COLORS.success };
+    const statusColors = { in_progress: "text-primary bg-primary/10", planned: "text-warning bg-warning/10", backlog: "text-text-muted bg-bg-body", completed: "text-success bg-success/10" };
     const statusLabels = { in_progress: "In Progress", planned: "Planned", backlog: "Backlog", completed: "Completed" };
 
     return (
-        <div style={{ background: STRATEGIC_COLORS.bg, minHeight: "100vh", color: STRATEGIC_COLORS.textMain, fontFamily: "'DM Sans', 'SF Pro Display', -apple-system, sans-serif", borderRadius: '16px', overflow: 'hidden' }}>
+        <div className="h-full overflow-y-auto pb-12 pr-4 bg-bg-body text-text-main animate-fade-in transition-colors duration-300">
             <style>{`
-                .strat-card { background: ${STRATEGIC_COLORS.bgCard}; border: 1px solid ${STRATEGIC_COLORS.border}; border-radius: 16px; }
-                .strat-card-elevated { background: ${STRATEGIC_COLORS.bgElevated}; border: 1px solid ${STRATEGIC_COLORS.borderLight}; border-radius: 16px; }
-                .strat-glow { box-shadow: 0 0 30px rgba(37,99,235,0.08); }
-                .strat-tab-active { background: ${STRATEGIC_COLORS.primary}; color: white; box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
-                .strat-tab-inactive { background: transparent; color: ${STRATEGIC_COLORS.textMuted}; border: 1px solid ${STRATEGIC_COLORS.border}; }
-                .strat-tab-inactive:hover { color: ${STRATEGIC_COLORS.textMain}; border-color: ${STRATEGIC_COLORS.borderLight}; background: ${STRATEGIC_COLORS.bgElevated}; }
-                .strat-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
-                .strat-mono { font-family: 'JetBrains Mono', monospace; }
-                @keyframes fadeSlideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-                .animate-in { animation: fadeSlideIn 0.4s ease-out forwards; }
-                .initiative-row:hover { background: ${STRATEGIC_COLORS.bgElevated}; }
+                .strat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; transition: background-color 0.3s; }
+                .strat-glow { box-shadow: 0 4px 30px rgba(0,0,0,0.05); }
+                .strat-tab-active { background: var(--primary); color: white; box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
+                .strat-tab-inactive { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+                .strat-tab-inactive:hover { color: var(--text-main); border-color: var(--primary); background: var(--bg-card); }
+                .strat-badge { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: 1px solid var(--border); }
+                .initiative-row:hover { background: var(--bg-body); }
             `}</style>
 
             {/* ═══ HEADER ═══ */}
-            <header style={{ borderBottom: `1px solid ${STRATEGIC_COLORS.border}`, padding: "24px 40px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <header className="flex justify-between items-end pb-6 border-b border-border mb-6">
                 <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 12, background: "linear-gradient(135deg, #2563EB, #8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <StrategicIcon name="Target" size={20} color="white"/>
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg" style={{ background: "linear-gradient(135deg, var(--primary), #8B5CF6)" }}>
+                            <StrategicIcon name="Target" size={24} color="white"/>
                         </div>
                         <div>
-                            <h1 style={{ fontSize: 24, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>Strategic Roadmap</h1>
-                            <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted, fontWeight: 500, marginTop: 2 }}>
-                                Project <span style={{ color: STRATEGIC_COLORS.primary, fontWeight: 900 }}>{project}</span> &middot; Velocity-Based Planning
+                            <h1 className="text-3xl font-extrabold tracking-tight">Strategic Roadmap</h1>
+                            <p className="text-sm font-medium mt-1 text-text-muted">
+                                Project <span className="text-primary font-black">{project}</span> &middot; Velocity-Based Planning
                             </p>
                         </div>
                     </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div className="flex items-center gap-4">
                     <HealthRing score={data.health_score || 0} size={56}/>
                     <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Roadmap Health</div>
-                        <div style={{ fontSize: 15, fontWeight: 900, color: (data.health_score || 0) >= 75 ? STRATEGIC_COLORS.success : (data.health_score || 0) >= 50 ? STRATEGIC_COLORS.warning : STRATEGIC_COLORS.danger }}>
+                        <div className="text-[11px] font-bold text-text-muted uppercase tracking-widest">Roadmap Health</div>
+                        <div className="text-base font-black" style={{ color: (data.health_score || 0) >= 75 ? THEME.success : (data.health_score || 0) >= 50 ? THEME.warning : THEME.danger }}>
                             {(data.health_score || 0) >= 75 ? "Strong" : (data.health_score || 0) >= 50 ? "Needs Attention" : "At Risk"}
                         </div>
                     </div>
@@ -2136,256 +2118,101 @@ function RoadmapView({ project, setIsLoading }) {
             </header>
 
             {/* ═══ TAB NAV ═══ */}
-            <nav style={{ padding: "16px 40px 0", display: "flex", gap: 8, borderBottom: `1px solid ${STRATEGIC_COLORS.border}`, paddingBottom: 16 }}>
+            <nav className="flex gap-2 border-b border-border pb-4 mb-6">
                 {tabs.map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={activeTab === tab.id ? "strat-tab-active" : "strat-tab-inactive"}
-                        style={{ padding: "10px 20px", borderRadius: 12, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, transition: "all 0.2s" }}>
-                        <StrategicIcon name={tab.icon} size={15}/> {tab.label}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? 'strat-tab-active' : 'strat-tab-inactive'}`}>
+                        <StrategicIcon name={tab.icon} size={16}/> {tab.label}
                     </button>
                 ))}
             </nav>
 
             {/* ═══ CONTENT ═══ */}
-            <main style={{ padding: "28px 40px 60px" }}>
-
+            <main>
                 {/* ────── OVERVIEW TAB ────── */}
                 {activeTab === "overview" && (
-                    <div className="animate-in">
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 16, marginBottom: 28 }}>
+                    <div className="space-y-6">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                             {[
-                                { label: "Avg Velocity", value: `${velocity.avg_velocity || '—'}`, unit: "pts/sprint", color: STRATEGIC_COLORS.primary, icon: "Zap" },
-                                { label: "Trend", value: velocity.trend === "improving" ? "▲ Up" : velocity.trend === "declining" ? "▼ Down" : "→ Stable", color: velocity.trend === "improving" ? STRATEGIC_COLORS.success : velocity.trend === "declining" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning, icon: "TrendingUp" },
-                                { label: "Completion Rate", value: `${slippage.avg_completion_rate || 0}%`, color: (slippage.avg_completion_rate || 0) >= 80 ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning, icon: "Check" },
-                                { label: "Backlog", value: data.backlog_count || 0, unit: `${data.total_backlog_pts || 0} pts`, color: STRATEGIC_COLORS.purple, icon: "Layers" },
-                                { label: "Initiatives", value: initiatives.length || 0, unit: `${data.total_backlog_pts || 0} total pts`, color: initiatives.length > 0 ? STRATEGIC_COLORS.cyan : STRATEGIC_COLORS.textDim, icon: "Link" },
+                                { label: "Avg Velocity", value: `${velocity.avg_velocity || '—'}`, unit: "pts/sprint", color: THEME.primary, icon: "Zap" },
+                                { label: "Trend", value: velocity.trend === "improving" ? "▲ Up" : velocity.trend === "declining" ? "▼ Down" : "→ Stable", color: velocity.trend === "improving" ? THEME.success : velocity.trend === "declining" ? THEME.danger : THEME.warning, icon: "TrendingUp" },
+                                { label: "Completion Rate", value: `${slippage.avg_completion_rate || 0}%`, color: (slippage.avg_completion_rate || 0) >= 80 ? THEME.success : THEME.warning, icon: "Check" },
+                                { label: "Backlog", value: data.backlog_count || 0, unit: `${data.total_backlog_pts || 0} pts`, color: THEME.purple, icon: "Layers" },
+                                { label: "Initiatives", value: initiatives.length || 0, unit: "strategic goals", color: THEME.cyan, icon: "Target" },
                             ].map((kpi, i) => (
-                                <div key={i} className="strat-card strat-glow" style={{ padding: 20, borderLeft: `3px solid ${kpi.color}` }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                                        <div style={{ fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>{kpi.label}</div>
+                                <div key={i} className="strat-card strat-glow p-5" style={{ borderLeft: `4px solid ${kpi.color}` }}>
+                                    <div className="flex justify-between items-start">
+                                        <div className="text-[11px] font-bold text-text-muted uppercase tracking-widest">{kpi.label}</div>
                                         <StrategicIcon name={kpi.icon} size={16} color={kpi.color}/>
                                     </div>
-                                    <div style={{ fontSize: 28, fontWeight: 900, color: STRATEGIC_COLORS.textMain, marginTop: 8, lineHeight: 1 }}>{kpi.value}</div>
-                                    {kpi.unit && <div style={{ fontSize: 12, color: STRATEGIC_COLORS.textMuted, fontWeight: 600, marginTop: 4 }}>{kpi.unit}</div>}
+                                    <div className="text-3xl font-black mt-2 leading-none">{kpi.value}</div>
+                                    {kpi.unit && <div className="text-xs text-text-muted font-bold mt-1.5">{kpi.unit}</div>}
                                 </div>
                             ))}
                         </div>
 
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
-                            <div className="strat-card" style={{ padding: 24 }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                                    <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Sprint Velocity History</h3>
-                                    <span className="strat-mono strat-badge" style={{ background: STRATEGIC_COLORS.primaryDim, color: STRATEGIC_COLORS.primary }}>{velocity.sprints_analyzed || 0} sprints</span>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            {/* Sprint Velocity History */}
+                            <div className="strat-card p-6">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="text-sm font-black text-text-muted uppercase tracking-widest">Sprint Velocity History</h3>
+                                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-primary/10 text-primary">{velocity.sprints_analyzed || 0} sprints</span>
                                 </div>
                                 <VelocitySparkline history={sprintHistory} avgVelocity={velocity.avg_velocity} width={460} height={100}/>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
+                                <div className="flex justify-between mt-4">
                                     {sprintHistory.map((s, i) => (
-                                        <div key={i} style={{ textAlign: "center", flex: 1 }}>
-                                            <div className="strat-mono" style={{ fontSize: 12, fontWeight: 700, color: s.velocity >= (velocity.avg_velocity || 0) ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning }}>{s.velocity}</div>
-                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>{s.name?.replace("Sprint ", "S")}</div>
+                                        <div key={i} className="text-center flex-1">
+                                            <div className="text-sm font-black" style={{ color: s.velocity >= (velocity.avg_velocity || 0) ? THEME.success : THEME.warning }}>{s.velocity}</div>
+                                            <div className="text-[10px] font-bold text-text-muted uppercase">{s.name?.replace("Sprint ", "S")}</div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
 
-                            <div className="strat-card" style={{ padding: 24 }}>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Backlog Investment Split</h3>
-                                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                            {/* Backlog Investment Split */}
+                            <div className="strat-card p-6">
+                                <h3 className="text-sm font-black text-text-muted uppercase tracking-widest mb-6">Backlog Theme Distribution</h3>
+                                <div className="flex items-center gap-8">
                                     <DonutChart buckets={investmentBuckets}/>
-                                    <div style={{ flex: 1 }}>
-                                        {Object.entries(investmentBuckets).map(([key, bucket]) => {
-                                            const overTarget = bucket.actual_pct > bucket.target_pct + 5;
-                                            const underTarget = bucket.actual_pct < bucket.target_pct - 5;
-                                            return (
-                                                <div key={key} style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>
-                                                    <div style={{ width: 10, height: 10, borderRadius: 3, background: BUCKET_COLORS[key] || STRATEGIC_COLORS.textDim, flexShrink: 0 }}/>
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ fontSize: 13, fontWeight: 700, color: STRATEGIC_COLORS.textMain }}>{bucket.label}</div>
-                                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim }}>
-                                                            Target: {bucket.target_pct}% &middot; Actual: <span style={{ color: overTarget ? STRATEGIC_COLORS.danger : underTarget ? STRATEGIC_COLORS.warning : STRATEGIC_COLORS.success, fontWeight: 800 }}>{bucket.actual_pct}%</span>
-                                                        </div>
-                                                    </div>
-                                                    <div className="strat-mono" style={{ fontSize: 13, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{bucket.actual_pts} pts</div>
+                                    <div className="flex-1 space-y-3">
+                                        {Object.entries(investmentBuckets).map(([key, bucket]) => (
+                                            <div key={key} className="flex items-center justify-between pb-3 border-b border-border last:border-0">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: BUCKET_COLORS[key] || THEME.textDim }}/>
+                                                    <span className="text-sm font-bold">{bucket.label}</span>
                                                 </div>
-                                            );
-                                        })}
+                                                <div className="flex items-center gap-4">
+                                                    <span className="text-xs font-black text-text-muted">{bucket.actual_pct}%</span>
+                                                    <span className="text-sm font-black text-primary">{bucket.actual_pts} pts</span>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
                             </div>
                         </div>
-
-                        {(deltaAnalysis.deltas || []).length > 0 && (
-                            <div className="strat-card" style={{ padding: 24, borderLeft: `3px solid ${STRATEGIC_COLORS.warning}`, marginBottom: 28 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-                                    <StrategicIcon name="AlertTriangle" size={18} color={STRATEGIC_COLORS.warning}/>
-                                    <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.warning, textTransform: "uppercase", letterSpacing: 1 }}>
-                                        Alignment Deltas Detected ({(deltaAnalysis.deltas || []).length})
-                                    </h3>
-                                </div>
-                                {(deltaAnalysis.deltas || []).map((d, i) => (
-                                    <div key={i} style={{ padding: "12px 16px", background: d.severity === "critical" ? STRATEGIC_COLORS.dangerDim : STRATEGIC_COLORS.warningDim, borderRadius: 10, marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
-                                        <div className="strat-badge" style={{ background: d.severity === "critical" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning, color: "white", flexShrink: 0 }}>{(d.type || "warning").replace(/_/g, " ").toUpperCase()}</div>
-                                        <span style={{ fontSize: 13, fontWeight: 600, color: STRATEGIC_COLORS.textMain }}>{d.message}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* ────── ALIGNMENT & DELTA TAB ────── */}
-                {activeTab === "alignment" && (
-                    <div className="animate-in">
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
-                            <div className="strat-card" style={{ padding: 28 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: 10, background: STRATEGIC_COLORS.primaryDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        <StrategicIcon name="Target" size={18} color={STRATEGIC_COLORS.primary}/>
-                                    </div>
-                                    <div>
-                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Team Velocity</h3>
-                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Based on Historical Sprint Data</div>
-                                    </div>
-                                </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                                    {[
-                                        { label: "Avg Velocity", value: `${deltaAnalysis.strategic_velocity || 0} pts`, sub: "per sprint" },
-                                        { label: "Sprints Analyzed", value: velocity.sprints_analyzed || 0, sub: "completed" },
-                                        { label: "Trend", value: (velocity.trend || "no_data").replace(/_/g, " "), sub: "velocity direction" },
-                                        { label: "Source", value: "Jira", sub: "live data" },
-                                    ].map((item, i) => (
-                                        <div key={i} style={{ padding: 14, background: STRATEGIC_COLORS.bg, borderRadius: 10 }}>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{item.label}</div>
-                                            <div className="strat-mono" style={{ fontSize: 22, fontWeight: 900, color: STRATEGIC_COLORS.primary, marginTop: 4 }}>{item.value}</div>
-                                            <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim }}>{item.sub}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="strat-card" style={{ padding: 28 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-                                    <div style={{ width: 36, height: 36, borderRadius: 10, background: STRATEGIC_COLORS.cyanDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        <StrategicIcon name="Layers" size={18} color={STRATEGIC_COLORS.cyan}/>
-                                    </div>
-                                    <div>
-                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Backlog Forecast</h3>
-                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Projected Delivery Timeline</div>
-                                    </div>
-                                </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                                    {[
-                                        { label: "Backlog", value: `${deltaAnalysis.strategic_forecast?.total_pts || deltaAnalysis.backlog_forecast?.total_pts || data.total_backlog_pts || 0} pts`, sub: "total points" },
-                                        { label: "Sprints", value: deltaAnalysis.strategic_forecast?.sprints || deltaAnalysis.backlog_forecast?.sprints_needed || "—", sub: "to deliver" },
-                                        { label: "Duration", value: `${deltaAnalysis.strategic_forecast?.months || deltaAnalysis.backlog_forecast?.months_needed || "—"} mo`, sub: "calendar" },
-                                        { label: "Items", value: data.backlog_count || 0, sub: "in backlog" },
-                                    ].map((item, i) => (
-                                        <div key={i} style={{ padding: 14, background: STRATEGIC_COLORS.bg, borderRadius: 10 }}>
-                                            <div style={{ fontSize: 10, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{item.label}</div>
-                                            <div className="strat-mono" style={{ fontSize: 22, fontWeight: 900, color: STRATEGIC_COLORS.cyan, marginTop: 4 }}>{item.value}</div>
-                                            <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim }}>{item.sub}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        {(deltaAnalysis.deltas || []).length > 0 && (
-                            <div style={{ marginBottom: 28 }}>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Delta Analysis</h3>
-                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(400px, 1fr))", gap: 16 }}>
-                                    {deltaAnalysis.deltas.map((delta, i) => (
-                                        <div key={i} className="strat-card" style={{ padding: 20, borderLeft: `3px solid ${delta.severity === "critical" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning}` }}>
-                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                                                <div className="strat-badge" style={{ background: delta.severity === "critical" ? STRATEGIC_COLORS.dangerDim : STRATEGIC_COLORS.warningDim, color: delta.severity === "critical" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning }}>
-                                                    {(delta.type || "warning").replace(/_/g, " ").toUpperCase()}
-                                                </div>
-                                            </div>
-                                            <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMain, fontWeight: 600, lineHeight: 1.6 }}>{delta.message}</p>
-                                            {delta.delta_pct !== undefined && (
-                                                <div className="strat-mono" style={{ fontSize: 28, fontWeight: 900, color: STRATEGIC_COLORS.warning, marginTop: 12 }}>+{delta.delta_pct}%</div>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {(deltaAnalysis.resolution_options || []).length > 0 && (
-                            <div>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16 }}>Resolution Options</h3>
-                                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-                                    {deltaAnalysis.resolution_options.map((opt, i) => (
-                                        <div key={i} className="strat-card-elevated" style={{ padding: 24, cursor: "pointer", transition: "all 0.2s", position: "relative", overflow: "hidden" }}>
-                                            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: [STRATEGIC_COLORS.primary, STRATEGIC_COLORS.success, STRATEGIC_COLORS.warning][i % 3] }}/>
-                                            <h4 style={{ fontSize: 16, fontWeight: 900, color: STRATEGIC_COLORS.textMain, marginBottom: 8 }}>{opt.option}</h4>
-                                            <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted, fontWeight: 500, lineHeight: 1.6, marginBottom: 12 }}>{opt.description}</p>
-                                            <div className="strat-badge" style={{ background: STRATEGIC_COLORS.bg, color: STRATEGIC_COLORS.textDim, border: `1px solid ${STRATEGIC_COLORS.border}` }}>
-                                                {(opt.impact || "").replace(/_/g, " ")}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
 
                 {/* ────── INVESTMENT BUCKETS TAB ────── */}
                 {activeTab === "investment" && (
                     <div className="animate-in">
-                        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 24, marginBottom: 28 }}>
-                            <div className="strat-card" style={{ padding: 28, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Actual Allocation</h3>
-                                <DonutChart buckets={investmentBuckets} size={200}/>
-                                <div style={{ marginTop: 20, width: "100%" }}>
-                                    {Object.entries(investmentBuckets).map(([key, b]) => (
-                                        <div key={key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 0" }}>
-                                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                                <div style={{ width: 8, height: 8, borderRadius: 2, background: BUCKET_COLORS[key] || STRATEGIC_COLORS.textDim }}/>
-                                                <span style={{ fontSize: 12, fontWeight: 600, color: STRATEGIC_COLORS.textMain }}>{b.label}</span>
-                                            </div>
-                                            <span className="strat-mono" style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted }}>{b.actual_pct}%</span>
+                        <div className="strat-card p-8 flex flex-col items-center max-w-2xl mx-auto">
+                            <h3 className="text-base font-black text-text-main uppercase tracking-widest mb-8">Actual Backlog Allocation</h3>
+                            <DonutChart buckets={investmentBuckets} size={240}/>
+                            <div className="mt-8 w-full space-y-2">
+                                {Object.entries(investmentBuckets).map(([key, b]) => (
+                                    <div key={key} className="flex items-center justify-between p-3 rounded-lg bg-bg-body border border-border">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-4 h-4 rounded-md shadow-sm" style={{ background: BUCKET_COLORS[key] || THEME.textDim }}/>
+                                            <span className="text-sm font-bold">{b.label}</span>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div className="strat-card" style={{ padding: 28 }}>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>
-                                    Capacity Budget ({capacityAlloc.planned_sprints || 0} Sprints)
-                                </h3>
-                                {Object.entries(capacityAlloc.allocations || {}).map(([key, alloc]) => {
-                                    const bucket = investmentBuckets[key];
-                                    const used = bucket?.actual_pts || 0;
-                                    const available = alloc.total_pts_available || 0;
-                                    const usedPct = available > 0 ? Math.min(100, (used / available) * 100) : 0;
-                                    const isOver = used > available;
-                                    return (
-                                        <div key={key} style={{ marginBottom: 20 }}>
-                                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 8 }}>
-                                                <div>
-                                                    <span style={{ fontSize: 15, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{alloc.label}</span>
-                                                    <span style={{ fontSize: 12, color: STRATEGIC_COLORS.textDim, marginLeft: 8 }}>{alloc.target_pct}% allocation</span>
-                                                </div>
-                                                <div style={{ textAlign: "right" }}>
-                                                    <span className="strat-mono" style={{ fontSize: 14, fontWeight: 800, color: isOver ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.textMain }}>
-                                                        {used} / {Math.round(available)} pts
-                                                    </span>
-                                                    <span style={{ fontSize: 11, color: STRATEGIC_COLORS.textDim, marginLeft: 6 }}>({alloc.pts_per_sprint}/sprint)</span>
-                                                </div>
-                                            </div>
-                                            <div style={{ height: 10, background: STRATEGIC_COLORS.bg, borderRadius: 5, overflow: "hidden" }}>
-                                                <div style={{ height: "100%", borderRadius: 5, transition: "width 0.8s ease-out", width: `${usedPct}%`, background: isOver ? STRATEGIC_COLORS.danger : usedPct > 80 ? STRATEGIC_COLORS.warning : alloc.color || STRATEGIC_COLORS.primary }}/>
-                                            </div>
-                                            {isOver && (
-                                                <div style={{ fontSize: 11, color: STRATEGIC_COLORS.danger, fontWeight: 700, marginTop: 4 }}>
-                                                    ⚠ Over-allocated by {Math.round(used - available)} pts — consider rebalancing
-                                                </div>
-                                            )}
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-sm font-black">{b.actual_pts} pts</span>
+                                            <span className="text-sm font-black px-3 py-1 rounded-full bg-bg-card border border-border text-text-muted">{b.actual_pct}%</span>
                                         </div>
-                                    );
-                                })}
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     </div>
@@ -2393,159 +2220,155 @@ function RoadmapView({ project, setIsLoading }) {
 
                 {/* ────── STRATEGIC INITIATIVES TAB ────── */}
                 {activeTab === "initiatives" && (
-                    <div className="animate-in">
-                        <div style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div className="animate-in space-y-4">
+                        <div className="flex justify-between items-end mb-6">
                             <div>
-                                <h3 style={{ fontSize: 18, fontWeight: 900 }}>Strategic Initiatives</h3>
-                                <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted }}>Backlog items grouped by investment bucket category</p>
-                            </div>
-                            <div style={{ display: "flex", gap: 8 }}>
-                                {Object.entries(statusLabels).map(([key, label]) => (
-                                    <span key={key} className="strat-badge" style={{ background: `${statusColors[key]}22`, color: statusColors[key] }}>{label}</span>
-                                ))}
+                                <h3 className="text-xl font-black">Strategic Initiatives</h3>
+                                <p className="text-sm text-text-muted font-medium mt-1">High-level goals mapped directly to Jira Epics</p>
                             </div>
                         </div>
 
                         {initiatives.map((init, i) => (
-                            <div key={init.id} className="strat-card" style={{ marginBottom: 12, overflow: "hidden" }}>
-                                <div className="initiative-row" style={{ padding: "20px 24px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, transition: "background 0.15s" }}
+                            <div key={init.id} className="strat-card overflow-hidden">
+                                <div className="initiative-row p-6 cursor-pointer flex items-center gap-6 transition-colors"
                                     onClick={() => setExpandedInitiative(expandedInitiative === init.id ? null : init.id)}>
-                                    <div style={{ width: 44, height: 44, borderRadius: 12, background: `${[STRATEGIC_COLORS.primary, STRATEGIC_COLORS.cyan, STRATEGIC_COLORS.purple, STRATEGIC_COLORS.success][i % 4]}22`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                                        <span style={{ fontSize: 16, fontWeight: 900, color: [STRATEGIC_COLORS.primary, STRATEGIC_COLORS.cyan, STRATEGIC_COLORS.purple, STRATEGIC_COLORS.success][i % 4] }}>{init.id}</span>
+                                    
+                                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-bg-body border border-border">
+                                        <span className="text-lg font-black text-primary">{init.id}</span>
                                     </div>
-                                    <div style={{ flex: 1 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                            <h4 style={{ fontSize: 16, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{init.theme}</h4>
-                                            <span className="strat-badge" style={{ background: `${statusColors[init.status] || STRATEGIC_COLORS.textDim}22`, color: statusColors[init.status] || STRATEGIC_COLORS.textDim }}>{statusLabels[init.status] || "Unknown"}</span>
+                                    
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-3 mb-1">
+                                            <h4 className="text-lg font-bold">{init.theme}</h4>
+                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border ${statusColors[init.status] || "text-text-muted bg-bg-body border-border"}`}>
+                                                {statusLabels[init.status] || "Unknown"}
+                                            </span>
                                         </div>
-                                        <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted, fontWeight: 500, marginTop: 2 }}>{init.objective}</p>
+                                        <p className="text-sm text-text-muted font-medium">{init.objective}</p>
                                     </div>
-                                    <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-                                        <div style={{ textAlign: "center" }}>
-                                            <div className="strat-mono" style={{ fontSize: 18, fontWeight: 900, color: STRATEGIC_COLORS.textMain }}>{init.total_points || 0}</div>
-                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>pts</div>
+                                    
+                                    <div className="flex gap-8 items-center border-l border-border pl-8">
+                                        <div className="text-center">
+                                            <div className="text-xl font-black text-primary">{init.total_points || 0}</div>
+                                            <div className="text-[10px] font-bold text-text-muted uppercase">pts</div>
                                         </div>
-                                        <div style={{ textAlign: "center" }}>
-                                            <div className="strat-mono" style={{ fontSize: 18, fontWeight: 900, color: STRATEGIC_COLORS.textMain }}>{init.feature_count || 0}</div>
-                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>features</div>
+                                        <div className="text-center">
+                                            <div className="text-xl font-black">{init.feature_count || 0}</div>
+                                            <div className="text-[10px] font-bold text-text-muted uppercase">epics</div>
                                         </div>
-                                        <div style={{ textAlign: "center" }}>
-                                            <div className="strat-mono" style={{ fontSize: 18, fontWeight: 900, color: STRATEGIC_COLORS.primary }}>{init.sprints_needed || 0}</div>
-                                            <div style={{ fontSize: 10, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>sprints</div>
-                                        </div>
-                                        <StrategicIcon name="ChevronDown" size={18} color={STRATEGIC_COLORS.textDim}/>
+                                        <StrategicIcon name="ChevronDown" size={20} color={THEME.textDim} className={`transition-transform duration-300 ${expandedInitiative === init.id ? 'rotate-180' : ''}`}/>
                                     </div>
                                 </div>
 
                                 {expandedInitiative === init.id && (
-                                    <div style={{ borderTop: `1px solid ${STRATEGIC_COLORS.border}`, padding: "20px 24px", background: STRATEGIC_COLORS.bg }}>
-                                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-                                            <div>
-                                                <h5 style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Backlog Items</h5>
-                                                {(init.features || []).map((f, fi) => (
-                                                    <div key={fi} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: STRATEGIC_COLORS.bgCard, borderRadius: 8, marginBottom: 6, border: `1px solid ${STRATEGIC_COLORS.border}` }}>
-                                                        <span className="strat-mono strat-badge" style={{ background: STRATEGIC_COLORS.primaryDim, color: STRATEGIC_COLORS.primary, fontSize: 10 }}>#{f.id || fi+1}</span>
-                                                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: STRATEGIC_COLORS.textMain }}>{f.name}</span>
-                                                        <span className="strat-badge" style={{ background: STRATEGIC_COLORS.bg, color: STRATEGIC_COLORS.textDim, border: `1px solid ${STRATEGIC_COLORS.border}` }}>{f.size || 'N/A'}</span>
-                                                        <span className="strat-mono" style={{ fontSize: 12, fontWeight: 800, color: STRATEGIC_COLORS.primary }}>{f.points || 0} pts</span>
+                                    <div className="border-t border-border p-6 bg-bg-body">
+                                        <h5 className="text-xs font-black text-text-muted uppercase tracking-widest mb-4">Linked Jira Epics</h5>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                            {(init.epics || []).map((e, ei) => (
+                                                <div key={ei} className="p-4 bg-bg-card rounded-xl border border-border shadow-sm">
+                                                    <div className="text-sm font-bold mb-3 truncate">{e.name}</div>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-xs font-black bg-primary/10 text-primary px-2.5 py-1 rounded-md">{e.points || 0} pts</span>
+                                                        <span className="text-xs font-bold text-text-muted">{e.stories || 0} stories</span>
                                                     </div>
-                                                ))}
-                                            </div>
-                                            <div>
-                                                <h5 style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Jira Epics</h5>
-                                                {(init.epics || []).map((e, ei) => (
-                                                    <div key={ei} style={{ padding: 16, background: STRATEGIC_COLORS.bgCard, borderRadius: 10, marginBottom: 8, border: `1px solid ${STRATEGIC_COLORS.border}` }}>
-                                                        <div style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMain }}>{e.name}</div>
-                                                        <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
-                                                            <span style={{ fontSize: 12, color: STRATEGIC_COLORS.textMuted }}><strong style={{ color: STRATEGIC_COLORS.primary }}>{e.points || 0}</strong> pts</span>
-                                                            <span style={{ fontSize: 12, color: STRATEGIC_COLORS.textMuted }}><strong style={{ color: STRATEGIC_COLORS.cyan }}>{e.stories || 0}</strong> stories</span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                                </div>
+                                            ))}
+                                            {(!init.epics || init.epics.length === 0) && (
+                                                <div className="text-sm text-text-muted italic">No Jira Epics mapped to this initiative yet.</div>
+                                            )}
                                         </div>
                                     </div>
                                 )}
                             </div>
                         ))}
+                        {initiatives.length === 0 && (
+                            <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
+                                <p className="text-text-muted font-bold">No strategic initiatives configured for this project.</p>
+                            </div>
+                        )}
                     </div>
                 )}
 
                 {/* ────── VELOCITY & CAPACITY TAB ────── */}
                 {activeTab === "velocity" && (
-                    <div className="animate-in">
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+                    <div className="animate-in space-y-6">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             {[
-                                { label: "Avg Velocity", value: velocity.avg_velocity || '—', unit: "pts/sprint", color: STRATEGIC_COLORS.primary },
-                                { label: "Min / Max", value: `${velocity.min || 0} / ${velocity.max || 0}`, unit: "pts range", color: STRATEGIC_COLORS.warning },
-                                { label: "Completion", value: `${slippage.avg_completion_rate || 0}%`, unit: "avg rate", color: (slippage.avg_completion_rate || 0) >= 80 ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning },
-                                { label: "Slippage Risk", value: slippage.at_risk ? "YES" : "LOW", unit: slippage.trend || "stable", color: slippage.at_risk ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.success },
+                                { label: "Avg Velocity", value: velocity.avg_velocity || '—', unit: "pts/sprint", color: THEME.primary },
+                                { label: "Min / Max", value: `${velocity.min || 0} / ${velocity.max || 0}`, unit: "pts range", color: THEME.warning },
+                                { label: "Completion", value: `${slippage.avg_completion_rate || 0}%`, unit: "avg rate", color: (slippage.avg_completion_rate || 0) >= 80 ? THEME.success : THEME.warning },
+                                { label: "Slippage Risk", value: slippage.at_risk ? "HIGH" : "LOW", unit: slippage.trend || "stable", color: slippage.at_risk ? THEME.danger : THEME.success },
                             ].map((kpi, i) => (
-                                <div key={i} className="strat-card" style={{ padding: 20, borderTop: `3px solid ${kpi.color}` }}>
-                                    <div style={{ fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{kpi.label}</div>
-                                    <div className="strat-mono" style={{ fontSize: 28, fontWeight: 900, color: STRATEGIC_COLORS.textMain, marginTop: 8 }}>{kpi.value}</div>
-                                    <div style={{ fontSize: 12, color: STRATEGIC_COLORS.textDim, fontWeight: 600 }}>{kpi.unit}</div>
+                                <div key={i} className="strat-card p-5 border-t-4" style={{ borderTopColor: kpi.color }}>
+                                    <div className="text-[11px] font-bold text-text-muted uppercase tracking-widest">{kpi.label}</div>
+                                    <div className="text-3xl font-black mt-2">{kpi.value}</div>
+                                    <div className="text-xs font-bold text-text-muted mt-1 uppercase">{kpi.unit}</div>
                                 </div>
                             ))}
                         </div>
 
-                        <div className="strat-card" style={{ overflow: "hidden", marginBottom: 28 }}>
-                            <div style={{ padding: "16px 24px", borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1 }}>Sprint Performance History</h3>
+                        <div className="strat-card overflow-hidden">
+                            <div className="p-5 border-b border-border bg-bg-body">
+                                <h3 className="text-sm font-black text-text-main uppercase tracking-widest">Sprint Performance History</h3>
                             </div>
-                            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ background: STRATEGIC_COLORS.bg }}>
-                                        {["Sprint", "Velocity", "Completion", "Issues", "vs Avg", "Status"].map(h => (
-                                            <th key={h} style={{ padding: "12px 20px", fontSize: 11, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1, textAlign: "left", borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>{h}</th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {sprintHistory.map((s, i) => {
-                                        const vsAvg = (s.velocity || 0) - (velocity.avg_velocity || 0);
-                                        const isAbove = vsAvg >= 0;
-                                        return (
-                                            <tr key={i} style={{ borderBottom: `1px solid ${STRATEGIC_COLORS.border}` }}>
-                                                <td style={{ padding: "14px 20px", fontSize: 14, fontWeight: 700, color: STRATEGIC_COLORS.textMain }}>{s.name}</td>
-                                                <td style={{ padding: "14px 20px" }}><span className="strat-mono" style={{ fontSize: 16, fontWeight: 900, color: STRATEGIC_COLORS.primary }}>{s.velocity}</span></td>
-                                                <td style={{ padding: "14px 20px" }}>
-                                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                                        <div style={{ width: 60, height: 6, background: STRATEGIC_COLORS.bg, borderRadius: 3 }}>
-                                                            <div style={{ width: `${s.completion_rate || 0}%`, height: "100%", borderRadius: 3, background: (s.completion_rate || 0) >= 80 ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning }}/>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-bg-card border-b border-border">
+                                            {["Sprint", "Velocity", "Completion", "Issues Done", "vs Avg", "Status"].map(h => (
+                                                <th key={h} className="p-4 text-xs font-black text-text-muted uppercase tracking-widest">{h}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                        {sprintHistory.map((s, i) => {
+                                            const vsAvg = (s.velocity || 0) - (velocity.avg_velocity || 0);
+                                            const isAbove = vsAvg >= 0;
+                                            return (
+                                                <tr key={i} className="hover:bg-bg-body transition-colors">
+                                                    <td className="p-4 text-sm font-bold">{s.name}</td>
+                                                    <td className="p-4 text-base font-black text-primary">{s.velocity}</td>
+                                                    <td className="p-4">
+                                                        <div className="flex items-center gap-3">
+                                                            <div className="w-16 h-2 bg-border rounded-full overflow-hidden">
+                                                                <div className="h-full rounded-full" style={{ width: `${s.completion_rate || 0}%`, background: (s.completion_rate || 0) >= 80 ? THEME.success : THEME.warning }}/>
+                                                            </div>
+                                                            <span className="text-xs font-bold text-text-muted">{s.completion_rate || 0}%</span>
                                                         </div>
-                                                        <span className="strat-mono" style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted }}>{s.completion_rate || 0}%</span>
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: "14px 20px", fontSize: 13, color: STRATEGIC_COLORS.textMuted }}>{s.completed_issues || 0}/{s.total_issues || 0}</td>
-                                                <td style={{ padding: "14px 20px" }}>
-                                                    <span className="strat-mono" style={{ fontSize: 13, fontWeight: 800, color: isAbove ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.danger }}>
+                                                    </td>
+                                                    <td className="p-4 text-sm font-medium text-text-muted">{s.completed_issues || 0} / {s.total_issues || 0}</td>
+                                                    <td className="p-4 text-sm font-black" style={{ color: isAbove ? THEME.success : THEME.danger }}>
                                                         {isAbove ? "+" : ""}{vsAvg.toFixed(0)}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: "14px 20px" }}>
-                                                    <span className="strat-badge" style={{ background: isAbove ? STRATEGIC_COLORS.successDim : STRATEGIC_COLORS.warningDim, color: isAbove ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning }}>
-                                                        {isAbove ? "Above Avg" : "Below Avg"}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                                                    </td>
+                                                    <td className="p-4">
+                                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-md ${isAbove ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
+                                                            {isAbove ? "Above Avg" : "Below Avg"}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                        {sprintHistory.length === 0 && (
+                                            <tr><td colSpan="6" className="p-8 text-center text-sm font-medium text-text-muted">No sprint history available.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
 
                         {(slippage.slippage_events || []).length > 0 && (
-                            <div className="strat-card" style={{ padding: 24, borderLeft: `3px solid ${STRATEGIC_COLORS.warning}` }}>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: STRATEGIC_COLORS.warning, textTransform: "uppercase", letterSpacing: 1, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-                                    <StrategicIcon name="AlertTriangle" size={16} color={STRATEGIC_COLORS.warning}/> Slippage Events
+                            <div className="strat-card p-6 border-l-4 border-warning">
+                                <h3 className="text-sm font-black text-warning uppercase tracking-widest mb-4 flex items-center gap-2">
+                                    <StrategicIcon name="AlertTriangle" size={16} /> Slippage Events
                                 </h3>
-                                {slippage.slippage_events.map((evt, i) => (
-                                    <div key={i} style={{ padding: "10px 16px", background: STRATEGIC_COLORS.warningDim, borderRadius: 8, marginBottom: 6 }}>
-                                        <span style={{ fontWeight: 700, color: STRATEGIC_COLORS.textMain }}>{evt.sprint}</span>
-                                        <span style={{ color: STRATEGIC_COLORS.textMuted, marginLeft: 8 }}>— {evt.completion_rate}% completion</span>
-                                    </div>
-                                ))}
+                                <div className="space-y-2">
+                                    {slippage.slippage_events.map((evt, i) => (
+                                        <div key={i} className="p-3 bg-warning/10 rounded-lg flex items-center gap-3">
+                                            <span className="text-sm font-bold text-text-main">{evt.sprint}</span>
+                                            <span className="text-sm text-text-muted font-medium">— Only {evt.completion_rate}% completion rate</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -2554,6 +2377,9 @@ function RoadmapView({ project, setIsLoading }) {
         </div>
     );
 }
+
+// ── Main Production Component ──
+
         /* ══════════════════════════════════════════════════════════════════
            ★ PREMIUM SLIDE SYSTEM — Rich Corporate Deck with Geometric Art
            ══════════════════════════════════════════════════════════════════ */
