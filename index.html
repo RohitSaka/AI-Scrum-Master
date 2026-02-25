@@ -698,11 +698,25 @@
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [progress, setProgress] = useState(0); // <-- NEW: Progress state
     const [activeSection, setActiveSection] = useState('analysis');
     const [pushingJira, setPushingJira] = useState(false);
     const [jiraResult, setJiraResult] = useState(null);
     const [downloadingXLSX, setDownloadingXLSX] = useState(false);
     const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
+
+    // <-- NEW: Progress Bar Simulation (7 minutes = 420 seconds to reach 95%)
+    React.useEffect(() => {
+        let interval;
+        if (loading) {
+            interval = setInterval(() => {
+                setProgress(p => (p >= 95 ? 95 : p + (95 / 420)));
+            }, 1000);
+        } else {
+            setProgress(0);
+        }
+        return () => clearInterval(interval);
+    }, [loading]);
 
     const TECH_STACKS = [
         'React + Node.js + PostgreSQL',
@@ -837,7 +851,7 @@
     // ═══════════════════════════════════════════════
     if (!data) {
         return (
-            <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4">
+            <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4 relative">
                 <header className="pb-6 border-b border-border mb-8">
                     <h2 className="text-4xl font-extrabold tracking-tight text-text-main">Feature Roadmap</h2>
                     <p className="text-base font-medium mt-2 text-text-muted">
@@ -853,8 +867,31 @@
                         </div>
                     </div>
                 )}
+                {loading && (
+                    <div className="flex flex-col items-center justify-center py-20 animate-fade-in">
+                        <Icon name="Loader2" size={48} className="animate-spin text-primary mb-6" />
+                        <h3 className="text-2xl font-extrabold text-text-main mb-2">Architecting Your Roadmap</h3>
+                        <p className="text-text-muted text-center max-w-md mb-8 leading-relaxed">
+                            Our AI is analyzing {featuresText.split('\n').filter(l => l.trim()).length} features, calculating capacity, and mapping sprint phases.
+                            <br/><br/>
+                            <span className="font-bold text-warning">This enterprise batch process takes ~7-9 minutes. Please do not close this tab.</span>
+                        </p>
+                        
+                        {/* Live Progress Bar */}
+                        <div className="w-full max-w-md bg-bg-card rounded-full h-4 border border-border overflow-hidden shadow-inner">
+                            <div 
+                                className="h-full transition-all duration-1000 ease-linear" 
+                                style={{ width: `${Math.round(progress)}%`, background: 'var(--accent-gradient)' }}
+                            ></div>
+                        </div>
+                        <div className="w-full max-w-md flex justify-between mt-3 px-1">
+                            <span className="text-xs font-bold text-text-muted animate-pulse">Processing features in batches...</span>
+                            <span className="text-sm font-black text-primary">{Math.round(progress)}% Complete</span>
+                        </div>
+                    </div>
+                )}
 
-                <div className="max-w-5xl space-y-6">
+                <div className={`max-w-5xl space-y-6 ${loading ? 'hidden' : 'block'}`}>
                     {/* Step 1: Tech Stack */}
                     <div className="glass-card p-7">
                         <div className="flex items-center gap-3 mb-4">
@@ -876,7 +913,7 @@
                         )}
                     </div>
 
-                    {/* Step 2: Target Duration — THE KEY NEW INPUT */}
+                    {/* Step 2: Target Duration */}
                     <div className="glass-card p-7">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: 'var(--accent-gradient)' }}>2</div>
@@ -968,13 +1005,8 @@
                     <motion.button onClick={handleGenerate} disabled={loading || !selectedStack || !featuresText.trim()}
                         whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
                         className="w-full p-5 rounded-2xl text-white font-black text-lg flex items-center justify-center gap-3 shadow-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ background: loading ? 'var(--border)' : 'var(--accent-gradient)' }}>
-                        {loading ? (
-                            <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Analyzing {featuresText.split('\n').filter(l => l.trim()).length} Features for {durationValue} {durationUnit} Timeline...</>
-                        ) : (
-                            <><Icon name="Sparkles" size={22} /> Generate Expert-Grade Feature Roadmap</>
-                        )}
+                        style={{ background: 'var(--accent-gradient)' }}>
+                        <Icon name="Sparkles" size={22} /> Generate Expert-Grade Feature Roadmap
                     </motion.button>
                 </div>
             </div>
@@ -1019,7 +1051,7 @@
                         <Icon name="Download" size={14} />
                         {downloadingXLSX ? 'Generating...' : 'Download XLSX'}
                     </button>
-                    <button onClick={() => { setData(null); setJiraResult(null); }}
+                    <button onClick={() => { setData(null); setJiraResult(null); setProgress(0); }}
                         className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-bg-card text-text-muted font-bold text-xs border border-border hover:border-primary transition-all">
                         <Icon name="RotateCcw" size={14} /> New Analysis
                     </button>
