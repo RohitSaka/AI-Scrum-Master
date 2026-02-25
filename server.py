@@ -280,7 +280,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     if model:
         models_to_try = [model, "gemini-2.5-flash"]
     else:
-        models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
+        models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
     for m in models_to_try:
         try:
