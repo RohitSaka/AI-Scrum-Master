@@ -505,13 +505,13 @@ async def generate_ppt(payload: dict, creds: dict = Depends(get_jira_creds)):
     return StreamingResponse(ppt_buffer, headers={'Content-Disposition': f'attachment; filename="{payload.get("project","Project")}_Premium_Deck.pptx"'}, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 @app.get("/roadmap/{project_key}")
-def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
+def get_roadmap(project_key: str, sprint_id: str = None, target_months: float = None, creds: dict = Depends(get_jira_creds)):
     """
-    Sprint-History Based Roadmap Generator.
-    1. Fetches last N completed sprints + their issues
-    2. Calculates per-sprint velocity (completed points)
-    3. Fetches current backlog (not done, not in active sprint)
-    4. AI groups backlog into future sprint-sized buckets based on avg velocity
+    Strategic Roadmap — powered by Jira velocity + backlog.
+    1. Fetches last N completed sprints + velocity
+    2. Fetches backlog (not done, not in active sprint)
+    3. Groups backlog into sprint-capacity buckets
+    4. Runs strategic assembler (health score, investment buckets, delta, slippage)
     """
     sp_field = get_story_point_field(creds)
 
@@ -531,22 +531,21 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
                         "startDate": s.get('startDate', ''), "endDate": s.get('endDate', '')
                     }
 
-    # Separate closed vs active sprints
     closed_sprints = sorted(
         [s for s in all_sprints.values() if s['state'] == 'closed'],
-        key=lambda x: x.get('endDate', '') or x.get('id', 0),
+        key=lambda x: x.get('endDate', '') or str(x.get('id', 0)),
         reverse=True
-    )[:8]  # Last 8 completed sprints
-    closed_sprints.reverse()  # Chronological order
+    )[:8]
+    closed_sprints.reverse()
 
     active_sprints = [s for s in all_sprints.values() if s['state'] == 'active']
 
-    # ── Step 2: For each closed sprint, calculate velocity ──
-    sprint_history = []
+    # ── Step 2: Calculate velocity from closed sprints ──
     safe_fields = ["summary", "status", "priority", "issuetype", "assignee",
                    "customfield_10016", "customfield_10026", "customfield_10028",
                    "customfield_10004", sp_field]
 
+    sprint_history = []
     for sprint in closed_sprints:
         res = jira_request("POST", "search/jql", creds, {
             "jql": f'project="{project_key}" AND sprint={sprint["id"]}',
@@ -561,37 +560,38 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
         total_pts = 0.0
         completed_count = 0
         total_count = len(issues)
-        completed_items = []
+        person_stats = {}
 
         for iss in issues:
             f = iss.get('fields') or {}
             pts = extract_story_points(f, sp_field)
             total_pts += pts
             status_cat = (f.get('status') or {}).get('statusCategory', {}).get('key', '')
+            assignee_name = (f.get('assignee') or {}).get('displayName', 'Unassigned')
+
             if status_cat == 'done':
                 completed_pts += pts
                 completed_count += 1
-                completed_items.append({
-                    "key": iss.get('key'),
-                    "summary": f.get('summary', ''),
-                    "points": pts,
-                    "type": (f.get('issuetype') or {}).get('name', 'Task'),
-                    "priority": (f.get('priority') or {}).get('name', 'Medium')
-                })
+
+            if assignee_name not in person_stats:
+                person_stats[assignee_name] = {"completed": 0, "total": 0}
+            person_stats[assignee_name]["total"] += pts
+            if status_cat == 'done':
+                person_stats[assignee_name]["completed"] += pts
 
         sprint_history.append({
-            "sprint_id": sprint['id'],
-            "sprint_name": sprint['name'],
+            "name": sprint['name'],
             "total_issues": total_count,
             "completed_issues": completed_count,
             "total_points": total_pts,
+            "velocity": completed_pts,
             "completed_points": completed_pts,
             "completion_rate": round((completed_count / max(total_count, 1)) * 100, 1),
-            "completed_items": completed_items
+            "person_stats": person_stats,
         })
 
-    # ── Step 3: Calculate velocity metrics ──
-    velocities = [s['completed_points'] for s in sprint_history if s['completed_points'] > 0]
+    # Velocity metrics
+    velocities = [s['velocity'] for s in sprint_history if s['velocity'] > 0]
     has_history = len(velocities) > 0
 
     if has_history:
@@ -599,20 +599,19 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
         min_velocity = round(min(velocities), 1)
         max_velocity = round(max(velocities), 1)
     else:
-        # No history: will recalculate after backlog fetch
-        avg_velocity = 0  # Placeholder, recalculated in Step 4
+        avg_velocity = 0
         min_velocity = 0
         max_velocity = 0
 
-    # Trend: compare last 2 vs first 2
-    trend = "no_data" if not has_history else "stable"
+    trend = "no_data"
     if len(velocities) >= 4:
         early = sum(velocities[:2]) / 2
         recent = sum(velocities[-2:]) / 2
-        if recent > early * 1.15:
-            trend = "improving"
-        elif recent < early * 0.85:
-            trend = "declining"
+        if recent > early * 1.15: trend = "improving"
+        elif recent < early * 0.85: trend = "declining"
+        else: trend = "stable"
+    elif has_history:
+        trend = "stable"
 
     velocity_data = {
         "avg_velocity": avg_velocity,
@@ -620,11 +619,11 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
         "max": max_velocity,
         "trend": trend,
         "sprints_analyzed": len(velocities),
-        "has_history": has_history
+        "has_history": has_history,
     }
 
-    # ── Step 4: Fetch backlog (not Done, prioritized) ──
-    # Get items not in any sprint OR in backlog state
+    # ── Step 3: Fetch backlog ──
+    active_sprint_ids = set(str(s['id']) for s in active_sprints)
     backlog_jql = f'project="{project_key}" AND statusCategory != Done ORDER BY rank ASC, priority DESC'
     backlog_res = jira_request("POST", "search/jql", creds, {
         "jql": backlog_jql,
@@ -633,22 +632,16 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
     })
 
     backlog_items = []
-    active_sprint_ids = set(str(s['id']) for s in active_sprints)
-
     if backlog_res and backlog_res.status_code == 200:
         for iss in backlog_res.json().get('issues', []):
             f = iss.get('fields') or {}
-            # Check if this issue is in the active sprint — if so, skip for roadmap
             issue_sprints = f.get('customfield_10020') or []
-            in_active = False
-            for sp in issue_sprints:
-                if isinstance(sp, dict) and (str(sp.get('id', '')) in active_sprint_ids or sp.get('state') == 'active'):
-                    in_active = True
-                    break
-
+            in_active = any(
+                isinstance(sp, dict) and (str(sp.get('id', '')) in active_sprint_ids or sp.get('state') == 'active')
+                for sp in issue_sprints
+            )
             if in_active:
                 continue
-
             pts = extract_story_points(f, sp_field)
             backlog_items.append({
                 "key": iss.get('key'),
@@ -656,172 +649,53 @@ def get_roadmap(project_key: str, creds: dict = Depends(get_jira_creds)):
                 "points": pts,
                 "type": (f.get('issuetype') or {}).get('name', 'Task'),
                 "priority": (f.get('priority') or {}).get('name', 'Medium'),
-                "status": (f.get('status') or {}).get('name', 'To Do')
+                "status": (f.get('status') or {}).get('name', 'To Do'),
             })
 
-    # ── Step 5: AI groups backlog into sprint buckets ──
-
-    # If no history, estimate velocity from backlog (aim for 3-4 sprints of work)
+    # If no history, estimate velocity from backlog
     if not has_history and backlog_items:
         total_backlog_pts = sum(item.get('points', 0) or 3 for item in backlog_items)
-        avg_velocity = round(max(total_backlog_pts / 3, 10), 1)  # At least 10 pts/sprint, aim for ~3 sprints
+        avg_velocity = round(max(total_backlog_pts / 3, 10), 1)
         velocity_data["avg_velocity"] = avg_velocity
         velocity_data["estimated"] = True
 
-    if not backlog_items:
-        # Nothing to plan
-        return {
-            "timeline": ["Sprint N+1"],
-            "tracks": [{"name": "Planned Work", "items": []}],
-            "sprint_buckets": [],
-            "unscheduled": [],
-            "planning_notes": "No backlog items found to plan.",
-            "velocity": velocity_data,
-            "sprint_history": [],
-            "backlog_count": 0,
-            "mode": "sprint_velocity"
-        }
-
-    history_context = ""
-    if has_history:
-        history_context = f"""SPRINT HISTORY (last {len(sprint_history)} completed sprints):
-{json.dumps([{{"name": s["sprint_name"], "velocity": s["completed_points"], "completion_rate": s["completion_rate"]}} for s in sprint_history], indent=2)}"""
-    else:
-        history_context = f"""NOTE: This is the team's FIRST sprint — no historical data exists.
-Using estimated velocity of {avg_velocity} story points per sprint (based on backlog size / 3 sprints).
-Be conservative with sprint allocation since the team has no proven velocity."""
-
-    prompt = f"""You are an expert Release Train Engineer. Group the backlog items into future sprint-sized buckets.
-
-VELOCITY DATA:
-- Average velocity per sprint: {avg_velocity} story points {"(estimated — no history)" if not has_history else "(based on actual history)"}
-- Velocity trend: {trend}
-- Min velocity: {min_velocity}, Max velocity: {max_velocity}
-- Sprints analyzed: {len(velocities)}
-
-{history_context}
-
-BACKLOG ITEMS TO SCHEDULE:
-{json.dumps(backlog_items[:40], indent=2)}
-
-RULES:
-1. Each future sprint bucket should NOT exceed {avg_velocity} story points
-2. Respect priority ordering — higher priority items go into earlier sprints
-3. Items with 0 points: estimate them based on similar items in the backlog
-4. If an item has no points, assume 3 points
-5. Name each sprint as "Sprint N+1", "Sprint N+2", etc.
-6. Group into tracks by theme/type if possible (e.g., "Feature Track", "Tech Debt Track", "Bug Fix Track")
-
-Return ONLY valid JSON (no markdown, no backticks) with this structure:
-{{
-    "sprint_buckets": [
-        {{
+    # ── Step 4: Generate sprint buckets by velocity capacity ──
+    sprint_buckets = []
+    if avg_velocity > 0 and backlog_items:
+        current_bucket = {
             "sprint_label": "Sprint N+1",
-            "target_capacity": {avg_velocity},
-            "allocated_points": 28,
-            "items": [
-                {{"key": "PROJ-123", "summary": "...", "points": 5, "priority": "High", "status": "To Do"}}
-            ]
-        }}
-    ],
-    "tracks": [
-        {{
-            "name": "Feature Development",
-            "items": [
-                {{"key": "PROJ-123", "summary": "...", "sprint_bucket": "Sprint N+1", "start": 0, "duration": 1, "points": 5, "priority": "High", "status": "To Do"}}
-            ]
-        }}
-    ],
-    "unscheduled": [
-        {{"key": "PROJ-999", "summary": "...", "reason": "Exceeds planning horizon"}}
-    ],
-    "planning_notes": "Brief planning notes about capacity allocation"
-}}"""
-
-    try:
-        ai_result = generate_ai_response(prompt, temperature=0.2)
-        if not ai_result:
-            raise ValueError("AI returned empty response")
-        raw = ai_result.replace('```json', '').replace('```', '').strip()
-        parsed = json.loads(raw)
-
-        # Validate structure
-        if "sprint_buckets" not in parsed:
-            raise ValueError("Missing sprint_buckets key")
-
-        # Build timeline labels from sprint buckets
-        timeline = [b.get("sprint_label", f"Sprint +{i+1}") for i, b in enumerate(parsed.get("sprint_buckets", []))]
-
-        # Build tracks for the Gantt view
-        tracks = parsed.get("tracks", [])
-        if not tracks:
-            # Fallback: create single track from sprint buckets
-            all_items = []
-            for si, bucket in enumerate(parsed.get("sprint_buckets", [])):
-                for item in bucket.get("items", []):
-                    item["start"] = si
-                    item["duration"] = 1
-                    all_items.append(item)
-            tracks = [{"name": "Planned Work", "items": all_items}]
-
-        return {
-            "timeline": timeline,
-            "tracks": tracks,
-            "sprint_buckets": parsed.get("sprint_buckets", []),
-            "unscheduled": parsed.get("unscheduled", []),
-            "planning_notes": parsed.get("planning_notes", ""),
-            "velocity": velocity_data,
-            "sprint_history": [
-                {"name": s["sprint_name"], "velocity": s["completed_points"],
-                 "completion_rate": s["completion_rate"], "total_issues": s["total_issues"],
-                 "completed_issues": s["completed_issues"]}
-                for s in sprint_history
-            ],
-            "backlog_count": len(backlog_items),
-            "mode": "sprint_velocity"  # Flag so frontend knows this is the new format
+            "target_capacity": avg_velocity,
+            "allocated_points": 0,
+            "items": []
         }
-
-    except Exception as e:
-        print(f"Roadmap AI Error: {e}", flush=True)
-        # Fallback: simple sprint bucketing without AI
-        buckets = []
-        current_bucket = {"sprint_label": "Sprint N+1", "target_capacity": avg_velocity, "allocated_points": 0, "items": []}
         bucket_idx = 1
-
         for item in backlog_items:
-            pts = item.get("points", 0) or 3  # Default 3 if no points
+            pts = item.get("points", 0) or 3
             if current_bucket["allocated_points"] + pts > avg_velocity and current_bucket["items"]:
-                buckets.append(current_bucket)
+                sprint_buckets.append(current_bucket)
                 bucket_idx += 1
-                current_bucket = {"sprint_label": f"Sprint N+{bucket_idx}", "target_capacity": avg_velocity, "allocated_points": 0, "items": []}
+                current_bucket = {
+                    "sprint_label": f"Sprint N+{bucket_idx}",
+                    "target_capacity": avg_velocity,
+                    "allocated_points": 0,
+                    "items": []
+                }
             current_bucket["items"].append(item)
             current_bucket["allocated_points"] += pts
-
         if current_bucket["items"]:
-            buckets.append(current_bucket)
+            sprint_buckets.append(current_bucket)
 
-        timeline = [b["sprint_label"] for b in buckets]
-        all_items_track = []
-        for si, bucket in enumerate(buckets):
-            for item in bucket["items"]:
-                all_items_track.append({**item, "start": si, "duration": 1})
+    # ── Step 5: Assemble full strategic roadmap ──
+    result = assemble_strategic_roadmap(
+        project_key=project_key,
+        sprint_history=sprint_history,
+        velocity=velocity_data,
+        backlog_items=backlog_items,
+        sprint_buckets=sprint_buckets,
+        target_months=target_months,
+    )
 
-        return {
-            "timeline": timeline if timeline else ["Sprint N+1"],
-            "tracks": [{"name": "Planned Work", "items": all_items_track}],
-            "sprint_buckets": buckets,
-            "unscheduled": [],
-            "planning_notes": "Fallback mode: items grouped by velocity capacity.",
-            "velocity": velocity_data,
-            "sprint_history": [
-                {"name": s["sprint_name"], "velocity": s["completed_points"],
-                 "completion_rate": s["completion_rate"], "total_issues": s["total_issues"],
-                 "completed_issues": s["completed_issues"]}
-                for s in sprint_history
-            ],
-            "backlog_count": len(backlog_items),
-            "mode": "sprint_velocity"
-        }
+    return result
 
 @app.get("/capacity_check/{project_key}")
 def capacity_check(project_key: str, sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
@@ -3323,275 +3197,7 @@ async def jira_webhook(request: Request, background_tasks: BackgroundTasks, doma
         return {"status": "processing_in_background"}
     except Exception as e: return {"status": "error", "message": str(e)}
 
-@app.get("/strategic_roadmap/{project_key}")
-def get_strategic_roadmap(
-    project_key: str,
-    sprint_id: str = None,
-    feature_roadmap_json: str = None,  # Optional: pass cached feature roadmap
-    target_months: float = None,
-    creds: dict = Depends(get_jira_creds),
-):
-    '''
-    The Aligned Strategic Roadmap.
-    
-    Combines:
-      1. Real Jira sprint history & velocity (Strategic layer)
-      2. Feature Roadmap estimation data (if available)
-      3. Investment bucket analysis
-      4. Delta analysis (top-down vs bottom-up)
-      5. Slippage detection
-      6. Health score
-    '''
-    sp_field = get_story_point_field(creds)
-
-    # ── Step 1: Reuse existing roadmap logic for sprint history ──
-    sprint_discovery_res = jira_request("POST", "search/jql", creds, {
-        "jql": f'project="{project_key}" AND sprint is not EMPTY ORDER BY updated DESC',
-        "maxResults": 100,
-        "fields": ["customfield_10020"]
-    })
-    all_sprints = {}
-    if sprint_discovery_res and sprint_discovery_res.status_code == 200:
-        for issue in sprint_discovery_res.json().get('issues', []):
-            for s in (issue.get('fields') or {}).get('customfield_10020') or []:
-                if s.get('id') not in all_sprints:
-                    all_sprints[s['id']] = {
-                        "id": s['id'], "name": s['name'], "state": s['state'],
-                        "startDate": s.get('startDate', ''), "endDate": s.get('endDate', '')
-                    }
-
-    closed_sprints = sorted(
-        [s for s in all_sprints.values() if s['state'] == 'closed'],
-        key=lambda x: x.get('endDate', '') or str(x.get('id', 0)),
-        reverse=True
-    )[:8]
-    closed_sprints.reverse()
-
-    active_sprints = [s for s in all_sprints.values() if s['state'] == 'active']
-
-    # ── Step 2: Calculate velocity from closed sprints ──
-    safe_fields = ["summary", "status", "priority", "issuetype", "assignee",
-                   "customfield_10016", "customfield_10026", "customfield_10028",
-                   "customfield_10004", sp_field]
-
-    sprint_history = []
-    for sprint in closed_sprints:
-        res = jira_request("POST", "search/jql", creds, {
-            "jql": f'project="{project_key}" AND sprint={sprint["id"]}',
-            "maxResults": 100,
-            "fields": safe_fields
-        })
-        if not res or res.status_code != 200:
-            continue
-
-        issues = res.json().get('issues', [])
-        completed_pts = 0.0
-        total_pts = 0.0
-        completed_count = 0
-        total_count = len(issues)
-        person_stats = {}
-
-        for iss in issues:
-            f = iss.get('fields') or {}
-            pts = extract_story_points(f, sp_field)
-            total_pts += pts
-            status_cat = (f.get('status') or {}).get('statusCategory', {}).get('key', '')
-            assignee_name = (f.get('assignee') or {}).get('displayName', 'Unassigned')
-
-            if status_cat == 'done':
-                completed_pts += pts
-                completed_count += 1
-
-            if assignee_name not in person_stats:
-                person_stats[assignee_name] = {"completed": 0, "total": 0}
-            person_stats[assignee_name]["total"] += pts
-            if status_cat == 'done':
-                person_stats[assignee_name]["completed"] += pts
-
-        sprint_history.append({
-            "name": sprint['name'],
-            "total_issues": total_count,
-            "completed_issues": completed_count,
-            "total_points": total_pts,
-            "velocity": completed_pts,
-            "completed_points": completed_pts,
-            "completion_rate": round((completed_count / max(total_count, 1)) * 100, 1),
-            "person_stats": person_stats,
-        })
-
-    # Velocity metrics
-    velocities = [s['velocity'] for s in sprint_history if s['velocity'] > 0]
-    has_history = len(velocities) > 0
-
-    if has_history:
-        avg_velocity = round(sum(velocities) / len(velocities), 1)
-        min_velocity = round(min(velocities), 1)
-        max_velocity = round(max(velocities), 1)
-    else:
-        avg_velocity = 0
-        min_velocity = 0
-        max_velocity = 0
-
-    trend = "no_data"
-    if len(velocities) >= 4:
-        early = sum(velocities[:2]) / 2
-        recent = sum(velocities[-2:]) / 2
-        if recent > early * 1.15: trend = "improving"
-        elif recent < early * 0.85: trend = "declining"
-        else: trend = "stable"
-    elif has_history:
-        trend = "stable"
-
-    velocity_data = {
-        "avg_velocity": avg_velocity,
-        "min": min_velocity,
-        "max": max_velocity,
-        "trend": trend,
-        "sprints_analyzed": len(velocities),
-        "has_history": has_history,
-    }
-
-    # ── Step 3: Fetch backlog ──
-    active_sprint_ids = set(str(s['id']) for s in active_sprints)
-    backlog_jql = f'project="{project_key}" AND statusCategory != Done ORDER BY rank ASC, priority DESC'
-    backlog_res = jira_request("POST", "search/jql", creds, {
-        "jql": backlog_jql,
-        "maxResults": 60,
-        "fields": safe_fields + ["customfield_10020"]
-    })
-
-    backlog_items = []
-    if backlog_res and backlog_res.status_code == 200:
-        for iss in backlog_res.json().get('issues', []):
-            f = iss.get('fields') or {}
-            issue_sprints = f.get('customfield_10020') or []
-            in_active = any(
-                isinstance(sp, dict) and (str(sp.get('id', '')) in active_sprint_ids or sp.get('state') == 'active')
-                for sp in issue_sprints
-            )
-            if in_active:
-                continue
-            pts = extract_story_points(f, sp_field)
-            backlog_items.append({
-                "key": iss.get('key'),
-                "summary": f.get('summary', 'Untitled'),
-                "points": pts,
-                "type": (f.get('issuetype') or {}).get('name', 'Task'),
-                "priority": (f.get('priority') or {}).get('name', 'Medium'),
-                "status": (f.get('status') or {}).get('name', 'To Do'),
-            })
-
-    # ── Step 4: Parse feature roadmap data (if provided) ──
-    feature_roadmap_data = None
-    if feature_roadmap_json:
-        try:
-            feature_roadmap_data = json.loads(feature_roadmap_json)
-        except:
-            pass
-
-    # ── Step 5: Generate simple sprint buckets (like existing roadmap) ──
-    sprint_buckets = []
-    if has_history and avg_velocity > 0 and backlog_items:
-        current_bucket = {
-            "sprint_label": "Sprint N+1",
-            "target_capacity": avg_velocity,
-            "allocated_points": 0,
-            "items": []
-        }
-        bucket_idx = 1
-        for item in backlog_items:
-            pts = item.get("points", 0) or 3
-            if current_bucket["allocated_points"] + pts > avg_velocity and current_bucket["items"]:
-                sprint_buckets.append(current_bucket)
-                bucket_idx += 1
-                current_bucket = {
-                    "sprint_label": f"Sprint N+{bucket_idx}",
-                    "target_capacity": avg_velocity,
-                    "allocated_points": 0,
-                    "items": []
-                }
-            current_bucket["items"].append(item)
-            current_bucket["allocated_points"] += pts
-        if current_bucket["items"]:
-            sprint_buckets.append(current_bucket)
-
-    # ── Step 6: Assemble the full strategic roadmap ──
-    from strategic_roadmap import assemble_strategic_roadmap
-    result = assemble_strategic_roadmap(
-        project_key=project_key,
-        sprint_history=sprint_history,
-        velocity=velocity_data,
-        backlog_items=backlog_items,
-        sprint_buckets=sprint_buckets,
-        feature_roadmap_data=feature_roadmap_data,
-        target_months=target_months,
-    )
-
-    return result
-
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ENDPOINT 2: Link Feature Roadmap to Strategic Roadmap
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-
-@app.post("/strategic_roadmap/{project_key}/link_feature_roadmap")
-def link_feature_roadmap(
-    project_key: str,
-    payload: dict,
-    creds: dict = Depends(get_jira_creds),
-):
-    '''
-    Link a Feature Roadmap output to the Strategic Roadmap.
-    
-    The frontend calls this after generating a Feature Roadmap,
-    passing the full Feature Roadmap JSON. This endpoint stores it
-    and returns the alignment analysis.
-    '''
-    feature_data = payload.get("feature_roadmap_data", {})
-    target_months = payload.get("target_months")
-    
-    if not feature_data:
-        raise HTTPException(status_code=400, detail="No feature roadmap data provided")
-
-    # Store in Jira project properties for persistence
-    store_data = {
-        "feature_roadmap": feature_data,
-        "linked_at": datetime.utcnow().isoformat(),
-        "target_months": target_months,
-    }
-    jira_request(
-        "PUT",
-        f"project/{project_key.upper()}/properties/ig_agile_feature_roadmap",
-        creds,
-        store_data
-    )
-
-    # Now compute alignment
-    from strategic_roadmap import compute_delta_analysis
-
-    # Quick velocity fetch
-    sp_field = get_story_point_field(creds)
-    sprint_disc = jira_request("POST", "search/jql", creds, {
-        "jql": f'project="{project_key}" AND sprint is not EMPTY ORDER BY updated DESC',
-        "maxResults": 100,
-        "fields": ["customfield_10020"]
-    })
-    # ... (abbreviated — reuse velocity calculation from strategic_roadmap endpoint)
-
-    return {
-        "status": "linked",
-        "message": f"Feature Roadmap linked to Strategic Roadmap for {project_key}",
-    }
-
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# ENDPOINT 3: Update Investment Buckets
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-@app.post("/strategic_roadmap/{project_key}/investment_buckets")
+@app.post("/roadmap/{project_key}/investment_buckets")
 def update_investment_buckets(
     project_key: str,
     payload: dict,

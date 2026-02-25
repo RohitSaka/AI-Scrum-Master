@@ -2080,12 +2080,11 @@ function RoadmapView({ project, setIsLoading }) {
     const investmentBuckets = data.investment_buckets || {};
     const capacityAlloc = data.capacity_allocation || { allocations: {} };
     const deltaAnalysis = data.delta_analysis || { deltas: [], resolution_options: [] };
-    const featureAlign = data.feature_alignment || {};
     const initiatives = data.initiatives || [];
 
     const tabs = [
         { id: "overview", label: "Command Center", icon: "Target" },
-        { id: "alignment", label: "Alignment & Delta", icon: "Link" },
+        { id: "alignment", label: "Forecast & Delta", icon: "Link" },
         { id: "investment", label: "Investment Buckets", icon: "PieChart" },
         { id: "initiatives", label: "Strategic Initiatives", icon: "Layers" },
         { id: "velocity", label: "Velocity & Capacity", icon: "BarChart" },
@@ -2120,7 +2119,7 @@ function RoadmapView({ project, setIsLoading }) {
                         <div>
                             <h1 style={{ fontSize: 24, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>Strategic Roadmap</h1>
                             <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted, fontWeight: 500, marginTop: 2 }}>
-                                Project <span style={{ color: STRATEGIC_COLORS.primary, fontWeight: 900 }}>{project}</span> &middot; Aligned with Feature Roadmap
+                                Project <span style={{ color: STRATEGIC_COLORS.primary, fontWeight: 900 }}>{project}</span> &middot; Velocity-Based Planning
                             </p>
                         </div>
                     </div>
@@ -2159,7 +2158,7 @@ function RoadmapView({ project, setIsLoading }) {
                                 { label: "Trend", value: velocity.trend === "improving" ? "▲ Up" : velocity.trend === "declining" ? "▼ Down" : "→ Stable", color: velocity.trend === "improving" ? STRATEGIC_COLORS.success : velocity.trend === "declining" ? STRATEGIC_COLORS.danger : STRATEGIC_COLORS.warning, icon: "TrendingUp" },
                                 { label: "Completion Rate", value: `${slippage.avg_completion_rate || 0}%`, color: (slippage.avg_completion_rate || 0) >= 80 ? STRATEGIC_COLORS.success : STRATEGIC_COLORS.warning, icon: "Check" },
                                 { label: "Backlog", value: data.backlog_count || 0, unit: `${data.total_backlog_pts || 0} pts`, color: STRATEGIC_COLORS.purple, icon: "Layers" },
-                                { label: "Features Linked", value: featureAlign.linked || 0, unit: `of ${(featureAlign.linked || 0) + (featureAlign.unlinked || 0)}`, color: (featureAlign.linked || 0) > 0 ? STRATEGIC_COLORS.cyan : STRATEGIC_COLORS.textDim, icon: "Link" },
+                                { label: "Initiatives", value: initiatives.length || 0, unit: `${data.total_backlog_pts || 0} total pts`, color: initiatives.length > 0 ? STRATEGIC_COLORS.cyan : STRATEGIC_COLORS.textDim, icon: "Link" },
                             ].map((kpi, i) => (
                                 <div key={i} className="strat-card strat-glow" style={{ padding: 20, borderLeft: `3px solid ${kpi.color}` }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -2237,23 +2236,23 @@ function RoadmapView({ project, setIsLoading }) {
                 {/* ────── ALIGNMENT & DELTA TAB ────── */}
                 {activeTab === "alignment" && (
                     <div className="animate-in">
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 0, marginBottom: 28, alignItems: "stretch" }}>
-                            <div className="strat-card" style={{ padding: 28, borderRight: "none", borderRadius: "16px 0 0 16px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 28 }}>
+                            <div className="strat-card" style={{ padding: 28 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
                                     <div style={{ width: 36, height: 36, borderRadius: 10, background: STRATEGIC_COLORS.primaryDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
                                         <StrategicIcon name="Target" size={18} color={STRATEGIC_COLORS.primary}/>
                                     </div>
                                     <div>
-                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Strategic Roadmap</h3>
-                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Based on Historical Velocity</div>
+                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Team Velocity</h3>
+                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Based on Historical Sprint Data</div>
                                     </div>
                                 </div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                     {[
-                                        { label: "Velocity", value: `${deltaAnalysis.strategic_velocity || 0} pts`, sub: "per sprint" },
-                                        { label: "Sprints", value: deltaAnalysis.strategic_forecast?.sprints || "—", sub: "to deliver" },
-                                        { label: "Duration", value: `${deltaAnalysis.strategic_forecast?.months || "—"} mo`, sub: "calendar" },
-                                        { label: "Source", value: "Jira", sub: `${velocity.sprints_analyzed || 0} sprints` },
+                                        { label: "Avg Velocity", value: `${deltaAnalysis.strategic_velocity || 0} pts`, sub: "per sprint" },
+                                        { label: "Sprints Analyzed", value: velocity.sprints_analyzed || 0, sub: "completed" },
+                                        { label: "Trend", value: (velocity.trend || "no_data").replace(/_/g, " "), sub: "velocity direction" },
+                                        { label: "Source", value: "Jira", sub: "live data" },
                                     ].map((item, i) => (
                                         <div key={i} style={{ padding: 14, background: STRATEGIC_COLORS.bg, borderRadius: 10 }}>
                                             <div style={{ fontSize: 10, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{item.label}</div>
@@ -2264,27 +2263,22 @@ function RoadmapView({ project, setIsLoading }) {
                                 </div>
                             </div>
 
-                            <div style={{ background: STRATEGIC_COLORS.bgElevated, border: `1px solid ${STRATEGIC_COLORS.border}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "20px 0" }}>
-                                <StrategicIcon name="GitBranch" size={24} color={STRATEGIC_COLORS.warning}/>
-                                <div style={{ fontSize: 10, fontWeight: 800, color: STRATEGIC_COLORS.warning, textTransform: "uppercase", letterSpacing: 1, marginTop: 8, writingMode: "vertical-lr", textOrientation: "mixed" }}>DELTA</div>
-                            </div>
-
-                            <div className="strat-card" style={{ padding: 28, borderLeft: "none", borderRadius: "0 16px 16px 0" }}>
+                            <div className="strat-card" style={{ padding: 28 }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
                                     <div style={{ width: 36, height: 36, borderRadius: 10, background: STRATEGIC_COLORS.cyanDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
                                         <StrategicIcon name="Layers" size={18} color={STRATEGIC_COLORS.cyan}/>
                                     </div>
                                     <div>
-                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Feature Roadmap</h3>
-                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Based on Team Estimation</div>
+                                        <h3 style={{ fontSize: 16, fontWeight: 900 }}>Backlog Forecast</h3>
+                                        <div style={{ fontSize: 11, color: STRATEGIC_COLORS.textMuted, fontWeight: 600 }}>Projected Delivery Timeline</div>
                                     </div>
                                 </div>
                                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                                     {[
-                                        { label: "Velocity", value: `${deltaAnalysis.feature_roadmap_velocity || 0} pts`, sub: "per sprint" },
-                                        { label: "Sprints", value: deltaAnalysis.feature_forecast?.sprints || "—", sub: "to deliver" },
-                                        { label: "Duration", value: `${deltaAnalysis.feature_forecast?.months || "—"} mo`, sub: "calendar" },
-                                        { label: "Features", value: featureAlign.linked || 0, sub: `${featureAlign.total_feature_pts || 0} pts` },
+                                        { label: "Backlog", value: `${deltaAnalysis.strategic_forecast?.total_pts || deltaAnalysis.backlog_forecast?.total_pts || data.total_backlog_pts || 0} pts`, sub: "total points" },
+                                        { label: "Sprints", value: deltaAnalysis.strategic_forecast?.sprints || deltaAnalysis.backlog_forecast?.sprints_needed || "—", sub: "to deliver" },
+                                        { label: "Duration", value: `${deltaAnalysis.strategic_forecast?.months || deltaAnalysis.backlog_forecast?.months_needed || "—"} mo`, sub: "calendar" },
+                                        { label: "Items", value: data.backlog_count || 0, sub: "in backlog" },
                                     ].map((item, i) => (
                                         <div key={i} style={{ padding: 14, background: STRATEGIC_COLORS.bg, borderRadius: 10 }}>
                                             <div style={{ fontSize: 10, fontWeight: 700, color: STRATEGIC_COLORS.textDim, textTransform: "uppercase", letterSpacing: 1 }}>{item.label}</div>
@@ -2403,7 +2397,7 @@ function RoadmapView({ project, setIsLoading }) {
                         <div style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <div>
                                 <h3 style={{ fontSize: 18, fontWeight: 900 }}>Strategic Initiatives</h3>
-                                <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted }}>Each initiative traces to Feature Roadmap epics and stories</p>
+                                <p style={{ fontSize: 13, color: STRATEGIC_COLORS.textMuted }}>Backlog items grouped by investment bucket category</p>
                             </div>
                             <div style={{ display: "flex", gap: 8 }}>
                                 {Object.entries(statusLabels).map(([key, label]) => (
@@ -2447,7 +2441,7 @@ function RoadmapView({ project, setIsLoading }) {
                                     <div style={{ borderTop: `1px solid ${STRATEGIC_COLORS.border}`, padding: "20px 24px", background: STRATEGIC_COLORS.bg }}>
                                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
                                             <div>
-                                                <h5 style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Linked Features</h5>
+                                                <h5 style={{ fontSize: 12, fontWeight: 700, color: STRATEGIC_COLORS.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 }}>Backlog Items</h5>
                                                 {(init.features || []).map((f, fi) => (
                                                     <div key={fi} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: STRATEGIC_COLORS.bgCard, borderRadius: 8, marginBottom: 6, border: `1px solid ${STRATEGIC_COLORS.border}` }}>
                                                         <span className="strat-mono strat-badge" style={{ background: STRATEGIC_COLORS.primaryDim, color: STRATEGIC_COLORS.primary, fontSize: 10 }}>#{f.id || fi+1}</span>
