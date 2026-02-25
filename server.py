@@ -1842,6 +1842,32 @@ def _post_process_roadmap(parsed, req, start_date, target_working_days, target_m
     tl = parsed.get("timeline", {})
     tl["total_story_points"] = total_pts
     tl["start_date"] = start_date
+    velocity = tl.get("team_velocity_per_sprint", 0)
+    psa = parsed.get("parallel_stream_analysis", {})
+    streams = psa.get("recommended_streams", 1) or 1
+    # Validate velocity = streams × 2 devs × 8 pts
+    expected_velocity = streams * 2 * 8
+    if velocity <= 0 or abs(velocity - expected_velocity) > expected_velocity * 0.3:
+        tl["team_velocity_per_sprint"] = expected_velocity
+        velocity = expected_velocity
+        # Validate sprint count
+    if velocity > 0:
+        correct_sprints = math.ceil(total_pts / velocity)
+        if tl.get("total_sprints", 0) != correct_sprints:
+            tl["total_sprints"] = correct_sprints
+            tl["total_working_days"] = correct_sprints * 10
+            tl["total_months"] = round((correct_sprints * 10) / 22, 1)
+
+    # Enforce: 1 stream → days = sequential
+    if streams == 1 and tl.get("total_working_days", 0) != total_seq_days:
+        correct_sprints_1s = math.ceil(total_seq_days / 10)
+        tl["total_working_days"] = correct_sprints_1s * 10
+        tl["total_sprints"] = correct_sprints_1s
+        tl["total_months"] = round((correct_sprints_1s * 10) / 22, 1)
+        tl["team_velocity_per_sprint"] = math.ceil(total_pts / correct_sprints_1s)
+
+    psa["single_stream_days"] = total_seq_days
+    psa["single_stream_months"] = round(total_seq_days / 22, 1)
 
     # Ensure parallel stream analysis has target
     psa = parsed.get("parallel_stream_analysis", {})
@@ -1894,22 +1920,32 @@ CLIENT FEATURES TO BUILD:
 {features_text}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CRITICAL: TARGET DURATION RESOURCE SCALING LOGIC
+CRITICAL: DETERMINISTIC VELOCITY & DURATION MATH
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The client wants this done in {target_months} months.
-- First, estimate total story points WITHOUT time constraint
-- Then calculate how many PARALLEL STREAMS are needed to fit within {target_working_days} working days
-- MORE parallel streams = MORE team members needed (but shorter calendar time)
-- FEWER parallel streams = FEWER team members (but longer calendar time)
-- Each stream needs its own set of roles (dev, QA, BA minimum)
-- Factor in: dependencies between features may prevent full parallelization
+This data will be shared directly with the Client. ALL math must be verifiable.
 
-RESOURCE SCALING RULES:
-- If 1 stream can finish in X days but target is X/2 days → need ~2 parallel streams → ~2x team size
-- If target is generous (>1.5x single-stream time) → use 1 stream, smaller team
-- Maximum practical parallel streams: 4 (beyond that, coordination overhead dominates)
-- Each additional stream adds: 1 Tech Lead overhead, 10% coordination tax
+STEP 1 — Total Story Points (TSP): Sum ALL feature story points. FIXED number.
+STEP 2 — Total Sequential Days (TSD): Sum ALL feature days. days = story_points.
+STEP 3 — Parallel Streams: streams = ceil(TSD / {target_working_days}). Max 4. +10% overhead per extra stream.
+STEP 4 — Team per Stream: 1 TL + 2 PP + 1 QA + 1 BA. Plus 1 PgM cross-stream.
+STEP 5 — Velocity: team_velocity_per_sprint = (streams × 2 devs) × 8 pts/dev/sprint
+  HARD RULE: No sprint can exceed team_velocity_per_sprint.
+STEP 6 — Duration: total_sprints = ceil(TSP / velocity). total_days = sprints × 10.
+  RULE: If 1 stream → total_working_days MUST = TSD.
 
+VALIDATION (verify before responding):
+□ sum(feature points) == total_story_points == timeline.total_story_points
+□ sum(feature days) == total_working_days_sequential == parallel_stream_analysis.single_stream_days
+□ velocity == (streams × 2) × 8
+□ Every sprint: points_in_sprint <= velocity
+□ sum(sprint points) == total_story_points
+□ If 1 stream: total_working_days == sequential days
+
+EXAMPLE: 10 features, 65 pts, target 44 days
+→ streams = ceil(65/44) = 2 → devs = 4 → velocity = 32/sprint
+→ sprints = ceil(65/32) = 3 → days = 30 → with overhead = 33 ✓
+
+DO NOT: Invent velocity, show inconsistent totals, exceed sprint capacity, or deviate from formula.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Analyze ALL features and return ONLY valid JSON (no markdown, no backticks) with this EXACT structure:
@@ -2084,16 +2120,33 @@ ESTIMATION RULES:
 16. Ensure resource_loading has entries for day 1, 10, 20, 30... up to total_working_days
 17. gantt_phases must include: Planning, Setup/CI-CD, Development (grouped by sprint), Testing/QA, each UAT, Pilot, Hypercare
 18. Parallel stream analysis must show: what if 1 stream vs recommended streams"""
-    
+   
 @app.post("/feature_roadmap/push_jira/{project_key}")
 def push_feature_roadmap_to_jira(project_key: str, req: JiraPushRequest, creds: dict = Depends(get_jira_creds)):
     sp_field = get_story_point_field(creds)
+    epic_name_field = get_epic_name_field(creds)  # Discover dynamically
     created = []
     errors = []
 
-    for epic in req.epics:
+    # Get base URL for issue links
+    base_url = ""
+    if creds.get("auth_type") == "basic":
+        base_url = f"https://{creds['domain']}"
+    else:
+        server_info = jira_request("GET", "serverInfo", creds)
+        if server_info is not None and server_info.status_code == 200:
+            base_url = server_info.json().get("baseUrl", "")
+
+    print(f"\n{'='*60}", flush=True)
+    print(f"📤 PUSH TO JIRA: {len(req.epics)} epics for {project_key}", flush=True)
+    print(f"   SP Field: {sp_field} | Epic Name Field: {epic_name_field}", flush=True)
+    print(f"{'='*60}\n", flush=True)
+
+    for epic_idx, epic in enumerate(req.epics):
         epic_name = epic.get("epic_name", "Unnamed Epic")
         epic_desc = epic.get("epic_description", "")
+
+        print(f"  [{epic_idx+1}/{len(req.epics)}] Creating Epic: {epic_name}", flush=True)
 
         epic_payload = {
             "fields": {
@@ -2101,73 +2154,180 @@ def push_feature_roadmap_to_jira(project_key: str, req: JiraPushRequest, creds: 
                 "summary": epic_name,
                 "description": {
                     "type": "doc", "version": 1,
-                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": epic_desc}]}]
+                    "content": [{"type": "paragraph", "content": [{"type": "text", "text": epic_desc or "AI Generated Epic"}]}]
                 },
                 "issuetype": {"name": "Epic"},
             }
         }
-        for epic_name_field in ["customfield_10011", "customfield_10004"]:
-            try: epic_payload["fields"][epic_name_field] = epic_name
-            except: pass
 
+        # Only set Epic Name field if we discovered it AND it's not the SP field
+        if epic_name_field and epic_name_field != sp_field:
+            epic_payload["fields"][epic_name_field] = epic_name
+
+        # ═══ ATTEMPT EPIC CREATION WITH FALLBACK ═══
         epic_res = jira_request("POST", "issue", creds, epic_payload)
+
+        # If Epic type fails, try without Epic Name field
+        if (not epic_res or epic_res.status_code not in [200, 201]) and epic_name_field:
+            print(f"    ⚠️ Epic creation failed with epic name field, retrying without it...", flush=True)
+            epic_payload["fields"].pop(epic_name_field, None)
+            epic_res = jira_request("POST", "issue", creds, epic_payload)
+
+        # If Epic type doesn't exist, fall back to Story
         if not epic_res or epic_res.status_code not in [200, 201]:
-            error_detail = ""
-            if epic_res:
-                try: error_detail = epic_res.json()
-                except: error_detail = epic_res.text[:200]
-            errors.append({"epic": epic_name, "error": f"Failed to create epic: {error_detail}"})
+            print(f"    ⚠️ Epic type failed, falling back to Story type...", flush=True)
+            epic_payload["fields"]["issuetype"]["name"] = "Story"
+            epic_payload["fields"].pop(epic_name_field, None)  # Story doesn't need epic name
+            epic_res = jira_request("POST", "issue", creds, epic_payload)
+
+        # Last resort: Task
+        if not epic_res or epic_res.status_code not in [200, 201]:
+            print(f"    ⚠️ Story type failed, falling back to Task type...", flush=True)
+            epic_payload["fields"]["issuetype"]["name"] = "Task"
+            epic_res = jira_request("POST", "issue", creds, epic_payload)
+
+        if not epic_res or epic_res.status_code not in [200, 201]:
+            error_detail = extract_jira_error(epic_res)
+            print(f"    ❌ FAILED to create epic '{epic_name}': {error_detail}", flush=True)
+            errors.append({"epic": epic_name, "error": f"Failed to create: {error_detail}"})
             continue
 
         epic_key = epic_res.json().get("key", "UNKNOWN")
         epic_id = epic_res.json().get("id", "")
+        actual_type = epic_payload["fields"]["issuetype"]["name"]
+        epic_url = f"{base_url}/browse/{epic_key}" if base_url else ""
+        print(f"    ✅ Created {actual_type}: {epic_key}", flush=True)
+
         created_stories = []
 
-        for story in epic.get("stories", []):
+        for story_idx, story in enumerate(epic.get("stories", [])):
+            story_summary = story.get("summary", "Untitled Story")
+            print(f"      [{story_idx+1}] Creating Story: {story_summary[:60]}...", flush=True)
+
             story_desc_text = story.get("description", "")
             desc_content = []
             for paragraph in story_desc_text.split("\n"):
                 if paragraph.strip():
-                    desc_content.append({"type": "paragraph", "content": [{"type": "text", "text": paragraph.strip()}]})
+                    desc_content.append({
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": paragraph.strip()}]
+                    })
 
             story_payload = {
                 "fields": {
                     "project": {"key": project_key},
-                    "summary": story.get("summary", "Untitled Story"),
+                    "summary": story_summary,
                     "description": {
                         "type": "doc", "version": 1,
-                        "content": desc_content if desc_content else [{"type": "paragraph", "content": [{"type": "text", "text": "No description"}]}]
+                        "content": desc_content if desc_content else [
+                            {"type": "paragraph", "content": [{"type": "text", "text": "No description"}]}
+                        ]
                     },
                     "issuetype": {"name": "Story"},
                     "priority": {"name": story.get("priority", "Medium")},
                 }
             }
-            if epic_id:
+
+            # Link to parent Epic (only if parent was actually created as Epic)
+            if epic_id and actual_type == "Epic":
                 story_payload["fields"]["parent"] = {"id": epic_id}
-            pts = story.get("story_points", 0)
+
+            # Set story points ONLY if field is known and value is valid
+            pts = safe_float(story.get("story_points", 0))
             if pts > 0 and sp_field:
-                story_payload["fields"][sp_field] = float(pts)
+                story_payload["fields"][sp_field] = pts
 
             story_res = jira_request("POST", "issue", creds, story_payload)
+
+            # If Story fails with SP field, retry without it
+            if (not story_res or story_res.status_code not in [200, 201]) and pts > 0:
+                print(f"        ⚠️ Story creation failed, retrying without SP in payload...", flush=True)
+                story_payload["fields"].pop(sp_field, None)
+                story_res = jira_request("POST", "issue", creds, story_payload)
+
+            # Fallback to Task
+            if not story_res or story_res.status_code not in [200, 201]:
+                print(f"        ⚠️ Story type failed, falling back to Task...", flush=True)
+                story_payload["fields"]["issuetype"]["name"] = "Task"
+                story_payload["fields"].pop("parent", None)  # Task may not support parent
+                story_res = jira_request("POST", "issue", creds, story_payload)
+
             if story_res and story_res.status_code in [200, 201]:
                 story_key = story_res.json().get("key", "UNKNOWN")
-                created_stories.append({"key": story_key, "summary": story.get("summary", ""), "points": pts})
-            else:
-                error_detail = ""
-                if story_res:
-                    try: error_detail = story_res.json()
-                    except: error_detail = story_res.text[:200]
-                errors.append({"epic": epic_name, "story": story.get("summary", ""), "error": f"Failed: {error_detail}"})
+                print(f"        ✅ Created: {story_key}", flush=True)
 
-        created.append({"epic_key": epic_key, "epic_name": epic_name, "stories_created": len(created_stories), "stories": created_stories})
+                # Set story points via separate PUT if not set in create
+                if pts > 0 and sp_field not in story_payload.get("fields", {}):
+                    pts_res = jira_request("PUT", f"issue/{story_key}", creds, {"fields": {sp_field: pts}})
+                    if pts_res and pts_res.status_code in [200, 204]:
+                        print(f"        📊 Set {pts} pts on {story_key}", flush=True)
+
+                story_url = f"{base_url}/browse/{story_key}" if base_url else ""
+                created_stories.append({
+                    "key": story_key,
+                    "summary": story_summary,
+                    "points": pts,
+                    "url": story_url
+                })
+            else:
+                error_detail = extract_jira_error(story_res)
+                print(f"        ❌ FAILED: {story_summary[:50]} — {error_detail}", flush=True)
+                errors.append({
+                    "epic": epic_name,
+                    "story": story_summary,
+                    "error": f"Failed: {error_detail}"
+                })
+
+        created.append({
+            "epic_key": epic_key,
+            "epic_name": epic_name,
+            "epic_url": epic_url,
+            "stories_created": len(created_stories),
+            "stories": created_stories
+        })
+
+    total_epics = len(created)
+    total_stories = sum(e["stories_created"] for e in created)
+    print(f"\n{'='*60}", flush=True)
+    print(f"📤 PUSH COMPLETE: {total_epics} epics, {total_stories} stories, {len(errors)} errors", flush=True)
+    print(f"{'='*60}\n", flush=True)
 
     return {
-        "success": True,
-        "created_epics": len(created),
-        "created_stories": sum(e["stories_created"] for e in created),
+        "success": total_epics > 0 or total_stories > 0,
+        "created_epics": total_epics,
+        "created_stories": total_stories,
         "details": created,
         "errors": errors
     }
+
+EPIC_NAME_FIELD_CACHE = {}
+
+def get_epic_name_field(creds):
+    """Discover the correct Epic Name field ID for this Jira instance."""
+    domain_key = creds.get('domain') or creds.get('cloud_id')
+    if domain_key in EPIC_NAME_FIELD_CACHE:
+        return EPIC_NAME_FIELD_CACHE[domain_key]
+
+    res = jira_request("GET", "field", creds)
+    if res is not None and res.status_code == 200:
+        fields = res.json()
+        # Look for Epic Name field specifically
+        for f in fields:
+            name_lower = f.get('name', '').lower()
+            if name_lower == 'epic name':
+                EPIC_NAME_FIELD_CACHE[domain_key] = f['id']
+                print(f"[PUSH] Discovered Epic Name field: {f['id']}", flush=True)
+                return f['id']
+        # Fallback: look for Epic Link or similar
+        for f in fields:
+            if 'epic' in f.get('name', '').lower() and 'name' in f.get('name', '').lower():
+                EPIC_NAME_FIELD_CACHE[domain_key] = f['id']
+                print(f"[PUSH] Discovered Epic Name field (fallback): {f['id']}", flush=True)
+                return f['id']
+
+    # Return None if not found — we'll skip setting it
+    EPIC_NAME_FIELD_CACHE[domain_key] = None
+    return None
 
 @app.post("/feature_roadmap/download_xlsx")
 def download_feature_roadmap_xlsx(req: XLSXDownloadRequest):

@@ -2824,7 +2824,7 @@
                                     <table className="w-full text-left border-collapse whitespace-nowrap">
                                         <thead>
                                             <tr style={{ background: 'var(--bg-body)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)' }} className="text-[11px] uppercase tracking-widest">
-                                                <th className="p-5 font-black" style={{ borderRight: '1px solid var(--border)' }}>Assignee</th>
+                                                <th className="p-5 font-black" style={{ borderRight: '1px solid var(--border)', width: '200px', minWidth: '150px' }}>Assignee</th>
                                                 <th className="p-5 font-black text-center" style={{ borderRight: '1px solid var(--border)' }}>Original Commitment</th>
                                                 <th className="p-5 font-black w-1/3" style={{ borderRight: '1px solid var(--border)' }}>Original Scope (Jira IDs)</th>
                                                 <th className="p-5 font-black text-center" style={{ borderRight: '1px solid var(--border)' }}>Mid-Sprint Variance</th>
@@ -2836,10 +2836,12 @@
                                         <tbody className="text-sm font-medium" style={{ color: 'var(--text-main)' }}>
                                             {dynamicsData.map(row => (
                                                 <tr key={row.user} className="hover:bg-bg-hover transition-colors" style={{ borderBottom: '1px solid var(--border)' }}>
-                                                    <td className="p-5 flex items-center gap-3" style={{ borderRight: '1px solid var(--border)' }}>
-                                                        {row.avatar ? <img src={row.avatar} className="w-8 h-8 rounded-full border" style={{ borderColor: 'var(--border)' }} /> : <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md" style={{ background: 'var(--accent-gradient)' }}>{row.user.charAt(0)}</div>}
-                                                        <span className="font-bold tracking-wide">{row.user}</span>
-                                                    </td>
+                                                    <td className="p-5" style={{ borderRight: '1px solid var(--border)', maxWidth: '200px' }}>
+    <div className="flex items-center gap-3 min-w-0">
+        {row.avatar ? <img src={row.avatar} className="w-8 h-8 rounded-full border shrink-0" style={{ borderColor: 'var(--border)' }} /> : <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md shrink-0" style={{ background: 'var(--accent-gradient)' }}>{row.user.charAt(0)}</div>}
+        <span className="font-bold tracking-wide truncate" title={row.user}>{row.user}</span>
+    </div>
+</td>
                                                     <td className="p-5 text-center font-black text-lg" style={{ borderRight: '1px solid var(--border)' }}>{row.originalPts}</td>
                                                     <td className="p-5" style={{ borderRight: '1px solid var(--border)' }}>
                                                         <div className="flex flex-wrap gap-2">
