@@ -4411,12 +4411,14 @@ function RoadmapView({ project, setIsLoading }) {
             useEffect(() => {
                 if (phase !== 'results' || !pokerResults.length) return;
                 const result = pokerResults[currentResultIdx];
-                if (!result?.votes) return;
+                if (!result || !Array.isArray(result.votes) || !result.votes.length) return;
                 setRevealedAgents(new Set()); setShowSuperAgent(false);
                 let i = 0;
+                const totalVotes = result.votes.length;
                 const iv = setInterval(() => {
-                    if (i < result.votes.length) {
-                        setRevealedAgents(prev => new Set([...prev, result.votes[i].agent_id]));
+                    if (i < totalVotes) {
+                        const agentId = result.votes[i]?.agent_id;
+                        if (agentId) setRevealedAgents(prev => new Set([...prev, agentId]));
                         i++;
                     } else { setShowSuperAgent(true); clearInterval(iv); }
                 }, 400);
@@ -4442,8 +4444,8 @@ function RoadmapView({ project, setIsLoading }) {
             const resetAll = () => { setPhase('setup'); setPokerResults([]); setCurrentResultIdx(0); setRevealedAgents(new Set()); setShowSuperAgent(false); setAdjustments({}); setPushResults(null); setError(''); };
 
             const cr = pokerResults[currentResultIdx];
-            const votes = cr?.votes || [];
-            const sa = cr?.super_agent;
+            const votes = Array.isArray(cr?.votes) ? cr.votes : [];
+            const sa = cr?.super_agent || null;
 
             const pokerStyles = `
                 .pkr-hdr{background:linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%);border-bottom:2px solid rgba(251,191,36,0.3)}
@@ -4517,7 +4519,7 @@ function RoadmapView({ project, setIsLoading }) {
                                             </div>
                                         </div>
                                         {revealed
-                                            ? <div style={{width:'48px',height:'56px',borderRadius:'8px',fontWeight:900,fontSize:'20px',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#fbbf24,#ea580c)',color:'#000',boxShadow:'0 4px 15px rgba(251,191,36,0.3)'}}>{v.points}</div>
+                                            ? <div style={{width:'48px',height:'56px',borderRadius:'8px',fontWeight:900,fontSize:'20px',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#fbbf24,#ea580c)',color:'#000',boxShadow:'0 4px 15px rgba(251,191,36,0.3)'}}>{v.points || '?'}</div>
                                             : <div style={{width:'48px',height:'56px',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#334155,#1e293b)',border:'1px solid #475569',color:'#475569',fontSize:'18px'}}>?</div>}
                                     </div>
                                     {revealed && <>
@@ -4537,13 +4539,13 @@ function RoadmapView({ project, setIsLoading }) {
                                     <p className="text-xs text-text-muted">Consensus: {sa.consensus_type || 'majority'} {sa.discussion_highlights ? `| ${sa.discussion_highlights}` : ''}</p>
                                 </div>
                                 <div style={{textAlign:'center'}}>
-                                    <div style={{width:'80px',height:'96px',borderRadius:'12px',background:'linear-gradient(135deg,#fbbf24,#ea580c)',color:'#000',fontWeight:900,fontSize:'36px',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 30px rgba(251,191,36,0.3)'}}>{sa.final_points}</div>
+                                    <div style={{width:'80px',height:'96px',borderRadius:'12px',background:'linear-gradient(135deg,#fbbf24,#ea580c)',color:'#000',fontWeight:900,fontSize:'36px',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 30px rgba(251,191,36,0.3)'}}>{sa.final_points || '?'}</div>
                                     <div style={{fontSize:'11px',color:'rgba(251,191,36,0.8)',fontWeight:700,marginTop:'4px'}}>FINAL</div>
                                 </div>
                             </div>
-                            <p className="text-sm" style={{color:'#cbd5e1',lineHeight:'1.6',marginBottom:'12px'}}>{sa.rationale}</p>
-                            {sa.key_assumptions && <div className="flex flex-wrap gap-2">
-                                {sa.key_assumptions.map((a, i) => <span key={i} style={{fontSize:'10px',padding:'4px 10px',borderRadius:'99px',background:'rgba(30,41,59,0.8)',color:'#94a3b8',fontWeight:600,border:'1px solid rgba(71,85,105,0.5)'}}>{a}</span>)}
+                            <p className="text-sm" style={{color:'#cbd5e1',lineHeight:'1.6',marginBottom:'12px'}}>{sa.rationale || 'No rationale provided.'}</p>
+                            {Array.isArray(sa.key_assumptions) && sa.key_assumptions.length > 0 && <div className="flex flex-wrap gap-2">
+                                {sa.key_assumptions.map((a, i) => <span key={i} style={{fontSize:'10px',padding:'4px 10px',borderRadius:'99px',background:'rgba(30,41,59,0.8)',color:'#94a3b8',fontWeight:600,border:'1px solid rgba(71,85,105,0.5)'}}>{String(a)}</span>)}
                             </div>}
                             {sa.split_recommendation && <div style={{marginTop:'12px',padding:'12px',borderRadius:'8px',background:'rgba(59,130,246,0.1)',border:'1px solid rgba(59,130,246,0.3)',color:'#60a5fa',fontSize:'12px',fontWeight:600}}>✂️ Split: {sa.split_recommendation}</div>}
                         </div>}
@@ -4552,8 +4554,8 @@ function RoadmapView({ project, setIsLoading }) {
                             <h4 style={{fontSize:'11px',fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'1px',marginBottom:'12px'}}>Vote Distribution</h4>
                             <div className="flex items-end gap-1" style={{height:'64px'}}>
                                 {FIB.map(pt => {
-                                    const count = votes.filter(v => v.points === pt).length;
-                                    const mx = Math.max(...FIB.map(p => votes.filter(v => v.points === p).length), 1);
+                                    const count = votes.filter(v => Number(v.points) === pt).length;
+                                    const mx = Math.max(...FIB.map(p => votes.filter(v => Number(v.points) === p).length), 1);
                                     return (<div key={pt} className="flex-1 flex flex-col items-center gap-1">
                                         {count > 0 && <span style={{fontSize:'10px',fontWeight:700,color:'#fbbf24'}}>{count}</span>}
                                         <div style={{width:'100%',borderRadius:'4px 4px 0 0',transition:'all 0.3s',height: count > 0 ? `${(count/mx)*100}%` : '4px',minHeight:'4px',background: count > 0 ? 'linear-gradient(to top,#f59e0b,#fbbf24)' : 'rgba(30,41,59,0.8)'}}></div>
@@ -4569,12 +4571,12 @@ function RoadmapView({ project, setIsLoading }) {
                                 <div>
                                     <label style={{fontSize:'10px',color:'#64748b',textTransform:'uppercase',fontWeight:700,display:'block',marginBottom:'4px'}}>Final Points</label>
                                     <div className="flex gap-1.5">
-                                        {FIB.map(pt => <button key={pt} onClick={() => setAdjustments(prev => ({...prev, [cr.story_key]: {...prev[cr.story_key], points: pt}}))} style={{width:'36px',height:'44px',borderRadius:'8px',fontWeight:700,fontSize:'14px',cursor:'pointer',transition:'all 0.3s',border: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? 'none' : '1px solid rgba(71,85,105,0.5)',background: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? 'linear-gradient(135deg,#fbbf24,#ea580c)' : 'rgba(30,41,59,0.8)',color: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? '#000' : '#94a3b8',boxShadow: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? '0 4px 15px rgba(251,191,36,0.3)' : 'none'}}>{pt}</button>)}
+                                        {FIB.map(pt => { const curPts = Number(adjustments[cr?.story_key]?.points || sa?.final_points || 0); return <button key={pt} onClick={() => setAdjustments(prev => ({...prev, [cr.story_key]: {...(prev[cr.story_key] || {}), points: pt}}))} style={{width:'36px',height:'44px',borderRadius:'8px',fontWeight:700,fontSize:'14px',cursor:'pointer',transition:'all 0.3s',border: curPts === pt ? 'none' : '1px solid rgba(71,85,105,0.5)',background: curPts === pt ? 'linear-gradient(135deg,#fbbf24,#ea580c)' : 'rgba(30,41,59,0.8)',color: curPts === pt ? '#000' : '#94a3b8',boxShadow: curPts === pt ? '0 4px 15px rgba(251,191,36,0.3)' : 'none'}}>{pt}</button>; })}
                                     </div>
                                 </div>
                                 <div className="flex-1">
                                     <label style={{fontSize:'10px',color:'#64748b',textTransform:'uppercase',fontWeight:700,display:'block',marginBottom:'4px'}}>Comment (optional)</label>
-                                    <input type="text" placeholder="Add a note for the team..." value={adjustments[cr?.story_key]?.comment || ''} onChange={e => setAdjustments(prev => ({...prev, [cr.story_key]: {...prev[cr.story_key], comment: e.target.value}}))} style={{width:'100%',padding:'8px 12px',borderRadius:'8px',background:'rgba(30,41,59,0.8)',border:'1px solid rgba(71,85,105,0.5)',color:'#fff',fontSize:'13px',outline:'none'}} />
+                                    <input type="text" placeholder="Add a note for the team..." value={adjustments[cr?.story_key]?.comment || ''} onChange={e => setAdjustments(prev => ({...prev, [cr.story_key]: {...(prev[cr.story_key] || {}), comment: e.target.value}}))} style={{width:'100%',padding:'8px 12px',borderRadius:'8px',background:'rgba(30,41,59,0.8)',border:'1px solid rgba(71,85,105,0.5)',color:'#fff',fontSize:'13px',outline:'none'}} />
                                 </div>
                             </div>
                         </div>}
