@@ -650,6 +650,7 @@
                             </div>
                             <nav className="space-y-2">
                                 <NavBtn id="feature_roadmap" icon="FileText" label="Feature Roadmap" active={view} set={setView} disabled={isGlobalLoading}/>
+                                <NavBtn id="planning_poker" icon="Users" label="Planning Poker" active={view} set={setView} disabled={isGlobalLoading}/>
                                 <NavBtn id="smartdeck" icon="Layers" label="AI Sprint Deck" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="dashboard" icon="Activity" label="Command Center" active={view} set={setView} disabled={isGlobalLoading} />
                                 <NavBtn id="timeline" icon="Zap" label="Sprint Dynamics & Build" active={view} set={setView} disabled={isGlobalLoading} />
@@ -668,6 +669,7 @@
                         {activeProject ? (
                             <div className="flex-1 min-h-0 relative h-full">
                                 {view === 'feature_roadmap' && <FeatureRoadmapView project={activeProject} setIsLoading={setIsGlobalLoading} />}
+                                {view === 'planning_poker' && <PlanningPokerView project={activeProject} setIsLoading={setIsGlobalLoading} />}
                                 {view === 'smartdeck' && <SmartDeckView project={activeProject} endpoint={`/super_deck/${activeProject}?sprint_id=active`} isFullScreenLayout={true} />}
                                 {view === 'dashboard' && <DashboardView project={activeProject} role={userRole} setIsLoading={setIsGlobalLoading} isGlobalLoading={isGlobalLoading} />}
                                 {view === 'roadmap' && <RoadmapView project={activeProject} setIsLoading={setIsGlobalLoading} />}
@@ -4335,6 +4337,429 @@ function RoadmapView({ project, setIsLoading }) {
                     )}
                 </div>
             );
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        //  PLANNING POKER VIEW — Multi-Agent AI Estimation
+        // ═══════════════════════════════════════════════════════════
+        function PlanningPokerView({ project, setIsLoading }) {
+            const [phase, setPhase] = React.useState('setup'); // setup | playing | results
+            const [source, setSource] = React.useState('sprint');
+            const [sprints, setSprints] = React.useState([]);
+            const [selectedSprint, setSelectedSprint] = React.useState('');
+            const [stories, setStories] = React.useState([]);
+            const [agents, setAgents] = React.useState([]);
+            const [selectedKeys, setSelectedKeys] = React.useState(new Set());
+            const [loading, setLoading] = React.useState(false);
+            const [loadingStories, setLoadingStories] = React.useState(false);
+            const [pokerResults, setPokerResults] = React.useState([]);
+            const [currentResultIdx, setCurrentResultIdx] = React.useState(0);
+            const [revealedAgents, setRevealedAgents] = React.useState(new Set());
+            const [showSuperAgent, setShowSuperAgent] = React.useState(false);
+            const [adjustments, setAdjustments] = React.useState({});
+            const [pushing, setPushing] = React.useState(false);
+            const [pushResults, setPushResults] = React.useState(null);
+            const [playingStoryIdx, setPlayingStoryIdx] = React.useState(0);
+            const [error, setError] = React.useState('');
+
+            // Fetch sprints
+            React.useEffect(() => {
+                if (!project) return;
+                fetch(`${BASE}/sprints/${project}`, { headers: authHeaders() })
+                    .then(r => r.json()).then(d => setSprints(Array.isArray(d) ? d : []))
+                    .catch(() => setSprints([]));
+            }, [project]);
+
+            // Fetch stories when source/sprint changes
+            const loadStories = () => {
+                if (!project) return;
+                setLoadingStories(true);
+                setError('');
+                const params = new URLSearchParams({ source });
+                if (source === 'sprint' && selectedSprint) params.append('sprint_id', selectedSprint);
+                fetch(`${BASE}/planning_poker/${project}/stories?${params}`, { headers: authHeaders() })
+                    .then(r => r.json()).then(d => {
+                        setStories(d.stories || []);
+                        setAgents(d.agents || []);
+                        setSelectedKeys(new Set());
+                        setLoadingStories(false);
+                    }).catch(e => { setError('Failed to load stories'); setLoadingStories(false); });
+            };
+
+            React.useEffect(() => { loadStories(); }, [source, selectedSprint, project]);
+
+            const toggleStory = (key) => {
+                setSelectedKeys(prev => {
+                    const next = new Set(prev);
+                    next.has(key) ? next.delete(key) : next.add(key);
+                    return next;
+                });
+            };
+
+            const selectAll = () => {
+                if (selectedKeys.size === stories.length) setSelectedKeys(new Set());
+                else setSelectedKeys(new Set(stories.map(s => s.key)));
+            };
+
+            // ── Run Planning Poker ──
+            const startPoker = async () => {
+                const selected = stories.filter(s => selectedKeys.has(s.key));
+                if (!selected.length) return;
+                setLoading(true);
+                setPhase('playing');
+                setPokerResults([]);
+                setCurrentResultIdx(0);
+                setRevealedAgents(new Set());
+                setShowSuperAgent(false);
+                setPlayingStoryIdx(0);
+                setError('');
+
+                try {
+                    const res = await fetch(`${BASE}/planning_poker/${project}/play`, {
+                        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ stories: selected })
+                    });
+                    const data = await res.json();
+                    if (data.error) { setError(data.error); setPhase('setup'); setLoading(false); return; }
+                    setPokerResults(data.results || []);
+                    setAgents(data.agents || agents);
+                    // Initialize adjustments with super agent points
+                    const adj = {};
+                    (data.results || []).forEach(r => {
+                        if (r.super_agent) adj[r.story_key] = { points: r.super_agent.final_points, comment: '' };
+                    });
+                    setAdjustments(adj);
+                    setPhase('results');
+                } catch (e) {
+                    setError('Planning Poker failed: ' + e.message);
+                    setPhase('setup');
+                }
+                setLoading(false);
+            };
+
+            // ── Animate reveals ──
+            React.useEffect(() => {
+                if (phase !== 'results' || !pokerResults.length) return;
+                const result = pokerResults[currentResultIdx];
+                if (!result || !result.votes) return;
+                setRevealedAgents(new Set());
+                setShowSuperAgent(false);
+                let i = 0;
+                const interval = setInterval(() => {
+                    if (i < result.votes.length) {
+                        setRevealedAgents(prev => new Set([...prev, result.votes[i].agent_id]));
+                        i++;
+                    } else {
+                        setShowSuperAgent(true);
+                        clearInterval(interval);
+                    }
+                }, 400);
+                return () => clearInterval(interval);
+            }, [phase, currentResultIdx, pokerResults]);
+
+            // ── Push to Jira ──
+            const pushToJira = async () => {
+                setPushing(true);
+                const updates = Object.entries(adjustments).map(([key, adj]) => ({
+                    key, points: adj.points,
+                    comment: `🃏 AI Planning Poker Estimate: ${adj.points} pts\n${adj.comment || ''}\n\n${pokerResults.find(r => r.story_key === key)?.super_agent?.rationale || ''}`.trim()
+                }));
+                try {
+                    const res = await fetch(`${BASE}/planning_poker/${project}/push_jira`, {
+                        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ updates })
+                    });
+                    const data = await res.json();
+                    setPushResults(data.results || []);
+                } catch (e) { setError('Push failed: ' + e.message); }
+                setPushing(false);
+            };
+
+            const resetAll = () => {
+                setPhase('setup'); setPokerResults([]); setCurrentResultIdx(0);
+                setRevealedAgents(new Set()); setShowSuperAgent(false);
+                setAdjustments({}); setPushResults(null); setError('');
+            };
+
+            const currentResult = pokerResults[currentResultIdx];
+
+            // ── Confidence badge ──
+            const ConfBadge = ({ level }) => {
+                const colors = { high: 'bg-green-500/20 text-green-400', medium: 'bg-yellow-500/20 text-yellow-400', low: 'bg-red-500/20 text-red-400' };
+                return React.createElement('span', { className: `text-xs px-2 py-0.5 rounded-full font-bold ${colors[level] || colors.medium}` }, (level || 'medium').toUpperCase());
+            };
+
+            // ── Fibonacci chip ──
+            const FibChip = ({ pts, size = 'md', glow }) => {
+                const sizes = { sm: 'w-8 h-10 text-sm', md: 'w-12 h-16 text-xl', lg: 'w-16 h-22 text-3xl' };
+                return React.createElement('div', {
+                    className: `${sizes[size]} rounded-xl font-black flex items-center justify-center shadow-lg transition-all duration-500 ${glow ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-black ring-2 ring-amber-300/50' : 'bg-gradient-to-br from-slate-700 to-slate-800 text-white border border-slate-600'}`
+                }, pts);
+            };
+
+            // ═══ SETUP PHASE ═══
+            if (phase === 'setup') return React.createElement('div', { className: 'h-full overflow-y-auto' },
+                React.createElement('style', null, `
+                    .poker-header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); border-bottom: 2px solid rgba(251,191,36,0.3); }
+                    .poker-card { background: linear-gradient(145deg, rgba(30,41,59,0.8), rgba(15,23,42,0.9)); border: 1px solid rgba(148,163,184,0.15); transition: all 0.3s; }
+                    .poker-card:hover { border-color: rgba(251,191,36,0.4); transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
+                    .poker-card.selected { border-color: rgba(251,191,36,0.7); background: linear-gradient(145deg, rgba(30,41,59,0.95), rgba(251,191,36,0.05)); }
+                    .poker-btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; transition: all 0.3s; }
+                    .poker-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(245,158,11,0.4); }
+                    .poker-btn-primary:disabled { opacity: 0.4; transform: none; box-shadow: none; }
+                    .source-tab { padding: 10px 24px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 1px; }
+                    .source-tab.active { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; }
+                    .source-tab:not(.active) { background: rgba(51,65,85,0.5); color: #94a3b8; }
+                    .source-tab:not(.active):hover { background: rgba(71,85,105,0.6); color: #e2e8f0; }
+                    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+                    .loading-shimmer { background: linear-gradient(90deg, rgba(30,41,59,0.5) 25%, rgba(51,65,85,0.5) 50%, rgba(30,41,59,0.5) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+                `),
+                // Header
+                React.createElement('div', { className: 'poker-header rounded-2xl p-8 mb-6' },
+                    React.createElement('div', { className: 'flex items-center gap-4 mb-2' },
+                        React.createElement('div', { className: 'text-4xl' }, '🃏'),
+                        React.createElement('div', null,
+                            React.createElement('h1', { className: 'text-2xl font-black text-white tracking-tight' }, 'AI Planning Poker'),
+                            React.createElement('p', { className: 'text-slate-400 text-sm mt-1' }, '9 AI agents debate and estimate your stories using Fibonacci scale')
+                        )
+                    )
+                ),
+                // Source selector
+                React.createElement('div', { className: 'flex items-center gap-3 mb-6' },
+                    React.createElement('div', { className: `source-tab ${source === 'sprint' ? 'active' : ''}`, onClick: () => setSource('sprint') }, '🏃 Sprint'),
+                    React.createElement('div', { className: `source-tab ${source === 'backlog' ? 'active' : ''}`, onClick: () => setSource('backlog') }, '📋 Backlog'),
+                    source === 'sprint' && React.createElement('select', {
+                        value: selectedSprint, onChange: e => setSelectedSprint(e.target.value),
+                        className: 'ml-4 px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-semibold'
+                    },
+                        React.createElement('option', { value: '' }, 'Active Sprint'),
+                        ...sprints.map(s => React.createElement('option', { key: s.id, value: s.id }, `${s.name} (${s.state})`))
+                    ),
+                    React.createElement('div', { className: 'ml-auto flex items-center gap-3' },
+                        stories.length > 0 && React.createElement('button', { onClick: selectAll, className: 'text-xs text-amber-400 hover:text-amber-300 font-bold uppercase tracking-wider' },
+                            selectedKeys.size === stories.length ? '✕ Deselect All' : '☑ Select All'
+                        ),
+                        React.createElement('button', {
+                            onClick: startPoker, disabled: !selectedKeys.size || loading,
+                            className: 'poker-btn-primary px-6 py-3 rounded-xl text-sm flex items-center gap-2'
+                        }, loading ? '⏳ Running...' : `🃏 Start Poker (${selectedKeys.size})`)
+                    )
+                ),
+                error && React.createElement('div', { className: 'mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-semibold' }, error),
+                // Stories list
+                loadingStories ? React.createElement('div', { className: 'space-y-3' },
+                    ...[1,2,3,4].map(i => React.createElement('div', { key: i, className: 'loading-shimmer h-20 rounded-xl' }))
+                ) :
+                stories.length === 0 ? React.createElement('div', { className: 'text-center py-20 text-slate-500 text-lg font-semibold' }, 'No stories found. Try changing source or sprint.') :
+                React.createElement('div', { className: 'space-y-2' },
+                    ...stories.map(s => React.createElement('div', {
+                        key: s.key,
+                        onClick: () => toggleStory(s.key),
+                        className: `poker-card rounded-xl p-4 cursor-pointer flex items-center gap-4 ${selectedKeys.has(s.key) ? 'selected' : ''}`
+                    },
+                        React.createElement('div', { className: `w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${selectedKeys.has(s.key) ? 'bg-amber-500 border-amber-500 text-black' : 'border-slate-500'}` },
+                            selectedKeys.has(s.key) && React.createElement('span', { className: 'text-xs font-black' }, '✓')
+                        ),
+                        React.createElement('div', { className: 'flex-1 min-w-0' },
+                            React.createElement('div', { className: 'flex items-center gap-2' },
+                                React.createElement('span', { className: 'text-xs font-bold text-amber-400/80 font-mono' }, s.key),
+                                React.createElement('span', { className: `text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${s.issue_type === 'Bug' ? 'bg-red-500/20 text-red-400' : s.issue_type === 'Task' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}` }, s.issue_type),
+                                React.createElement('span', { className: 'text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 font-bold' }, s.priority)
+                            ),
+                            React.createElement('p', { className: 'text-white font-semibold text-sm mt-1 truncate' }, s.summary),
+                            s.description && React.createElement('p', { className: 'text-slate-500 text-xs mt-0.5 truncate' }, s.description.slice(0, 120))
+                        ),
+                        React.createElement('div', { className: 'text-right shrink-0' },
+                            React.createElement('div', { className: 'text-[10px] text-slate-500 uppercase font-bold' }, 'Current'),
+                            React.createElement('div', { className: `text-lg font-black ${s.current_points ? 'text-slate-300' : 'text-slate-600'}` }, s.current_points || '—')
+                        )
+                    ))
+                )
+            );
+
+            // ═══ RESULTS PHASE (also handles playing → results transition) ═══
+            if (phase === 'playing' && loading) return React.createElement('div', { className: 'h-full flex flex-col items-center justify-center gap-6' },
+                React.createElement('style', null, `
+                    @keyframes pokerSpin { 0% { transform: rotateY(0deg); } 100% { transform: rotateY(360deg); } }
+                    .poker-spinner { animation: pokerSpin 1.5s ease-in-out infinite; font-size: 64px; }
+                `),
+                React.createElement('div', { className: 'poker-spinner' }, '🃏'),
+                React.createElement('h2', { className: 'text-xl font-black text-white' }, 'AI Agents are debating...'),
+                React.createElement('p', { className: 'text-slate-400 text-sm' }, `Estimating ${selectedKeys.size} ${selectedKeys.size === 1 ? 'story' : 'stories'} with 9 expert agents`),
+                React.createElement('div', { className: 'flex gap-2 mt-4' },
+                    ...agents.slice(0, 9).map((a, i) => React.createElement('div', {
+                        key: a.id, className: 'w-10 h-10 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-lg',
+                        style: { animationDelay: `${i * 0.1}s` }
+                    }, a.emoji))
+                )
+            );
+
+            if ((phase === 'results' || phase === 'playing') && pokerResults.length > 0) {
+                const cr = pokerResults[currentResultIdx];
+                const votes = cr?.votes || [];
+                const sa = cr?.super_agent;
+
+                return React.createElement('div', { className: 'h-full overflow-y-auto' },
+                    React.createElement('style', null, `
+                        .poker-header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); border-bottom: 2px solid rgba(251,191,36,0.3); }
+                        @keyframes flipIn { 0% { transform: rotateY(90deg) scale(0.8); opacity: 0; } 100% { transform: rotateY(0deg) scale(1); opacity: 1; } }
+                        @keyframes superReveal { 0% { transform: scale(0.5); opacity: 0; } 50% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
+                        .vote-card { animation: flipIn 0.5s ease-out forwards; }
+                        .super-reveal { animation: superReveal 0.6s ease-out forwards; }
+                        .poker-btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; transition: all 0.3s; }
+                        .poker-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(245,158,11,0.4); }
+                        .poker-btn-primary:disabled { opacity: 0.4; transform: none; box-shadow: none; }
+                    `),
+                    // Header with story navigation
+                    React.createElement('div', { className: 'poker-header rounded-2xl p-6 mb-6' },
+                        React.createElement('div', { className: 'flex items-center justify-between' },
+                            React.createElement('div', { className: 'flex items-center gap-3' },
+                                React.createElement('span', { className: 'text-3xl' }, '🃏'),
+                                React.createElement('div', null,
+                                    React.createElement('h1', { className: 'text-xl font-black text-white' }, 'Planning Poker Results'),
+                                    React.createElement('p', { className: 'text-amber-400/80 text-sm font-bold font-mono' }, `${cr?.story_key} — ${cr?.story_summary}`)
+                                )
+                            ),
+                            React.createElement('div', { className: 'flex items-center gap-3' },
+                                pokerResults.length > 1 && React.createElement('div', { className: 'flex items-center gap-2' },
+                                    React.createElement('button', {
+                                        onClick: () => setCurrentResultIdx(Math.max(0, currentResultIdx - 1)),
+                                        disabled: currentResultIdx === 0,
+                                        className: 'w-8 h-8 rounded-lg bg-slate-700 text-white font-bold text-sm disabled:opacity-30 hover:bg-slate-600'
+                                    }, '‹'),
+                                    React.createElement('span', { className: 'text-sm text-slate-400 font-bold' }, `${currentResultIdx + 1}/${pokerResults.length}`),
+                                    React.createElement('button', {
+                                        onClick: () => setCurrentResultIdx(Math.min(pokerResults.length - 1, currentResultIdx + 1)),
+                                        disabled: currentResultIdx === pokerResults.length - 1,
+                                        className: 'w-8 h-8 rounded-lg bg-slate-700 text-white font-bold text-sm disabled:opacity-30 hover:bg-slate-600'
+                                    }, '›')
+                                ),
+                                React.createElement('button', { onClick: resetAll, className: 'text-xs text-slate-400 hover:text-white font-bold uppercase px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700' }, '← New Session')
+                            )
+                        )
+                    ),
+
+                    cr?.error ? React.createElement('div', { className: 'p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 font-semibold' }, `Error: ${cr.error}`) :
+
+                    React.createElement('div', null,
+                        // ── Agent Vote Cards Grid ──
+                        React.createElement('div', { className: 'grid grid-cols-3 gap-3 mb-6' },
+                            ...votes.map((v, idx) => {
+                                const agent = agents.find(a => a.id === v.agent_id) || {};
+                                const revealed = revealedAgents.has(v.agent_id);
+                                return React.createElement('div', {
+                                    key: v.agent_id,
+                                    className: `rounded-xl p-4 border transition-all duration-500 ${revealed ? 'vote-card bg-gradient-to-br from-slate-800/90 to-slate-900/90 border-slate-600/50' : 'bg-slate-900/50 border-slate-800'}`,
+                                    style: revealed ? { animationDelay: `${idx * 0.1}s` } : {}
+                                },
+                                    React.createElement('div', { className: 'flex items-center justify-between mb-3' },
+                                        React.createElement('div', { className: 'flex items-center gap-2' },
+                                            React.createElement('span', { className: 'text-xl' }, agent.emoji || '🤖'),
+                                            React.createElement('div', null,
+                                                React.createElement('div', { className: 'text-xs font-bold text-white' }, agent.name || v.agent_id),
+                                                React.createElement('div', { className: 'text-[10px] text-slate-500' }, agent.experience)
+                                            )
+                                        ),
+                                        revealed ? React.createElement('div', {
+                                            className: 'w-12 h-14 rounded-lg font-black text-xl flex items-center justify-center bg-gradient-to-br from-amber-400 to-orange-500 text-black shadow-lg shadow-amber-500/20'
+                                        }, v.points) :
+                                        React.createElement('div', { className: 'w-12 h-14 rounded-lg bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 flex items-center justify-center text-slate-600 text-lg' }, '?')
+                                    ),
+                                    revealed && React.createElement('div', null,
+                                        React.createElement('div', { className: 'flex items-center gap-2 mb-2' },
+                                            React.createElement(ConfBadge, { level: v.confidence })
+                                        ),
+                                        React.createElement('p', { className: 'text-xs text-slate-400 leading-relaxed' }, v.reasoning),
+                                        v.risks && React.createElement('p', { className: 'text-[10px] text-red-400/70 mt-1.5 italic' }, `⚠ ${v.risks}`)
+                                    )
+                                );
+                            })
+                        ),
+
+                        // ── Super Agent Verdict ──
+                        showSuperAgent && sa && React.createElement('div', { className: 'super-reveal rounded-2xl p-6 mb-6 bg-gradient-to-br from-amber-500/10 via-slate-900 to-amber-500/5 border-2 border-amber-500/30' },
+                            React.createElement('div', { className: 'flex items-center gap-4 mb-4' },
+                                React.createElement('div', { className: 'text-4xl' }, '🏆'),
+                                React.createElement('div', { className: 'flex-1' },
+                                    React.createElement('h3', { className: 'text-lg font-black text-amber-400' }, 'Super Agent Verdict'),
+                                    React.createElement('p', { className: 'text-xs text-slate-400' }, `Consensus: ${sa.consensus_type || 'majority'} | ${sa.discussion_highlights || ''}`)
+                                ),
+                                React.createElement('div', { className: 'text-center' },
+                                    React.createElement('div', { className: 'w-20 h-24 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-black font-black text-4xl flex items-center justify-center shadow-xl shadow-amber-500/30' }, sa.final_points),
+                                    React.createElement('div', { className: 'text-xs text-amber-400/80 font-bold mt-1' }, 'FINAL')
+                                )
+                            ),
+                            React.createElement('p', { className: 'text-sm text-slate-300 leading-relaxed mb-3' }, sa.rationale),
+                            sa.key_assumptions && React.createElement('div', { className: 'flex flex-wrap gap-2' },
+                                ...(sa.key_assumptions || []).map((a, i) => React.createElement('span', { key: i, className: 'text-[10px] px-2 py-1 rounded-full bg-slate-800 text-slate-400 font-semibold border border-slate-700' }, a))
+                            ),
+                            sa.split_recommendation && React.createElement('div', { className: 'mt-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold' }, `✂️ Split Recommendation: ${sa.split_recommendation}`)
+                        ),
+
+                        // ── Vote Distribution Bar ──
+                        showSuperAgent && votes.length > 0 && React.createElement('div', { className: 'rounded-xl p-4 bg-slate-900/50 border border-slate-800 mb-6' },
+                            React.createElement('h4', { className: 'text-xs font-bold text-slate-500 uppercase tracking-wider mb-3' }, 'Vote Distribution'),
+                            React.createElement('div', { className: 'flex items-end gap-1 h-16' },
+                                ...[1,2,3,5,8,13,21].map(pt => {
+                                    const count = votes.filter(v => v.points === pt).length;
+                                    const maxCount = Math.max(...[1,2,3,5,8,13,21].map(p => votes.filter(v => v.points === p).length), 1);
+                                    return React.createElement('div', { key: pt, className: 'flex-1 flex flex-col items-center gap-1' },
+                                        count > 0 && React.createElement('span', { className: 'text-[10px] font-bold text-amber-400' }, count),
+                                        React.createElement('div', {
+                                            className: `w-full rounded-t transition-all ${count > 0 ? 'bg-gradient-to-t from-amber-500 to-amber-400' : 'bg-slate-800'}`,
+                                            style: { height: count > 0 ? `${(count / maxCount) * 100}%` : '4px', minHeight: '4px' }
+                                        }),
+                                        React.createElement('span', { className: 'text-[10px] font-bold text-slate-500' }, pt)
+                                    );
+                                })
+                            )
+                        ),
+
+                        // ── User Adjustment Panel ──
+                        showSuperAgent && React.createElement('div', { className: 'rounded-xl p-5 bg-slate-900/70 border border-slate-700 mb-6' },
+                            React.createElement('h4', { className: 'text-sm font-black text-white mb-3' }, '✏️ Review & Adjust'),
+                            React.createElement('div', { className: 'flex items-center gap-4' },
+                                React.createElement('div', null,
+                                    React.createElement('label', { className: 'text-[10px] text-slate-500 uppercase font-bold block mb-1' }, 'Final Points'),
+                                    React.createElement('div', { className: 'flex gap-1.5' },
+                                        ...[1,2,3,5,8,13,21].map(pt => React.createElement('button', {
+                                            key: pt,
+                                            onClick: () => setAdjustments(prev => ({ ...prev, [cr.story_key]: { ...prev[cr.story_key], points: pt } })),
+                                            className: `w-9 h-11 rounded-lg font-bold text-sm transition-all ${(adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-black shadow-lg' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-amber-500/50'}`
+                                        }, pt))
+                                    )
+                                ),
+                                React.createElement('div', { className: 'flex-1' },
+                                    React.createElement('label', { className: 'text-[10px] text-slate-500 uppercase font-bold block mb-1' }, 'Comment (optional)'),
+                                    React.createElement('input', {
+                                        type: 'text', placeholder: 'Add a note for the team...',
+                                        value: adjustments[cr?.story_key]?.comment || '',
+                                        onChange: e => setAdjustments(prev => ({ ...prev, [cr.story_key]: { ...prev[cr.story_key], comment: e.target.value } })),
+                                        className: 'w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder-slate-600 focus:border-amber-500/50 focus:outline-none'
+                                    })
+                                )
+                            )
+                        ),
+
+                        // ── Push to Jira ──
+                        showSuperAgent && currentResultIdx === pokerResults.length - 1 && React.createElement('div', { className: 'flex items-center justify-between rounded-xl p-5 bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/30' },
+                            React.createElement('div', null,
+                                React.createElement('h4', { className: 'text-sm font-black text-green-400' }, '🚀 Push All Results to Jira'),
+                                React.createElement('p', { className: 'text-xs text-slate-400 mt-1' }, `${pokerResults.filter(r => !r.error).length} stories ready — points + AI reasoning as comments`)
+                            ),
+                            pushResults ? React.createElement('div', { className: 'text-sm font-bold text-green-400' },
+                                `✅ ${pushResults.filter(r => r.status === 'success').length}/${pushResults.length} pushed`
+                            ) :
+                            React.createElement('button', {
+                                onClick: pushToJira, disabled: pushing,
+                                className: 'poker-btn-primary px-6 py-3 rounded-xl text-sm'
+                            }, pushing ? '⏳ Pushing...' : '🚀 Push to Jira')
+                        )
+                    )
+                );
+            }
+
+            return null;
         }
 
         function StandupView() { return <div className="h-full flex items-center justify-center text-2xl font-black text-text-muted uppercase tracking-widest">Standup Bot Coming Soon</div>; }

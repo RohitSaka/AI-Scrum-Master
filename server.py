@@ -1151,6 +1151,164 @@ def save_team(project_key: str, payload: dict, creds: dict = Depends(get_jira_cr
     jira_request("PUT", f"project/{project_key.upper()}/properties/ig_agile_team", creds, team_data)
     return {"status": "saved", "count": len(team_members)}
 
+# ═══════════════════════════════════════════════════════════
+#  PLANNING POKER — Multi-Agent AI Estimation
+# ═══════════════════════════════════════════════════════════
+
+POKER_AGENTS = [
+    {"id": "senior_architect", "name": "Senior Architect", "role": "architect", "emoji": "🏗️", "experience": "15+ years", "bias": "infrastructure complexity, scalability concerns, design patterns", "persona": "You think about system design, API contracts, database schema, scalability, and non-functional requirements. You tend to estimate higher because you see hidden complexity others miss."},
+    {"id": "senior_dev", "name": "Senior Developer", "emoji": "👨‍💻", "role": "developer", "experience": "8+ years", "bias": "implementation reality, edge cases, code quality", "persona": "You focus on actual implementation effort including error handling, edge cases, testing, and code review. You give realistic estimates based on deep coding experience."},
+    {"id": "mid_dev", "name": "Mid-Level Developer", "emoji": "💻", "role": "developer", "experience": "4-5 years", "bias": "feature delivery, practical implementation", "persona": "You think about the happy path implementation and common patterns. You sometimes underestimate integration complexity but are accurate on straightforward features."},
+    {"id": "junior_dev", "name": "Junior Developer", "emoji": "🌱", "role": "developer", "experience": "1-2 years", "bias": "learning curve, asks clarifying questions", "persona": "You focus on what you understand and flag what seems unclear. You tend to underestimate because you don't yet see all the edge cases, but your fresh perspective catches assumptions others miss."},
+    {"id": "senior_qa", "name": "Senior QA Engineer", "emoji": "🔍", "role": "qa", "experience": "8+ years", "bias": "test coverage, regression risk, automation effort", "persona": "You think about test scenarios, regression testing, automation, edge cases, accessibility, and cross-browser testing. You add points for testing effort that devs often forget."},
+    {"id": "junior_qa", "name": "Junior QA Analyst", "emoji": "🧪", "role": "qa", "experience": "2-3 years", "bias": "manual testing, basic test cases", "persona": "You focus on manual test cases, basic happy path testing, and obvious negative scenarios. You estimate the testing effort you know."},
+    {"id": "ba", "name": "Business Analyst", "emoji": "📊", "role": "ba", "experience": "6+ years", "bias": "requirement clarity, stakeholder impact, acceptance criteria", "persona": "You evaluate requirement completeness and stakeholder communication overhead. Vague stories get higher estimates from you because unclear requirements always cause rework."},
+    {"id": "product_manager", "name": "Product Manager", "emoji": "🎯", "role": "pm", "experience": "7+ years", "bias": "user value, scope creep risk, priority alignment", "persona": "You think about user impact, MVP scope, and delivery timelines. You challenge over-engineering and push for lean estimates but respect technical complexity when justified."},
+    {"id": "scrum_master", "name": "Scrum Master", "emoji": "⚡", "role": "sm", "experience": "5+ years", "bias": "team velocity, historical data, sprint fit", "persona": "You compare against historical velocity and similar stories. You ensure estimates are consistent with past performance and flag stories that should be split."},
+]
+
+@app.get("/planning_poker/{project_key}/stories")
+def get_poker_stories(project_key: str, source: str = "sprint", sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
+    """Fetch stories for planning poker — from sprint or backlog."""
+    sp_field = get_story_point_field(creds)
+    if source == "backlog":
+        jql = f'project="{project_key}" AND statusCategory != Done AND (sprint is EMPTY OR sprint not in openSprints()) AND issuetype in (Story, Task, Bug) ORDER BY rank ASC'
+    elif sprint_id and sprint_id != "active":
+        jql = f'project="{project_key}" AND sprint={sprint_id} AND issuetype in (Story, Task, Bug) ORDER BY rank ASC'
+    else:
+        jql = f'project="{project_key}" AND sprint in openSprints() AND issuetype in (Story, Task, Bug) ORDER BY rank ASC'
+
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 50, "fields": ["summary", "description", "issuetype", "priority", "status", "assignee", "comment", sp_field]})
+    if res is None or res.status_code != 200:
+        return {"stories": [], "error": "Failed to fetch stories from Jira"}
+
+    stories = []
+    for i in res.json().get('issues', []):
+        f = i.get('fields', {})
+        desc = extract_adf_text(f.get('description', {}))[:1000] if f.get('description') else ""
+        comments = []
+        for c in (f.get('comment', {}).get('comments', []) or [])[-3:]:
+            comments.append(c.get('body', {}).get('content', [{}])[0].get('content', [{}])[0].get('text', '')[:200] if isinstance(c.get('body'), dict) else str(c.get('body', ''))[:200])
+        stories.append({
+            "key": i.get('key'),
+            "summary": f.get('summary', ''),
+            "description": desc,
+            "issue_type": (f.get('issuetype') or {}).get('name', 'Story'),
+            "priority": (f.get('priority') or {}).get('name', 'Medium'),
+            "status": (f.get('status') or {}).get('name', 'To Do'),
+            "assignee": (f.get('assignee') or {}).get('displayName', 'Unassigned'),
+            "current_points": extract_story_points(f, sp_field),
+            "comments": comments,
+        })
+    return {"stories": stories, "agents": POKER_AGENTS}
+
+
+@app.post("/planning_poker/{project_key}/play")
+def run_planning_poker(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Run AI Planning Poker — all agents vote on each story, super agent synthesizes."""
+    stories = payload.get("stories", [])
+    if not stories:
+        return {"error": "No stories selected"}
+
+    results = []
+    for story in stories:
+        story_context = f"""STORY: {story.get('key')} — {story.get('summary')}
+TYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}
+DESCRIPTION: {story.get('description', 'No description provided')[:800]}
+RECENT COMMENTS: {json.dumps(story.get('comments', [])[:3])}"""
+
+        agent_list = "\n".join([f"- {a['name']} ({a['experience']}): {a['persona']}" for a in POKER_AGENTS])
+
+        prompt = f"""You are running an AI Planning Poker session. {len(POKER_AGENTS)} team members will independently estimate this user story.
+
+{story_context}
+
+TEAM MEMBERS:
+{agent_list}
+
+FIBONACCI SCALE: 1, 2, 3, 5, 8, 13, 21
+
+For EACH agent, provide their independent vote and reasoning. Then as the SUPER AGENT (Chief Estimation Officer), analyze all votes and provide the final consensus.
+
+Return STRICT JSON:
+{{
+  "votes": [
+    {{
+      "agent_id": "senior_architect",
+      "points": 8,
+      "confidence": "high",
+      "reasoning": "2-3 sentences on why this estimate",
+      "risks": "key risk they identified"
+    }}
+  ],
+  "super_agent": {{
+    "final_points": 5,
+    "confidence": "high",
+    "consensus_type": "majority|compromise|override",
+    "rationale": "3-4 sentences synthesizing all perspectives",
+    "split_recommendation": null,
+    "key_assumptions": ["assumption1", "assumption2"],
+    "discussion_highlights": "What the team debated most"
+  }}
+}}
+
+RULES:
+1. Each agent MUST vote independently based on their persona and experience level
+2. Votes MUST use Fibonacci scale only (1, 2, 3, 5, 8, 13, 21)
+3. Agents should naturally disagree — don't make all votes the same
+4. Junior roles should sometimes underestimate, seniors should catch hidden complexity
+5. QA agents should factor in testing effort specifically
+6. BA should flag if requirements are unclear (higher estimate)
+7. Scrum Master should compare to "typical" stories of this type
+8. Super Agent should weigh senior opinions more but acknowledge all perspectives
+9. If spread is > 5 points, Super Agent should recommend splitting the story"""
+
+        try:
+            raw = generate_ai_response(prompt, temperature=0.4, timeout=60)
+            if raw:
+                cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
+                poker_result = json.loads(cleaned)
+                poker_result["story_key"] = story.get("key")
+                poker_result["story_summary"] = story.get("summary")
+                poker_result["current_points"] = story.get("current_points", 0)
+                results.append(poker_result)
+            else:
+                results.append({"story_key": story.get("key"), "story_summary": story.get("summary"), "error": "AI returned empty response"})
+        except Exception as e:
+            print(f"Planning Poker error for {story.get('key')}: {e}", flush=True)
+            results.append({"story_key": story.get("key"), "story_summary": story.get("summary"), "error": str(e)})
+
+    return {"results": results, "agents": POKER_AGENTS}
+
+
+@app.post("/planning_poker/{project_key}/push_jira")
+def push_poker_to_jira(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Push finalized planning poker results (points + comments) to Jira."""
+    sp_field = get_story_point_field(creds)
+    updates = payload.get("updates", [])
+    results = []
+
+    for u in updates:
+        key = u.get("key")
+        points = u.get("points")
+        comment = u.get("comment", "")
+        try:
+            if points is not None:
+                pts_res = jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: float(points)}})
+                if pts_res is None or pts_res.status_code not in [200, 204]:
+                    # Try alternate field
+                    jira_request("PUT", f"issue/{key}", creds, {"fields": {"story_points": float(points)}})
+
+            if comment:
+                comment_body = {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}}
+                jira_request("POST", f"issue/{key}/comment", creds, comment_body)
+
+            results.append({"key": key, "status": "success", "points": points})
+        except Exception as e:
+            results.append({"key": key, "status": "error", "message": str(e)})
+
+    return {"results": results}
+
 @app.post("/feature_roadmap")
 def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(get_jira_creds)):
 
