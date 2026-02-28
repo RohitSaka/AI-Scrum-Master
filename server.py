@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, RedirectResponse, FileResponse
-import requests, json, os, uuid, time, traceback, math
+import requests, json, os, uuid, time, traceback, math, re
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -268,79 +268,44 @@ def create_adf_doc(text_content, ac_list=None):
     return {"type": "doc", "version": 1, "content": blocks}
 
 def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None):
-    """Call Gemini via Vertex AI (Enterprise) using google-genai SDK."""
-    from google import genai
-    from google.oauth2 import service_account as sa
-
-    # ── Initialize Vertex AI client (cached after first call) ──
-    if not hasattr(call_gemini, "_client"):
-        creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
-        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
-        api_key = os.getenv("GEMINI_API_KEY", "")
-
-        if creds_json_str and project_id:
-            # Vertex AI Enterprise path
-            creds = sa.Credentials.from_service_account_info(
-                json.loads(creds_json_str),
-                scopes=["https://www.googleapis.com/auth/cloud-platform"]
-            )
-            call_gemini._client = genai.Client(
-                vertexai=True,
-                project=project_id,
-                location=os.getenv("VERTEX_AI_LOCATION", "us-central1"),
-                credentials=creds,
-            )
-            call_gemini._mode = "vertex"
-            print("✅ Vertex AI Enterprise client initialized", flush=True)
-        elif api_key:
-            # Fallback: AI Studio (API key)
-            call_gemini._client = genai.Client(api_key=api_key)
-            call_gemini._mode = "aistudio"
-            print("⚠️ Using AI Studio (API key) — set GOOGLE_CREDENTIALS_JSON for Vertex AI", flush=True)
-        else:
-            call_gemini._client = None
-            call_gemini._mode = "none"
-            print("❌ No Gemini credentials found", flush=True)
-
-    client = call_gemini._client
-    if not client:
-        return None
-
-    # ── Build content parts ──
-    parts = [prompt]
+    api_key = os.getenv("GEMINI_API_KEY")
+    contents = [{"parts": [{"text": prompt}]}]
     if image_data:
         try:
             header, encoded = image_data.split(",", 1)
             mime_type = header.split(":")[1].split(";")[0]
-            import base64 as b64
-            parts.append(genai.types.Part.from_bytes(data=b64.b64decode(encoded), mime_type=mime_type))
-        except Exception as e:
-            print(f"Image Parse Error: {e}", flush=True)
+            contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
+        except Exception as e: print(f"Image Parse Error: {e}", flush=True)
 
     if model:
-        models_to_try = [model, "gemini-2.5-pro"]
+        models_to_try = [model, "gemini-2.5-flash"]
     else:
         models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
     for m in models_to_try:
         try:
-            config = {"temperature": temperature, "max_output_tokens": 8192}
-            if json_mode:
-                config["response_mime_type"] = "application/json"
-
-            response = client.models.generate_content(
-                model=m,
-                contents=parts,
-                config=config,
+            gen_config = {"temperature": temperature}
+            if json_mode: gen_config["responseMimeType"] = "application/json"
+            payload = {"contents": contents, "generationConfig": gen_config}
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}",
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=timeout
             )
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            err = str(e).lower()
-            if "429" in err or "quota" in err or "rate" in err or "resource_exhausted" in err:
+            if r.status_code == 200:
+                return r.json()['candidates'][0]['content']['parts'][0]['text']
+            elif r.status_code == 429:
                 print(f"Gemini rate limit on {m}, trying next model...", flush=True)
                 import time as _t; _t.sleep(2)
                 continue
+            else:
+                print(f"Gemini {m} returned {r.status_code}: {r.text[:200]}", flush=True)
+                continue
+        except requests.exceptions.Timeout:
+            print(f"Gemini {m} timeout ({timeout}s), trying next...", flush=True)
+            continue
+        except Exception as e:
             print(f"Gemini {m} error: {e}", flush=True)
             continue
     return None
@@ -1258,7 +1223,7 @@ def _roadmap_single_call(req, features_text, num_features, start_date,
         if not ai_result:
             raise ValueError("AI returned empty response")
 
-        raw = ai_result.replace('```json', '').replace('```', '').strip()
+        raw = re.sub(r',\s*([}\]])', r'\1', ai_result.replace('```json', '').replace('```', '').strip())
         parsed = json.loads(raw)
         return _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features)
 
@@ -1338,7 +1303,7 @@ RULES:
         try:
             result = generate_ai_response(fa_prompt, temperature=0.2, timeout=timeout, model=model)
             if result:
-                raw = result.replace('```json', '').replace('```', '').strip()
+                raw = re.sub(r',\s*([}\]])', r'\1', result.replace('```json', '').replace('```', '').strip())
                 parsed_batch = json.loads(raw)
                 batch_fa = parsed_batch.get("feature_analysis", [])
                 all_feature_analysis.extend(batch_fa)
@@ -1504,7 +1469,7 @@ RULES:
         if not structure_result:
             raise ValueError("Phase 1B AI returned empty response")
 
-        structure_raw = structure_result.replace('```json', '').replace('```', '').strip()
+        structure_raw = re.sub(r',\s*([}\]])', r'\1', structure_result.replace('```json', '').replace('```', '').strip())
         structure = json.loads(structure_raw)
         print(f"  ✅ Phase 1B complete: project structure generated", flush=True)
 
@@ -1585,7 +1550,7 @@ RULES:
         try:
             epic_result = generate_ai_response(epic_prompt, temperature=0.3, timeout=timeout, model=model)
             if epic_result:
-                epic_raw = epic_result.replace('```json', '').replace('```', '').strip()
+                epic_raw = re.sub(r',\s*([}\]])', r'\1', epic_result.replace('```json', '').replace('```', '').strip())
                 epic_parsed = json.loads(epic_raw)
                 batch_epics = epic_parsed.get("epics", [])
                 all_epics.extend(batch_epics)
