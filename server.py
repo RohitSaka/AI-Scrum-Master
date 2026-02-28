@@ -268,44 +268,79 @@ def create_adf_doc(text_content, ac_list=None):
     return {"type": "doc", "version": 1, "content": blocks}
 
 def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None):
-    api_key = os.getenv("GEMINI_API_KEY")
-    contents = [{"parts": [{"text": prompt}]}]
+    """Call Gemini via Vertex AI (Enterprise) using google-genai SDK."""
+    from google import genai
+    from google.oauth2 import service_account as sa
+
+    # ── Initialize Vertex AI client (cached after first call) ──
+    if not hasattr(call_gemini, "_client"):
+        creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+        api_key = os.getenv("GEMINI_API_KEY", "")
+
+        if creds_json_str and project_id:
+            # Vertex AI Enterprise path
+            creds = sa.Credentials.from_service_account_info(
+                json.loads(creds_json_str),
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            call_gemini._client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=os.getenv("VERTEX_AI_LOCATION", "us-central1"),
+                credentials=creds,
+            )
+            call_gemini._mode = "vertex"
+            print("✅ Vertex AI Enterprise client initialized", flush=True)
+        elif api_key:
+            # Fallback: AI Studio (API key)
+            call_gemini._client = genai.Client(api_key=api_key)
+            call_gemini._mode = "aistudio"
+            print("⚠️ Using AI Studio (API key) — set GOOGLE_CREDENTIALS_JSON for Vertex AI", flush=True)
+        else:
+            call_gemini._client = None
+            call_gemini._mode = "none"
+            print("❌ No Gemini credentials found", flush=True)
+
+    client = call_gemini._client
+    if not client:
+        return None
+
+    # ── Build content parts ──
+    parts = [prompt]
     if image_data:
         try:
             header, encoded = image_data.split(",", 1)
             mime_type = header.split(":")[1].split(";")[0]
-            contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
-        except Exception as e: print(f"Image Parse Error: {e}", flush=True)
+            import base64 as b64
+            parts.append(genai.types.Part.from_bytes(data=b64.b64decode(encoded), mime_type=mime_type))
+        except Exception as e:
+            print(f"Image Parse Error: {e}", flush=True)
 
     if model:
-        models_to_try = [model, "gemini-2.5-flash"]
+        models_to_try = [model, "gemini-3.1-pro"]
     else:
         models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
     for m in models_to_try:
         try:
-            gen_config = {"temperature": temperature}
-            if json_mode: gen_config["responseMimeType"] = "application/json"
-            payload = {"contents": contents, "generationConfig": gen_config}
-            r = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={api_key}",
-                headers={"Content-Type": "application/json"},
-                json=payload,
-                timeout=timeout
+            config = {"temperature": temperature, "max_output_tokens": 8192}
+            if json_mode:
+                config["response_mime_type"] = "application/json"
+
+            response = client.models.generate_content(
+                model=m,
+                contents=parts,
+                config=config,
             )
-            if r.status_code == 200:
-                return r.json()['candidates'][0]['content']['parts'][0]['text']
-            elif r.status_code == 429:
+            if response and response.text:
+                return response.text
+        except Exception as e:
+            err = str(e).lower()
+            if "429" in err or "quota" in err or "rate" in err or "resource_exhausted" in err:
                 print(f"Gemini rate limit on {m}, trying next model...", flush=True)
                 import time as _t; _t.sleep(2)
                 continue
-            else:
-                print(f"Gemini {m} returned {r.status_code}: {r.text[:200]}", flush=True)
-                continue
-        except requests.exceptions.Timeout:
-            print(f"Gemini {m} timeout ({timeout}s), trying next...", flush=True)
-            continue
-        except Exception as e:
             print(f"Gemini {m} error: {e}", flush=True)
             continue
     return None
@@ -330,7 +365,7 @@ def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data
     """
     Routes AI calls. Default: Gemini. 
     force_openai=True only for endpoints that specifically need OpenAI (e.g. image analysis).
-    model param: pass specific Gemini model like "gemini-2.5-pro" for premium tasks.
+    model param: pass specific Gemini model like "gemini-3.1-pro" for premium tasks.
     """
     if force_openai:
         return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout, model=model or "gpt-4o")
@@ -1179,7 +1214,7 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
 
     # ── CHOOSE MODEL: Premium for roadmap accuracy ──
     # o3-mini for deep reasoning, gpt-4o as fallback
-    ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-2.5-pro")
+    ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-3.1-pro")
     ROADMAP_TIMEOUT = 300  # seconds per AI call
     FEATURE_BATCH_SIZE = 20
 

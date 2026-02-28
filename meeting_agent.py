@@ -13,23 +13,52 @@ from datetime import datetime, timedelta
 # ═══════════════════════════════════════════
 
 def _call_ai(prompt, temperature=0.3, json_mode=True, timeout=90):
-    """Call Gemini (primary) or OpenAI (fallback) — long timeout for transcript analysis."""
-    import requests
-    api_key = os.getenv("GEMINI_API_KEY")
-    for model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
-        try:
-            gen_config = {"temperature": temperature}
-            if json_mode:
-                gen_config["responseMimeType"] = "application/json"
-            payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": gen_config}
-            r = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
-                headers={"Content-Type": "application/json"}, json=payload, timeout=timeout
+    """Call Gemini via Vertex AI (primary) or OpenAI (fallback) — long timeout for transcript analysis."""
+    from google import genai
+    from google.oauth2 import service_account as sa
+
+    # ── Initialize Vertex AI client (cached after first call) ──
+    if not hasattr(_call_ai, "_client"):
+        creds_json_str = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+        api_key = os.getenv("GEMINI_API_KEY", "")
+
+        if creds_json_str and project_id:
+            creds = sa.Credentials.from_service_account_info(
+                json.loads(creds_json_str),
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
             )
-            if r.status_code == 200:
-                return r.json()['candidates'][0]['content']['parts'][0]['text']
-        except Exception:
-            continue
+            _call_ai._client = genai.Client(
+                vertexai=True,
+                project=project_id,
+                location=os.getenv("VERTEX_AI_LOCATION", "us-central1"),
+                credentials=creds,
+            )
+        elif api_key:
+            _call_ai._client = genai.Client(api_key=api_key)
+        else:
+            _call_ai._client = None
+
+    client = _call_ai._client
+    if client:
+        for model in ["gemini-2.5-flash", "gemini-2.5-flash-lite"]:
+            try:
+                config = {"temperature": temperature, "max_output_tokens": 8192}
+                if json_mode:
+                    config["response_mime_type"] = "application/json"
+
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=config,
+                )
+                if response and response.text:
+                    return response.text
+            except Exception as e:
+                err = str(e).lower()
+                if "429" in err or "quota" in err or "resource_exhausted" in err:
+                    time.sleep(2)
+                continue
 
     # Fallback to OpenAI
     openai_key = os.getenv("OPENAI_API_KEY")
