@@ -318,7 +318,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
             print(f"Image Parse Error: {e}", flush=True)
 
     if model:
-        models_to_try = [model, "gemini-3.1-pro"]
+        models_to_try = [model, "gemini-2.5-pro"]
     else:
         models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
@@ -365,7 +365,7 @@ def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data
     """
     Routes AI calls. Default: Gemini. 
     force_openai=True only for endpoints that specifically need OpenAI (e.g. image analysis).
-    model param: pass specific Gemini model like "gemini-3.1-pro" for premium tasks.
+    model param: pass specific Gemini model like "gemini-2.5-pro" for premium tasks.
     """
     if force_openai:
         return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout, model=model or "gpt-4o")
@@ -1214,7 +1214,7 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
 
     # ── CHOOSE MODEL: Premium for roadmap accuracy ──
     # o3-mini for deep reasoning, gpt-4o as fallback
-    ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-3.1-pro")
+    ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-2.5-pro")
     ROADMAP_TIMEOUT = 300  # seconds per AI call
     FEATURE_BATCH_SIZE = 20
 
