@@ -4339,427 +4339,310 @@ function RoadmapView({ project, setIsLoading }) {
             );
         }
 
-        // ═══════════════════════════════════════════════════════════
-        //  PLANNING POKER VIEW — Multi-Agent AI Estimation
-        // ═══════════════════════════════════════════════════════════
         function PlanningPokerView({ project, setIsLoading }) {
-            const [phase, setPhase] = React.useState('setup'); // setup | playing | results
-            const [source, setSource] = React.useState('sprint');
-            const [sprints, setSprints] = React.useState([]);
-            const [selectedSprint, setSelectedSprint] = React.useState('');
-            const [stories, setStories] = React.useState([]);
-            const [agents, setAgents] = React.useState([]);
-            const [selectedKeys, setSelectedKeys] = React.useState(new Set());
-            const [loading, setLoading] = React.useState(false);
-            const [loadingStories, setLoadingStories] = React.useState(false);
-            const [pokerResults, setPokerResults] = React.useState([]);
-            const [currentResultIdx, setCurrentResultIdx] = React.useState(0);
-            const [revealedAgents, setRevealedAgents] = React.useState(new Set());
-            const [showSuperAgent, setShowSuperAgent] = React.useState(false);
-            const [adjustments, setAdjustments] = React.useState({});
-            const [pushing, setPushing] = React.useState(false);
-            const [pushResults, setPushResults] = React.useState(null);
-            const [playingStoryIdx, setPlayingStoryIdx] = React.useState(0);
-            const [error, setError] = React.useState('');
+            const [phase, setPhase] = useState('setup');
+            const [source, setSource] = useState('sprint');
+            const [sprints, setSprints] = useState([]);
+            const [selectedSprint, setSelectedSprint] = useState('');
+            const [stories, setStories] = useState([]);
+            const [agents, setAgents] = useState([]);
+            const [selectedKeys, setSelectedKeys] = useState(new Set());
+            const [loading, setLoading] = useState(false);
+            const [loadingStories, setLoadingStories] = useState(false);
+            const [pokerResults, setPokerResults] = useState([]);
+            const [currentResultIdx, setCurrentResultIdx] = useState(0);
+            const [revealedAgents, setRevealedAgents] = useState(new Set());
+            const [showSuperAgent, setShowSuperAgent] = useState(false);
+            const [adjustments, setAdjustments] = useState({});
+            const [pushing, setPushing] = useState(false);
+            const [pushResults, setPushResults] = useState(null);
+            const [error, setError] = useState('');
+            const FIB = [1, 2, 3, 5, 8, 13, 21];
 
-            // Fetch sprints
-            React.useEffect(() => {
+            useEffect(() => {
                 if (!project) return;
-                fetch(`${BASE}/sprints/${project}`, { headers: authHeaders() })
-                    .then(r => r.json()).then(d => setSprints(Array.isArray(d) ? d : []))
-                    .catch(() => setSprints([]));
+                secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => setSprints(Array.isArray(d) ? d : [])).catch(() => {});
             }, [project]);
 
-            // Fetch stories when source/sprint changes
             const loadStories = () => {
                 if (!project) return;
                 setLoadingStories(true);
                 setError('');
                 const params = new URLSearchParams({ source });
                 if (source === 'sprint' && selectedSprint) params.append('sprint_id', selectedSprint);
-                fetch(`${BASE}/planning_poker/${project}/stories?${params}`, { headers: authHeaders() })
-                    .then(r => r.json()).then(d => {
-                        setStories(d.stories || []);
-                        setAgents(d.agents || []);
-                        setSelectedKeys(new Set());
-                        setLoadingStories(false);
-                    }).catch(e => { setError('Failed to load stories'); setLoadingStories(false); });
+                secureFetch(`/planning_poker/${project}/stories?${params}`).then(r => r?.json()).then(d => {
+                    setStories(d?.stories || []);
+                    setAgents(d?.agents || []);
+                    setSelectedKeys(new Set());
+                    setLoadingStories(false);
+                }).catch(() => { setError('Failed to load stories'); setLoadingStories(false); });
             };
 
-            React.useEffect(() => { loadStories(); }, [source, selectedSprint, project]);
+            useEffect(() => { loadStories(); }, [source, selectedSprint, project]);
 
             const toggleStory = (key) => {
-                setSelectedKeys(prev => {
-                    const next = new Set(prev);
-                    next.has(key) ? next.delete(key) : next.add(key);
-                    return next;
-                });
+                setSelectedKeys(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
             };
-
             const selectAll = () => {
-                if (selectedKeys.size === stories.length) setSelectedKeys(new Set());
-                else setSelectedKeys(new Set(stories.map(s => s.key)));
+                setSelectedKeys(prev => prev.size === stories.length ? new Set() : new Set(stories.map(s => s.key)));
             };
 
-            // ── Run Planning Poker ──
             const startPoker = async () => {
                 const selected = stories.filter(s => selectedKeys.has(s.key));
                 if (!selected.length) return;
-                setLoading(true);
-                setPhase('playing');
-                setPokerResults([]);
-                setCurrentResultIdx(0);
-                setRevealedAgents(new Set());
-                setShowSuperAgent(false);
-                setPlayingStoryIdx(0);
-                setError('');
-
+                setLoading(true); setPhase('playing'); setPokerResults([]); setCurrentResultIdx(0);
+                setRevealedAgents(new Set()); setShowSuperAgent(false); setError('');
                 try {
-                    const res = await fetch(`${BASE}/planning_poker/${project}/play`, {
-                        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ stories: selected })
+                    const res = await secureFetch(`/planning_poker/${project}/play`, {
+                        method: 'POST', body: JSON.stringify({ stories: selected })
                     });
-                    const data = await res.json();
-                    if (data.error) { setError(data.error); setPhase('setup'); setLoading(false); return; }
+                    const data = await res?.json();
+                    if (!data || data.error) { setError(data?.error || 'Failed'); setPhase('setup'); setLoading(false); return; }
                     setPokerResults(data.results || []);
-                    setAgents(data.agents || agents);
-                    // Initialize adjustments with super agent points
+                    if (data.agents) setAgents(data.agents);
                     const adj = {};
-                    (data.results || []).forEach(r => {
-                        if (r.super_agent) adj[r.story_key] = { points: r.super_agent.final_points, comment: '' };
-                    });
+                    (data.results || []).forEach(r => { if (r.super_agent) adj[r.story_key] = { points: r.super_agent.final_points, comment: '' }; });
                     setAdjustments(adj);
                     setPhase('results');
-                } catch (e) {
-                    setError('Planning Poker failed: ' + e.message);
-                    setPhase('setup');
-                }
+                } catch (e) { setError('Planning Poker failed'); setPhase('setup'); }
                 setLoading(false);
             };
 
-            // ── Animate reveals ──
-            React.useEffect(() => {
+            useEffect(() => {
                 if (phase !== 'results' || !pokerResults.length) return;
                 const result = pokerResults[currentResultIdx];
-                if (!result || !result.votes) return;
-                setRevealedAgents(new Set());
-                setShowSuperAgent(false);
+                if (!result?.votes) return;
+                setRevealedAgents(new Set()); setShowSuperAgent(false);
                 let i = 0;
-                const interval = setInterval(() => {
+                const iv = setInterval(() => {
                     if (i < result.votes.length) {
                         setRevealedAgents(prev => new Set([...prev, result.votes[i].agent_id]));
                         i++;
-                    } else {
-                        setShowSuperAgent(true);
-                        clearInterval(interval);
-                    }
+                    } else { setShowSuperAgent(true); clearInterval(iv); }
                 }, 400);
-                return () => clearInterval(interval);
+                return () => clearInterval(iv);
             }, [phase, currentResultIdx, pokerResults]);
 
-            // ── Push to Jira ──
             const pushToJira = async () => {
                 setPushing(true);
                 const updates = Object.entries(adjustments).map(([key, adj]) => ({
                     key, points: adj.points,
-                    comment: `🃏 AI Planning Poker Estimate: ${adj.points} pts\n${adj.comment || ''}\n\n${pokerResults.find(r => r.story_key === key)?.super_agent?.rationale || ''}`.trim()
+                    comment: `🃏 AI Planning Poker: ${adj.points} pts\n${adj.comment || ''}\n\n${(pokerResults.find(r => r.story_key === key)?.super_agent?.rationale) || ''}`.trim()
                 }));
                 try {
-                    const res = await fetch(`${BASE}/planning_poker/${project}/push_jira`, {
-                        method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ updates })
+                    const res = await secureFetch(`/planning_poker/${project}/push_jira`, {
+                        method: 'POST', body: JSON.stringify({ updates })
                     });
-                    const data = await res.json();
-                    setPushResults(data.results || []);
-                } catch (e) { setError('Push failed: ' + e.message); }
+                    const data = await res?.json();
+                    setPushResults(data?.results || []);
+                } catch (e) { setError('Push failed'); }
                 setPushing(false);
             };
 
-            const resetAll = () => {
-                setPhase('setup'); setPokerResults([]); setCurrentResultIdx(0);
-                setRevealedAgents(new Set()); setShowSuperAgent(false);
-                setAdjustments({}); setPushResults(null); setError('');
-            };
+            const resetAll = () => { setPhase('setup'); setPokerResults([]); setCurrentResultIdx(0); setRevealedAgents(new Set()); setShowSuperAgent(false); setAdjustments({}); setPushResults(null); setError(''); };
 
-            const currentResult = pokerResults[currentResultIdx];
+            const cr = pokerResults[currentResultIdx];
+            const votes = cr?.votes || [];
+            const sa = cr?.super_agent;
 
-            // ── Confidence badge ──
-            const ConfBadge = ({ level }) => {
-                const colors = { high: 'bg-green-500/20 text-green-400', medium: 'bg-yellow-500/20 text-yellow-400', low: 'bg-red-500/20 text-red-400' };
-                return React.createElement('span', { className: `text-xs px-2 py-0.5 rounded-full font-bold ${colors[level] || colors.medium}` }, (level || 'medium').toUpperCase());
-            };
+            const pokerStyles = `
+                .pkr-hdr{background:linear-gradient(135deg,#0f172a 0%,#1e293b 50%,#0f172a 100%);border-bottom:2px solid rgba(251,191,36,0.3)}
+                .pkr-card{background:linear-gradient(145deg,rgba(30,41,59,0.8),rgba(15,23,42,0.9));border:1px solid rgba(148,163,184,0.15);transition:all 0.3s}
+                .pkr-card:hover{border-color:rgba(251,191,36,0.4);transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,0,0,0.3)}
+                .pkr-card.pkr-sel{border-color:rgba(251,191,36,0.7);background:linear-gradient(145deg,rgba(30,41,59,0.95),rgba(251,191,36,0.05))}
+                .pkr-btn{background:linear-gradient(135deg,#f59e0b,#d97706);color:#000;font-weight:800;transition:all 0.3s;border:none;cursor:pointer}
+                .pkr-btn:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(245,158,11,0.4)}
+                .pkr-btn:disabled{opacity:0.4;transform:none;box-shadow:none;cursor:not-allowed}
+                .pkr-tab{padding:10px 24px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;transition:all 0.3s;text-transform:uppercase;letter-spacing:1px;border:none}
+                .pkr-tab-on{background:linear-gradient(135deg,#f59e0b,#d97706);color:#000}
+                .pkr-tab-off{background:rgba(51,65,85,0.5);color:#94a3b8}
+                .pkr-tab-off:hover{background:rgba(71,85,105,0.6);color:#e2e8f0}
+                @keyframes pkrFlip{0%{transform:rotateY(90deg) scale(0.8);opacity:0}100%{transform:rotateY(0) scale(1);opacity:1}}
+                @keyframes pkrPop{0%{transform:scale(0.5);opacity:0}50%{transform:scale(1.05)}100%{transform:scale(1);opacity:1}}
+                @keyframes pkrSpin{0%{transform:rotateY(0)}100%{transform:rotateY(360deg)}}
+                .pkr-flip{animation:pkrFlip 0.5s ease-out forwards}
+                .pkr-pop{animation:pkrPop 0.6s ease-out forwards}
+                .pkr-spin{animation:pkrSpin 1.5s ease-in-out infinite;display:inline-block}
+                .pkr-shim{background:linear-gradient(90deg,rgba(30,41,59,0.5) 25%,rgba(51,65,85,0.5) 50%,rgba(30,41,59,0.5) 75%);background-size:200% 100%;animation:pkrShim 1.5s infinite}
+                @keyframes pkrShim{0%{background-position:-200% 0}100%{background-position:200% 0}}
+            `;
 
-            // ── Fibonacci chip ──
-            const FibChip = ({ pts, size = 'md', glow }) => {
-                const sizes = { sm: 'w-8 h-10 text-sm', md: 'w-12 h-16 text-xl', lg: 'w-16 h-22 text-3xl' };
-                return React.createElement('div', {
-                    className: `${sizes[size]} rounded-xl font-black flex items-center justify-center shadow-lg transition-all duration-500 ${glow ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-black ring-2 ring-amber-300/50' : 'bg-gradient-to-br from-slate-700 to-slate-800 text-white border border-slate-600'}`
-                }, pts);
-            };
-
-            // ═══ SETUP PHASE ═══
-            if (phase === 'setup') return React.createElement('div', { className: 'h-full overflow-y-auto' },
-                React.createElement('style', null, `
-                    .poker-header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); border-bottom: 2px solid rgba(251,191,36,0.3); }
-                    .poker-card { background: linear-gradient(145deg, rgba(30,41,59,0.8), rgba(15,23,42,0.9)); border: 1px solid rgba(148,163,184,0.15); transition: all 0.3s; }
-                    .poker-card:hover { border-color: rgba(251,191,36,0.4); transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.3); }
-                    .poker-card.selected { border-color: rgba(251,191,36,0.7); background: linear-gradient(145deg, rgba(30,41,59,0.95), rgba(251,191,36,0.05)); }
-                    .poker-btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; transition: all 0.3s; }
-                    .poker-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(245,158,11,0.4); }
-                    .poker-btn-primary:disabled { opacity: 0.4; transform: none; box-shadow: none; }
-                    .source-tab { padding: 10px 24px; border-radius: 8px; font-weight: 700; font-size: 13px; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 1px; }
-                    .source-tab.active { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; }
-                    .source-tab:not(.active) { background: rgba(51,65,85,0.5); color: #94a3b8; }
-                    .source-tab:not(.active):hover { background: rgba(71,85,105,0.6); color: #e2e8f0; }
-                    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-                    .loading-shimmer { background: linear-gradient(90deg, rgba(30,41,59,0.5) 25%, rgba(51,65,85,0.5) 50%, rgba(30,41,59,0.5) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
-                `),
-                // Header
-                React.createElement('div', { className: 'poker-header rounded-2xl p-8 mb-6' },
-                    React.createElement('div', { className: 'flex items-center gap-4 mb-2' },
-                        React.createElement('div', { className: 'text-4xl' }, '🃏'),
-                        React.createElement('div', null,
-                            React.createElement('h1', { className: 'text-2xl font-black text-white tracking-tight' }, 'AI Planning Poker'),
-                            React.createElement('p', { className: 'text-slate-400 text-sm mt-1' }, '9 AI agents debate and estimate your stories using Fibonacci scale')
-                        )
-                    )
-                ),
-                // Source selector
-                React.createElement('div', { className: 'flex items-center gap-3 mb-6' },
-                    React.createElement('div', { className: `source-tab ${source === 'sprint' ? 'active' : ''}`, onClick: () => setSource('sprint') }, '🏃 Sprint'),
-                    React.createElement('div', { className: `source-tab ${source === 'backlog' ? 'active' : ''}`, onClick: () => setSource('backlog') }, '📋 Backlog'),
-                    source === 'sprint' && React.createElement('select', {
-                        value: selectedSprint, onChange: e => setSelectedSprint(e.target.value),
-                        className: 'ml-4 px-4 py-2 rounded-lg bg-slate-800 border border-slate-600 text-white text-sm font-semibold'
-                    },
-                        React.createElement('option', { value: '' }, 'Active Sprint'),
-                        ...sprints.map(s => React.createElement('option', { key: s.id, value: s.id }, `${s.name} (${s.state})`))
-                    ),
-                    React.createElement('div', { className: 'ml-auto flex items-center gap-3' },
-                        stories.length > 0 && React.createElement('button', { onClick: selectAll, className: 'text-xs text-amber-400 hover:text-amber-300 font-bold uppercase tracking-wider' },
-                            selectedKeys.size === stories.length ? '✕ Deselect All' : '☑ Select All'
-                        ),
-                        React.createElement('button', {
-                            onClick: startPoker, disabled: !selectedKeys.size || loading,
-                            className: 'poker-btn-primary px-6 py-3 rounded-xl text-sm flex items-center gap-2'
-                        }, loading ? '⏳ Running...' : `🃏 Start Poker (${selectedKeys.size})`)
-                    )
-                ),
-                error && React.createElement('div', { className: 'mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-semibold' }, error),
-                // Stories list
-                loadingStories ? React.createElement('div', { className: 'space-y-3' },
-                    ...[1,2,3,4].map(i => React.createElement('div', { key: i, className: 'loading-shimmer h-20 rounded-xl' }))
-                ) :
-                stories.length === 0 ? React.createElement('div', { className: 'text-center py-20 text-slate-500 text-lg font-semibold' }, 'No stories found. Try changing source or sprint.') :
-                React.createElement('div', { className: 'space-y-2' },
-                    ...stories.map(s => React.createElement('div', {
-                        key: s.key,
-                        onClick: () => toggleStory(s.key),
-                        className: `poker-card rounded-xl p-4 cursor-pointer flex items-center gap-4 ${selectedKeys.has(s.key) ? 'selected' : ''}`
-                    },
-                        React.createElement('div', { className: `w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${selectedKeys.has(s.key) ? 'bg-amber-500 border-amber-500 text-black' : 'border-slate-500'}` },
-                            selectedKeys.has(s.key) && React.createElement('span', { className: 'text-xs font-black' }, '✓')
-                        ),
-                        React.createElement('div', { className: 'flex-1 min-w-0' },
-                            React.createElement('div', { className: 'flex items-center gap-2' },
-                                React.createElement('span', { className: 'text-xs font-bold text-amber-400/80 font-mono' }, s.key),
-                                React.createElement('span', { className: `text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${s.issue_type === 'Bug' ? 'bg-red-500/20 text-red-400' : s.issue_type === 'Task' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}` }, s.issue_type),
-                                React.createElement('span', { className: 'text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400 font-bold' }, s.priority)
-                            ),
-                            React.createElement('p', { className: 'text-white font-semibold text-sm mt-1 truncate' }, s.summary),
-                            s.description && React.createElement('p', { className: 'text-slate-500 text-xs mt-0.5 truncate' }, s.description.slice(0, 120))
-                        ),
-                        React.createElement('div', { className: 'text-right shrink-0' },
-                            React.createElement('div', { className: 'text-[10px] text-slate-500 uppercase font-bold' }, 'Current'),
-                            React.createElement('div', { className: `text-lg font-black ${s.current_points ? 'text-slate-300' : 'text-slate-600'}` }, s.current_points || '—')
-                        )
-                    ))
-                )
-            );
-
-            // ═══ RESULTS PHASE (also handles playing → results transition) ═══
-            if (phase === 'playing' && loading) return React.createElement('div', { className: 'h-full flex flex-col items-center justify-center gap-6' },
-                React.createElement('style', null, `
-                    @keyframes pokerSpin { 0% { transform: rotateY(0deg); } 100% { transform: rotateY(360deg); } }
-                    .poker-spinner { animation: pokerSpin 1.5s ease-in-out infinite; font-size: 64px; }
-                `),
-                React.createElement('div', { className: 'poker-spinner' }, '🃏'),
-                React.createElement('h2', { className: 'text-xl font-black text-white' }, 'AI Agents are debating...'),
-                React.createElement('p', { className: 'text-slate-400 text-sm' }, `Estimating ${selectedKeys.size} ${selectedKeys.size === 1 ? 'story' : 'stories'} with 9 expert agents`),
-                React.createElement('div', { className: 'flex gap-2 mt-4' },
-                    ...agents.slice(0, 9).map((a, i) => React.createElement('div', {
-                        key: a.id, className: 'w-10 h-10 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-lg',
-                        style: { animationDelay: `${i * 0.1}s` }
-                    }, a.emoji))
-                )
-            );
-
-            if ((phase === 'results' || phase === 'playing') && pokerResults.length > 0) {
-                const cr = pokerResults[currentResultIdx];
-                const votes = cr?.votes || [];
-                const sa = cr?.super_agent;
-
-                return React.createElement('div', { className: 'h-full overflow-y-auto' },
-                    React.createElement('style', null, `
-                        .poker-header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); border-bottom: 2px solid rgba(251,191,36,0.3); }
-                        @keyframes flipIn { 0% { transform: rotateY(90deg) scale(0.8); opacity: 0; } 100% { transform: rotateY(0deg) scale(1); opacity: 1; } }
-                        @keyframes superReveal { 0% { transform: scale(0.5); opacity: 0; } 50% { transform: scale(1.05); } 100% { transform: scale(1); opacity: 1; } }
-                        .vote-card { animation: flipIn 0.5s ease-out forwards; }
-                        .super-reveal { animation: superReveal 0.6s ease-out forwards; }
-                        .poker-btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; transition: all 0.3s; }
-                        .poker-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(245,158,11,0.4); }
-                        .poker-btn-primary:disabled { opacity: 0.4; transform: none; box-shadow: none; }
-                    `),
-                    // Header with story navigation
-                    React.createElement('div', { className: 'poker-header rounded-2xl p-6 mb-6' },
-                        React.createElement('div', { className: 'flex items-center justify-between' },
-                            React.createElement('div', { className: 'flex items-center gap-3' },
-                                React.createElement('span', { className: 'text-3xl' }, '🃏'),
-                                React.createElement('div', null,
-                                    React.createElement('h1', { className: 'text-xl font-black text-white' }, 'Planning Poker Results'),
-                                    React.createElement('p', { className: 'text-amber-400/80 text-sm font-bold font-mono' }, `${cr?.story_key} — ${cr?.story_summary}`)
-                                )
-                            ),
-                            React.createElement('div', { className: 'flex items-center gap-3' },
-                                pokerResults.length > 1 && React.createElement('div', { className: 'flex items-center gap-2' },
-                                    React.createElement('button', {
-                                        onClick: () => setCurrentResultIdx(Math.max(0, currentResultIdx - 1)),
-                                        disabled: currentResultIdx === 0,
-                                        className: 'w-8 h-8 rounded-lg bg-slate-700 text-white font-bold text-sm disabled:opacity-30 hover:bg-slate-600'
-                                    }, '‹'),
-                                    React.createElement('span', { className: 'text-sm text-slate-400 font-bold' }, `${currentResultIdx + 1}/${pokerResults.length}`),
-                                    React.createElement('button', {
-                                        onClick: () => setCurrentResultIdx(Math.min(pokerResults.length - 1, currentResultIdx + 1)),
-                                        disabled: currentResultIdx === pokerResults.length - 1,
-                                        className: 'w-8 h-8 rounded-lg bg-slate-700 text-white font-bold text-sm disabled:opacity-30 hover:bg-slate-600'
-                                    }, '›')
-                                ),
-                                React.createElement('button', { onClick: resetAll, className: 'text-xs text-slate-400 hover:text-white font-bold uppercase px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700' }, '← New Session')
-                            )
-                        )
-                    ),
-
-                    cr?.error ? React.createElement('div', { className: 'p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 font-semibold' }, `Error: ${cr.error}`) :
-
-                    React.createElement('div', null,
-                        // ── Agent Vote Cards Grid ──
-                        React.createElement('div', { className: 'grid grid-cols-3 gap-3 mb-6' },
-                            ...votes.map((v, idx) => {
-                                const agent = agents.find(a => a.id === v.agent_id) || {};
-                                const revealed = revealedAgents.has(v.agent_id);
-                                return React.createElement('div', {
-                                    key: v.agent_id,
-                                    className: `rounded-xl p-4 border transition-all duration-500 ${revealed ? 'vote-card bg-gradient-to-br from-slate-800/90 to-slate-900/90 border-slate-600/50' : 'bg-slate-900/50 border-slate-800'}`,
-                                    style: revealed ? { animationDelay: `${idx * 0.1}s` } : {}
-                                },
-                                    React.createElement('div', { className: 'flex items-center justify-between mb-3' },
-                                        React.createElement('div', { className: 'flex items-center gap-2' },
-                                            React.createElement('span', { className: 'text-xl' }, agent.emoji || '🤖'),
-                                            React.createElement('div', null,
-                                                React.createElement('div', { className: 'text-xs font-bold text-white' }, agent.name || v.agent_id),
-                                                React.createElement('div', { className: 'text-[10px] text-slate-500' }, agent.experience)
-                                            )
-                                        ),
-                                        revealed ? React.createElement('div', {
-                                            className: 'w-12 h-14 rounded-lg font-black text-xl flex items-center justify-center bg-gradient-to-br from-amber-400 to-orange-500 text-black shadow-lg shadow-amber-500/20'
-                                        }, v.points) :
-                                        React.createElement('div', { className: 'w-12 h-14 rounded-lg bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600 flex items-center justify-center text-slate-600 text-lg' }, '?')
-                                    ),
-                                    revealed && React.createElement('div', null,
-                                        React.createElement('div', { className: 'flex items-center gap-2 mb-2' },
-                                            React.createElement(ConfBadge, { level: v.confidence })
-                                        ),
-                                        React.createElement('p', { className: 'text-xs text-slate-400 leading-relaxed' }, v.reasoning),
-                                        v.risks && React.createElement('p', { className: 'text-[10px] text-red-400/70 mt-1.5 italic' }, `⚠ ${v.risks}`)
-                                    )
-                                );
-                            })
-                        ),
-
-                        // ── Super Agent Verdict ──
-                        showSuperAgent && sa && React.createElement('div', { className: 'super-reveal rounded-2xl p-6 mb-6 bg-gradient-to-br from-amber-500/10 via-slate-900 to-amber-500/5 border-2 border-amber-500/30' },
-                            React.createElement('div', { className: 'flex items-center gap-4 mb-4' },
-                                React.createElement('div', { className: 'text-4xl' }, '🏆'),
-                                React.createElement('div', { className: 'flex-1' },
-                                    React.createElement('h3', { className: 'text-lg font-black text-amber-400' }, 'Super Agent Verdict'),
-                                    React.createElement('p', { className: 'text-xs text-slate-400' }, `Consensus: ${sa.consensus_type || 'majority'} | ${sa.discussion_highlights || ''}`)
-                                ),
-                                React.createElement('div', { className: 'text-center' },
-                                    React.createElement('div', { className: 'w-20 h-24 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-black font-black text-4xl flex items-center justify-center shadow-xl shadow-amber-500/30' }, sa.final_points),
-                                    React.createElement('div', { className: 'text-xs text-amber-400/80 font-bold mt-1' }, 'FINAL')
-                                )
-                            ),
-                            React.createElement('p', { className: 'text-sm text-slate-300 leading-relaxed mb-3' }, sa.rationale),
-                            sa.key_assumptions && React.createElement('div', { className: 'flex flex-wrap gap-2' },
-                                ...(sa.key_assumptions || []).map((a, i) => React.createElement('span', { key: i, className: 'text-[10px] px-2 py-1 rounded-full bg-slate-800 text-slate-400 font-semibold border border-slate-700' }, a))
-                            ),
-                            sa.split_recommendation && React.createElement('div', { className: 'mt-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold' }, `✂️ Split Recommendation: ${sa.split_recommendation}`)
-                        ),
-
-                        // ── Vote Distribution Bar ──
-                        showSuperAgent && votes.length > 0 && React.createElement('div', { className: 'rounded-xl p-4 bg-slate-900/50 border border-slate-800 mb-6' },
-                            React.createElement('h4', { className: 'text-xs font-bold text-slate-500 uppercase tracking-wider mb-3' }, 'Vote Distribution'),
-                            React.createElement('div', { className: 'flex items-end gap-1 h-16' },
-                                ...[1,2,3,5,8,13,21].map(pt => {
-                                    const count = votes.filter(v => v.points === pt).length;
-                                    const maxCount = Math.max(...[1,2,3,5,8,13,21].map(p => votes.filter(v => v.points === p).length), 1);
-                                    return React.createElement('div', { key: pt, className: 'flex-1 flex flex-col items-center gap-1' },
-                                        count > 0 && React.createElement('span', { className: 'text-[10px] font-bold text-amber-400' }, count),
-                                        React.createElement('div', {
-                                            className: `w-full rounded-t transition-all ${count > 0 ? 'bg-gradient-to-t from-amber-500 to-amber-400' : 'bg-slate-800'}`,
-                                            style: { height: count > 0 ? `${(count / maxCount) * 100}%` : '4px', minHeight: '4px' }
-                                        }),
-                                        React.createElement('span', { className: 'text-[10px] font-bold text-slate-500' }, pt)
-                                    );
-                                })
-                            )
-                        ),
-
-                        // ── User Adjustment Panel ──
-                        showSuperAgent && React.createElement('div', { className: 'rounded-xl p-5 bg-slate-900/70 border border-slate-700 mb-6' },
-                            React.createElement('h4', { className: 'text-sm font-black text-white mb-3' }, '✏️ Review & Adjust'),
-                            React.createElement('div', { className: 'flex items-center gap-4' },
-                                React.createElement('div', null,
-                                    React.createElement('label', { className: 'text-[10px] text-slate-500 uppercase font-bold block mb-1' }, 'Final Points'),
-                                    React.createElement('div', { className: 'flex gap-1.5' },
-                                        ...[1,2,3,5,8,13,21].map(pt => React.createElement('button', {
-                                            key: pt,
-                                            onClick: () => setAdjustments(prev => ({ ...prev, [cr.story_key]: { ...prev[cr.story_key], points: pt } })),
-                                            className: `w-9 h-11 rounded-lg font-bold text-sm transition-all ${(adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? 'bg-gradient-to-br from-amber-400 to-orange-500 text-black shadow-lg' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-amber-500/50'}`
-                                        }, pt))
-                                    )
-                                ),
-                                React.createElement('div', { className: 'flex-1' },
-                                    React.createElement('label', { className: 'text-[10px] text-slate-500 uppercase font-bold block mb-1' }, 'Comment (optional)'),
-                                    React.createElement('input', {
-                                        type: 'text', placeholder: 'Add a note for the team...',
-                                        value: adjustments[cr?.story_key]?.comment || '',
-                                        onChange: e => setAdjustments(prev => ({ ...prev, [cr.story_key]: { ...prev[cr.story_key], comment: e.target.value } })),
-                                        className: 'w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-white text-sm placeholder-slate-600 focus:border-amber-500/50 focus:outline-none'
-                                    })
-                                )
-                            )
-                        ),
-
-                        // ── Push to Jira ──
-                        showSuperAgent && currentResultIdx === pokerResults.length - 1 && React.createElement('div', { className: 'flex items-center justify-between rounded-xl p-5 bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/30' },
-                            React.createElement('div', null,
-                                React.createElement('h4', { className: 'text-sm font-black text-green-400' }, '🚀 Push All Results to Jira'),
-                                React.createElement('p', { className: 'text-xs text-slate-400 mt-1' }, `${pokerResults.filter(r => !r.error).length} stories ready — points + AI reasoning as comments`)
-                            ),
-                            pushResults ? React.createElement('div', { className: 'text-sm font-bold text-green-400' },
-                                `✅ ${pushResults.filter(r => r.status === 'success').length}/${pushResults.length} pushed`
-                            ) :
-                            React.createElement('button', {
-                                onClick: pushToJira, disabled: pushing,
-                                className: 'poker-btn-primary px-6 py-3 rounded-xl text-sm'
-                            }, pushing ? '⏳ Pushing...' : '🚀 Push to Jira')
-                        )
-                    )
-                );
+            if (phase === 'playing' && loading) {
+                return (<div className="h-full flex flex-col items-center justify-center gap-6">
+                    <style>{pokerStyles}</style>
+                    <div className="pkr-spin" style={{fontSize:'64px'}}>🃏</div>
+                    <h2 className="text-xl font-black text-text-main">AI Agents are debating...</h2>
+                    <p className="text-text-muted text-sm">Estimating {selectedKeys.size} {selectedKeys.size === 1 ? 'story' : 'stories'} with 9 expert agents</p>
+                    <div className="flex gap-2 mt-4">
+                        {agents.slice(0, 9).map(a => <div key={a.id} className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{background:'rgba(30,41,59,0.8)',border:'1px solid rgba(148,163,184,0.2)'}}>{a.emoji}</div>)}
+                    </div>
+                </div>);
             }
 
-            return null;
+            if (phase === 'results' && pokerResults.length > 0) {
+                return (<div className="h-full overflow-y-auto">
+                    <style>{pokerStyles}</style>
+                    <div className="pkr-hdr rounded-2xl p-6 mb-6">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span style={{fontSize:'28px'}}>🃏</span>
+                                <div>
+                                    <h1 className="text-xl font-black text-text-main">Planning Poker Results</h1>
+                                    <p style={{color:'rgba(251,191,36,0.8)'}} className="text-sm font-bold font-mono">{cr?.story_key} — {cr?.story_summary}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {pokerResults.length > 1 && <div className="flex items-center gap-2">
+                                    <button onClick={() => setCurrentResultIdx(Math.max(0, currentResultIdx - 1))} disabled={currentResultIdx === 0} className="w-8 h-8 rounded-lg font-bold text-sm disabled:opacity-30" style={{background:'rgba(51,65,85,0.5)',color:'#fff',border:'none',cursor:'pointer'}}>‹</button>
+                                    <span className="text-sm font-bold text-text-muted">{currentResultIdx + 1}/{pokerResults.length}</span>
+                                    <button onClick={() => setCurrentResultIdx(Math.min(pokerResults.length - 1, currentResultIdx + 1))} disabled={currentResultIdx === pokerResults.length - 1} className="w-8 h-8 rounded-lg font-bold text-sm disabled:opacity-30" style={{background:'rgba(51,65,85,0.5)',color:'#fff',border:'none',cursor:'pointer'}}>›</button>
+                                </div>}
+                                <button onClick={resetAll} className="text-xs font-bold uppercase px-3 py-2 rounded-lg text-text-muted" style={{background:'rgba(30,41,59,0.8)',border:'1px solid rgba(148,163,184,0.15)',cursor:'pointer'}}>← New Session</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {cr?.error ? <div className="p-4 rounded-xl text-sm font-semibold" style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#f87171'}}>Error: {cr.error}</div> : <>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:'12px',marginBottom:'24px'}}>
+                            {votes.map((v, idx) => {
+                                const agent = agents.find(a => a.id === v.agent_id) || {};
+                                const revealed = revealedAgents.has(v.agent_id);
+                                return (<div key={v.agent_id} className={revealed ? 'pkr-flip' : ''} style={{borderRadius:'12px',padding:'16px',border: revealed ? '1px solid rgba(148,163,184,0.3)' : '1px solid rgba(30,41,59,0.5)',background: revealed ? 'linear-gradient(145deg,rgba(30,41,59,0.9),rgba(15,23,42,0.95))' : 'rgba(15,23,42,0.5)',transition:'all 0.5s'}}>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span style={{fontSize:'20px'}}>{agent.emoji || '🤖'}</span>
+                                            <div>
+                                                <div className="text-xs font-bold text-text-main">{agent.name || v.agent_id}</div>
+                                                <div style={{fontSize:'10px',color:'#64748b'}}>{agent.experience}</div>
+                                            </div>
+                                        </div>
+                                        {revealed
+                                            ? <div style={{width:'48px',height:'56px',borderRadius:'8px',fontWeight:900,fontSize:'20px',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#fbbf24,#ea580c)',color:'#000',boxShadow:'0 4px 15px rgba(251,191,36,0.3)'}}>{v.points}</div>
+                                            : <div style={{width:'48px',height:'56px',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,#334155,#1e293b)',border:'1px solid #475569',color:'#475569',fontSize:'18px'}}>?</div>}
+                                    </div>
+                                    {revealed && <>
+                                        <span style={{fontSize:'10px',padding:'2px 8px',borderRadius:'99px',fontWeight:700,background: v.confidence === 'high' ? 'rgba(34,197,94,0.2)' : v.confidence === 'low' ? 'rgba(239,68,68,0.2)' : 'rgba(234,179,8,0.2)',color: v.confidence === 'high' ? '#4ade80' : v.confidence === 'low' ? '#f87171' : '#facc15'}}>{(v.confidence || 'medium').toUpperCase()}</span>
+                                        <p className="text-xs mt-2" style={{color:'#94a3b8',lineHeight:'1.5'}}>{v.reasoning}</p>
+                                        {v.risks && <p style={{fontSize:'10px',color:'rgba(248,113,113,0.7)',marginTop:'6px',fontStyle:'italic'}}>⚠ {v.risks}</p>}
+                                    </>}
+                                </div>);
+                            })}
+                        </div>
+
+                        {showSuperAgent && sa && <div className="pkr-pop" style={{borderRadius:'16px',padding:'24px',marginBottom:'24px',background:'linear-gradient(135deg,rgba(251,191,36,0.1),rgba(15,23,42,0.95),rgba(251,191,36,0.05))',border:'2px solid rgba(251,191,36,0.3)'}}>
+                            <div className="flex items-center gap-4 mb-4">
+                                <span style={{fontSize:'36px'}}>🏆</span>
+                                <div className="flex-1">
+                                    <h3 className="text-lg font-black" style={{color:'#fbbf24'}}>Super Agent Verdict</h3>
+                                    <p className="text-xs text-text-muted">Consensus: {sa.consensus_type || 'majority'} {sa.discussion_highlights ? `| ${sa.discussion_highlights}` : ''}</p>
+                                </div>
+                                <div style={{textAlign:'center'}}>
+                                    <div style={{width:'80px',height:'96px',borderRadius:'12px',background:'linear-gradient(135deg,#fbbf24,#ea580c)',color:'#000',fontWeight:900,fontSize:'36px',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 30px rgba(251,191,36,0.3)'}}>{sa.final_points}</div>
+                                    <div style={{fontSize:'11px',color:'rgba(251,191,36,0.8)',fontWeight:700,marginTop:'4px'}}>FINAL</div>
+                                </div>
+                            </div>
+                            <p className="text-sm" style={{color:'#cbd5e1',lineHeight:'1.6',marginBottom:'12px'}}>{sa.rationale}</p>
+                            {sa.key_assumptions && <div className="flex flex-wrap gap-2">
+                                {sa.key_assumptions.map((a, i) => <span key={i} style={{fontSize:'10px',padding:'4px 10px',borderRadius:'99px',background:'rgba(30,41,59,0.8)',color:'#94a3b8',fontWeight:600,border:'1px solid rgba(71,85,105,0.5)'}}>{a}</span>)}
+                            </div>}
+                            {sa.split_recommendation && <div style={{marginTop:'12px',padding:'12px',borderRadius:'8px',background:'rgba(59,130,246,0.1)',border:'1px solid rgba(59,130,246,0.3)',color:'#60a5fa',fontSize:'12px',fontWeight:600}}>✂️ Split: {sa.split_recommendation}</div>}
+                        </div>}
+
+                        {showSuperAgent && votes.length > 0 && <div style={{borderRadius:'12px',padding:'16px',background:'rgba(15,23,42,0.5)',border:'1px solid rgba(30,41,59,0.8)',marginBottom:'24px'}}>
+                            <h4 style={{fontSize:'11px',fontWeight:700,color:'#64748b',textTransform:'uppercase',letterSpacing:'1px',marginBottom:'12px'}}>Vote Distribution</h4>
+                            <div className="flex items-end gap-1" style={{height:'64px'}}>
+                                {FIB.map(pt => {
+                                    const count = votes.filter(v => v.points === pt).length;
+                                    const mx = Math.max(...FIB.map(p => votes.filter(v => v.points === p).length), 1);
+                                    return (<div key={pt} className="flex-1 flex flex-col items-center gap-1">
+                                        {count > 0 && <span style={{fontSize:'10px',fontWeight:700,color:'#fbbf24'}}>{count}</span>}
+                                        <div style={{width:'100%',borderRadius:'4px 4px 0 0',transition:'all 0.3s',height: count > 0 ? `${(count/mx)*100}%` : '4px',minHeight:'4px',background: count > 0 ? 'linear-gradient(to top,#f59e0b,#fbbf24)' : 'rgba(30,41,59,0.8)'}}></div>
+                                        <span style={{fontSize:'10px',fontWeight:700,color:'#64748b'}}>{pt}</span>
+                                    </div>);
+                                })}
+                            </div>
+                        </div>}
+
+                        {showSuperAgent && <div style={{borderRadius:'12px',padding:'20px',background:'rgba(15,23,42,0.7)',border:'1px solid rgba(71,85,105,0.5)',marginBottom:'24px'}}>
+                            <h4 className="text-sm font-black text-text-main mb-3">✏️ Review & Adjust</h4>
+                            <div className="flex items-center gap-4">
+                                <div>
+                                    <label style={{fontSize:'10px',color:'#64748b',textTransform:'uppercase',fontWeight:700,display:'block',marginBottom:'4px'}}>Final Points</label>
+                                    <div className="flex gap-1.5">
+                                        {FIB.map(pt => <button key={pt} onClick={() => setAdjustments(prev => ({...prev, [cr.story_key]: {...prev[cr.story_key], points: pt}}))} style={{width:'36px',height:'44px',borderRadius:'8px',fontWeight:700,fontSize:'14px',cursor:'pointer',transition:'all 0.3s',border: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? 'none' : '1px solid rgba(71,85,105,0.5)',background: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? 'linear-gradient(135deg,#fbbf24,#ea580c)' : 'rgba(30,41,59,0.8)',color: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? '#000' : '#94a3b8',boxShadow: (adjustments[cr?.story_key]?.points || sa?.final_points) === pt ? '0 4px 15px rgba(251,191,36,0.3)' : 'none'}}>{pt}</button>)}
+                                    </div>
+                                </div>
+                                <div className="flex-1">
+                                    <label style={{fontSize:'10px',color:'#64748b',textTransform:'uppercase',fontWeight:700,display:'block',marginBottom:'4px'}}>Comment (optional)</label>
+                                    <input type="text" placeholder="Add a note for the team..." value={adjustments[cr?.story_key]?.comment || ''} onChange={e => setAdjustments(prev => ({...prev, [cr.story_key]: {...prev[cr.story_key], comment: e.target.value}}))} style={{width:'100%',padding:'8px 12px',borderRadius:'8px',background:'rgba(30,41,59,0.8)',border:'1px solid rgba(71,85,105,0.5)',color:'#fff',fontSize:'13px',outline:'none'}} />
+                                </div>
+                            </div>
+                        </div>}
+
+                        {showSuperAgent && currentResultIdx === pokerResults.length - 1 && <div className="flex items-center justify-between" style={{borderRadius:'12px',padding:'20px',background:'linear-gradient(135deg,rgba(34,197,94,0.1),rgba(16,185,129,0.05))',border:'1px solid rgba(34,197,94,0.3)'}}>
+                            <div>
+                                <h4 className="text-sm font-black" style={{color:'#4ade80'}}>🚀 Push All Results to Jira</h4>
+                                <p className="text-xs text-text-muted mt-1">{pokerResults.filter(r => !r.error).length} stories ready — points + AI reasoning as comments</p>
+                            </div>
+                            {pushResults
+                                ? <div className="text-sm font-bold" style={{color:'#4ade80'}}>✅ {pushResults.filter(r => r.status === 'success').length}/{pushResults.length} pushed</div>
+                                : <button onClick={pushToJira} disabled={pushing} className="pkr-btn px-6 py-3 rounded-xl text-sm">{pushing ? '⏳ Pushing...' : '🚀 Push to Jira'}</button>}
+                        </div>}
+                    </>}
+                </div>);
+            }
+
+            return (<div className="h-full overflow-y-auto">
+                <style>{pokerStyles}</style>
+                <div className="pkr-hdr rounded-2xl p-8 mb-6">
+                    <div className="flex items-center gap-4">
+                        <span style={{fontSize:'36px'}}>🃏</span>
+                        <div>
+                            <h1 className="text-2xl font-black text-text-main tracking-tight">AI Planning Poker</h1>
+                            <p className="text-text-muted text-sm mt-1">9 AI agents debate and estimate your stories using Fibonacci scale</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="flex items-center gap-3 mb-6">
+                    <button className={`pkr-tab ${source === 'sprint' ? 'pkr-tab-on' : 'pkr-tab-off'}`} onClick={() => setSource('sprint')}>🏃 Sprint</button>
+                    <button className={`pkr-tab ${source === 'backlog' ? 'pkr-tab-on' : 'pkr-tab-off'}`} onClick={() => setSource('backlog')}>📋 Backlog</button>
+                    {source === 'sprint' && <select value={selectedSprint} onChange={e => setSelectedSprint(e.target.value)} className="ml-4 px-4 py-2 rounded-lg text-sm font-semibold" style={{background:'rgba(30,41,59,0.8)',border:'1px solid rgba(71,85,105,0.5)',color:'#fff'}}>
+                        <option value="">Active Sprint</option>
+                        {sprints.map(s => <option key={s.id} value={s.id}>{s.name} ({s.state})</option>)}
+                    </select>}
+                    <div className="ml-auto flex items-center gap-3">
+                        {stories.length > 0 && <button onClick={selectAll} style={{fontSize:'12px',color:'#fbbf24',fontWeight:700,textTransform:'uppercase',letterSpacing:'1px',background:'none',border:'none',cursor:'pointer'}}>
+                            {selectedKeys.size === stories.length ? '✕ Deselect All' : '☑ Select All'}
+                        </button>}
+                        <button onClick={startPoker} disabled={!selectedKeys.size || loading} className="pkr-btn px-6 py-3 rounded-xl text-sm">
+                            {loading ? '⏳ Running...' : `🃏 Start Poker (${selectedKeys.size})`}
+                        </button>
+                    </div>
+                </div>
+                {error && <div className="mb-4 p-3 rounded-lg text-sm font-semibold" style={{background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#f87171'}}>{error}</div>}
+                {loadingStories ? <div className="space-y-3">{[1,2,3,4].map(i => <div key={i} className="pkr-shim" style={{height:'80px',borderRadius:'12px'}}></div>)}</div>
+                : stories.length === 0 ? <div className="text-center py-20 text-lg font-semibold text-text-muted">No stories found. Try changing source or sprint.</div>
+                : <div className="space-y-2">{stories.map(s => (
+                    <div key={s.key} onClick={() => toggleStory(s.key)} className={`pkr-card rounded-xl p-4 cursor-pointer flex items-center gap-4 ${selectedKeys.has(s.key) ? 'pkr-sel' : ''}`}>
+                        <div style={{width:'24px',height:'24px',borderRadius:'6px',border: selectedKeys.has(s.key) ? '2px solid #f59e0b' : '2px solid #64748b',background: selectedKeys.has(s.key) ? '#f59e0b' : 'transparent',display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.3s',flexShrink:0}}>
+                            {selectedKeys.has(s.key) && <span style={{fontSize:'12px',fontWeight:900,color:'#000'}}>✓</span>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="font-bold font-mono" style={{fontSize:'11px',color:'rgba(251,191,36,0.8)'}}>{s.key}</span>
+                                <span style={{fontSize:'10px',padding:'2px 6px',borderRadius:'4px',fontWeight:700,textTransform:'uppercase',background: s.issue_type === 'Bug' ? 'rgba(239,68,68,0.2)' : s.issue_type === 'Task' ? 'rgba(59,130,246,0.2)' : 'rgba(34,197,94,0.2)',color: s.issue_type === 'Bug' ? '#f87171' : s.issue_type === 'Task' ? '#60a5fa' : '#4ade80'}}>{s.issue_type}</span>
+                                <span style={{fontSize:'10px',padding:'2px 6px',borderRadius:'4px',fontWeight:700,background:'rgba(51,65,85,0.5)',color:'#94a3b8'}}>{s.priority}</span>
+                            </div>
+                            <p className="font-semibold text-sm mt-1 text-text-main truncate">{s.summary}</p>
+                            {s.description && <p className="text-xs mt-0.5 truncate text-text-muted">{s.description.slice(0, 120)}</p>}
+                        </div>
+                        <div style={{textAlign:'right',flexShrink:0}}>
+                            <div style={{fontSize:'10px',color:'#64748b',textTransform:'uppercase',fontWeight:700}}>Current</div>
+                            <div className="text-lg font-black" style={{color: s.current_points ? '#cbd5e1' : '#334155'}}>{s.current_points || '—'}</div>
+                        </div>
+                    </div>
+                ))}</div>}
+            </div>);
         }
 
         function StandupView() { return <div className="h-full flex items-center justify-center text-2xl font-black text-text-muted uppercase tracking-widest">Standup Bot Coming Soon</div>; }
