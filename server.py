@@ -1152,78 +1152,66 @@ def save_team(project_key: str, payload: dict, creds: dict = Depends(get_jira_cr
     return {"status": "saved", "count": len(team_members)}
 
 # ═══════════════════════════════════════════════════════════
-#  PLANNING POKER v3 — 9 Hardcoded Agents, PERT Super Agent
+#  PLANNING POKER v4 — Real Historical Data, AI-Era Estimation
 # ═══════════════════════════════════════════════════════════
 
-# 7 VOTING agents + 2 NON-VOTING influencers (BA, Scrum Master)
 POKER_AGENTS = [
     {
-        "id": "architect", "name": "The Architect", "emoji": "🏗️",
-        "title": "The Blast-Radius Thinker", "votes": True,
-        "psychology": "Paranoia disguised as system wisdom.",
-        "monologue": "They think this is just a simple change. They don't realize this touches the data model, invalidates integrations, and might hit platform limits.",
-        "behavior": """You are the Architect — the Blast-Radius Thinker. You often point HIGHER than developers because you don't estimate time to write code — you estimate the cognitive load required to ensure the entire enterprise ecosystem doesn't collapse. You see data model changes, API contract risks, integration breakage, platform limits, and non-functional requirements that others completely miss. When a story seems 'simple' to developers, you see the blast radius across the system."""
+        "id": "architect", "name": "The Architect", "emoji": "🏗️", "votes": True,
+        "behavior": """You are a Solutions Architect with 15+ years of enterprise experience. You estimate the COGNITIVE LOAD and BLAST RADIUS — not just lines of code. You see data model impacts, API contract risks, integration breakage, platform execution limits, and non-functional requirements. When developers say 'just add a field,' you see the cascade across integrations, audit trails, and downstream systems. You tend to point HIGHER than developers. However — if a story is genuinely isolated with no integration surface, you acknowledge that and point lower. You do NOT inflate trivially simple tasks."""
     },
     {
-        "id": "team_lead", "name": "The Team Lead", "emoji": "🛡️",
-        "title": "The Delivery Pragmatist", "votes": True,
-        "psychology": "Protective anxiety and buffer management.",
-        "monologue": "If we point this as a 3, the business will expect it done by Wednesday. But I know my team and I need to protect our velocity.",
-        "behavior": """You are the Team Lead — the Delivery Pragmatist. You point DEFENSIVELY. If the team leans toward a 2, you argue for a 5 to build a buffer, protecting the team from burnout and ensuring sprint commitments aren't jeopardized. You factor in real-world delivery friction: team members out sick, prod-support duties, code reviews, deployment windows, and the fact that estimates always need breathing room. You are the guardian of sustainable velocity."""
+        "id": "team_lead", "name": "The Team Lead", "emoji": "🛡️", "votes": True,
+        "behavior": """You are an Engineering Lead responsible for sprint delivery. You point DEFENSIVELY to protect velocity and prevent burnout. You factor in real-world friction: code reviews, deployment windows, team availability, and prod-support interruptions. If the team leans toward a 2, you argue for a 3 to build breathing room. However, you also know that modern AI-assisted development (copilots, code generation) has genuinely reduced implementation time for routine tasks — so you don't over-buffer simple coding work. Your buffer is for PROCESS overhead, not implementation."""
     },
     {
-        "id": "senior_dev", "name": "The Senior Dev", "emoji": "👨‍💻",
-        "title": "The Confident Skeptic", "votes": True,
-        "psychology": "The curse of knowledge.",
-        "monologue": "I built the original module. I can reuse that class, write a handler, and be done by lunch. This is trivial.",
-        "behavior": """You are the Senior Developer — the Confident Skeptic. You are NOTORIOUS for under-pointing. Because you know the codebase inside out, you estimate based on YOUR elite capability, forgetting that a Mid or Junior dev picking up the ticket will struggle. You often throw a 2 or 3 where others throw 5s. HOWEVER — if the ticket touches famously messy legacy code, you immediately throw a 13 to aggressively signal 'Do not touch this unless we have time to refactor.' You swing between extreme confidence and extreme caution depending on code quality."""
+        "id": "senior_dev", "name": "The Senior Dev", "emoji": "👨‍💻", "votes": True,
+        "behavior": """You are a Senior Developer who knows the codebase inside out. You are NOTORIOUS for under-pointing because you estimate based on YOUR capability with AI assistance — you can scaffold code with Copilot, generate tests with AI, and debug faster than ever. A validation rule? You'd have it done in an hour with AI help. HOWEVER — if the ticket touches messy legacy code, has unclear requirements, or involves complex integration, you immediately throw high (8-13) because AI tools can't navigate tangled business logic or predict side effects. You swing between extreme confidence and extreme caution."""
     },
     {
-        "id": "mid_dev", "name": "The Mid-Level Dev", "emoji": "💻",
-        "title": "The Cautious Optimizer", "votes": True,
-        "psychology": "Recency bias and survival instinct.",
-        "monologue": "Last sprint, I pointed an integration ticket a 3, and it took me six days because the API docs were wrong. Never again.",
-        "behavior": """You are the Mid-Level Developer — the Cautious Optimizer. Your estimates fluctuate based on recent sprint trauma. You've been burned by hidden complexity enough times to be wary. You usually anchor to the Senior Dev's estimate but argue for a SLIGHTLY HIGHER number to be safe. You want to prove you're fast, but your survival instinct makes you add a buffer. Integration work, third-party APIs, and anything with 'legacy' in it makes you nervous."""
+        "id": "mid_dev", "name": "The Mid-Level Dev", "emoji": "💻", "votes": True,
+        "behavior": """You are a Mid-Level Developer with recent sprint trauma. Last sprint you pointed something a 3 and it took 6 days because documentation was wrong. You anchor slightly above the Senior Dev's estimate for safety. You're competent with AI tools for code generation but still need time to understand unfamiliar codebases, debug integration issues, and handle edge cases that AI misses. Integration work and third-party APIs make you nervous. On straightforward tasks you're close to the Senior Dev; on complex ones you add realistic buffer."""
     },
     {
-        "id": "junior_dev", "name": "The Junior Dev", "emoji": "🌱",
-        "title": "The Optimistic Guesser", "votes": True,
-        "psychology": "Imposter syndrome mixed with blind optimism.",
-        "monologue": "The ticket says 'Add a button.' Adding a button is easy. I'll point a 1. Wait, why did the Architect point an 8?",
-        "behavior": """You are the Junior Developer — the Optimistic Guesser. You suffer from the 'Happy Path Illusion.' You only see the code required to make the feature work under PERFECT conditions. You do NOT mentally account for unit tests, code reviews, deployment pipelines, edge cases, error handling, or rollback scenarios. You confidently throw low numbers (1s and 2s) then get confused when seniors throw 5s and 8s. On genuinely simple tasks you may be the most accurate person in the room, but on anything with hidden complexity you are dangerously optimistic."""
+        "id": "junior_dev", "name": "The Junior Dev", "emoji": "🌱", "votes": True,
+        "behavior": """You are a Junior Developer with the Happy Path Illusion. You see 'add a validation rule' and think it's simple — just write an IF statement. You confidently throw 1s and 2s. You don't mentally account for unit tests, code reviews, deployment pipelines, edge cases, error handling, or regression risk. AI tools help you write code fast, which reinforces your belief that everything is quick. On genuinely simple tasks (config changes, text updates) you may be the MOST ACCURATE person. On anything with hidden complexity, you are dangerously optimistic. You should sometimes throw 1 where everyone else throws 5+."""
     },
     {
-        "id": "senior_qa", "name": "The Senior QA", "emoji": "🔍",
-        "title": "The Edge-Case Hunter", "votes": True,
-        "psychology": "Institutional skepticism and doomsday preparation.",
-        "monologue": "The dev is thinking about a user clicking Submit. I'm thinking about a user clicking Submit twice on 3G while their session token expires.",
-        "behavior": """You are the Senior QA Engineer — the Edge-Case Hunter. You are often the anchor holding sprint reality together. You point based on test data setup, permutation testing, regression impact, and automation scripting. If a Senior Dev says 'It's a 2, just a config change,' you counter with an 8 because testing a global config change requires a FULL regression sweep. You think about cross-browser testing, data integrity, edge cases with concurrent users, accessibility, and the three rounds of bug-bouncing before a ticket passes. Your estimates include the FULL testing lifecycle, not just development."""
+        "id": "senior_qa", "name": "The Senior QA", "emoji": "🔍", "votes": True,
+        "behavior": """You are a Senior QA Engineer — the reality anchor. You point based on the FULL testing lifecycle: test data setup, permutation testing, regression impact, automation scripting, cross-browser testing, accessibility, and data integrity. If a Senior Dev says 'just a config change, it's a 2,' you counter with 5+ because testing a config change requires regression across all affected paths. You think about what happens when a user clicks Submit twice on 3G while their session expires. Your estimates include the bug-bounce cycles between dev and QA that always happen."""
     },
     {
-        "id": "junior_qa", "name": "The Junior QA", "emoji": "🧪",
-        "title": "The Literal Translator", "votes": True,
-        "psychology": "Checklist mentality.",
-        "monologue": "There are three acceptance criteria. I have three test cases to write. Standard amount of work.",
-        "behavior": """You are the Junior QA Analyst — the Literal Translator. Like the Junior Dev, you estimate LINEARLY based on the exact words in the ticket. Three acceptance criteria = three test cases = low estimate. You haven't yet developed the 'sixth sense' for where developers typically introduce bugs, so you don't factor in the time to bounce tickets back and forth with development three times before it passes. On well-specified tickets with clear criteria, you're actually reasonably accurate."""
+        "id": "junior_qa", "name": "The Junior QA", "emoji": "🧪", "votes": True,
+        "behavior": """You are a Junior QA Analyst with a checklist mentality. Three acceptance criteria = three test cases = low estimate. You estimate linearly based on ticket wording. You haven't developed the sixth sense for where developers introduce bugs, so you don't factor in 3 rounds of bug-bouncing. On well-specified tickets with clear criteria, you're reasonably accurate. On vague or complex tickets, you significantly underestimate testing effort."""
     },
     {
-        "id": "ba", "name": "The BA", "emoji": "📊",
-        "title": "The Value Defender", "votes": False,
-        "psychology": "Frustration with technical friction.",
-        "monologue": "Why are they pointing an 8 for a dropdown menu? The stakeholders need this by Friday. They are overcomplicating this.",
-        "behavior": """You are the Business Analyst — the Value Defender. You DO NOT VOTE with story points. Instead, you act as the prosecuting attorney. When the dev team points high, you CHALLENGE the scope: 'What if we remove the auto-filtering requirement? Does that drop it from an 8 to a 3?' You are constantly trying to negotiate technical complexity down to protect delivery timelines. You also flag when requirements are unclear and likely to cause rework, and suggest story splitting to deliver value incrementally."""
+        "id": "ba", "name": "The BA", "emoji": "📊", "votes": False,
+        "behavior": """You are a Business Analyst who DOES NOT VOTE. You act as the prosecuting attorney — when estimates go high, you challenge scope: 'What if we remove X requirement? Does that drop it from 8 to 3?' You negotiate complexity down and suggest story splitting. You also flag when requirements are unclear and will cause rework."""
     },
     {
-        "id": "scrum_master", "name": "The Scrum Master", "emoji": "⚡",
-        "title": "The Process Referee", "votes": False,
-        "psychology": "Timeboxing and consensus desperation.",
-        "monologue": "We have 15 more tickets. We've been arguing about whether this is a 3 or a 5 for twelve minutes. Someone please compromise.",
-        "behavior": """You are the Scrum Master — the Process Referee. You DO NOT VOTE. You aren't looking at code or test cases — you're looking at HUMAN DYNAMICS. If the Junior Dev and Architect are 6+ points apart, you call on both to explain, ensuring psychological safety. If there's a deadlock, you force a compromise or suggest putting the ticket back for refinement. You also compare against historical velocity: 'Last sprint we completed eight 5-pointers. This feels similar to PROJ-234 which we pointed as a 5.' You are the voice of process discipline and team health."""
+        "id": "scrum_master", "name": "The Scrum Master", "emoji": "⚡", "votes": False,
+        "behavior": """You are the Scrum Master who DOES NOT VOTE. You observe team dynamics: if there's a big spread, you call on the outliers to explain. You compare against REAL historical data from previous sprints (provided below) to ground the discussion in facts, not feelings. You reference actual completed tickets by their keys and points."""
     }
 ]
 
-VOTING_AGENTS = [a for a in POKER_AGENTS if a["votes"]]
-NON_VOTING_AGENTS = [a for a in POKER_AGENTS if not a["votes"]]
+def _fetch_historical_data(project_key, creds, sp_field):
+    """Fetch completed stories from recent sprints for Scrum Master context."""
+    try:
+        jql = f'project="{project_key}" AND statusCategory = Done AND sprint is not EMPTY AND issuetype in (Story, Task, Bug) ORDER BY updated DESC'
+        res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "issuetype", "priority", sp_field]})
+        if res and res.status_code == 200:
+            history = []
+            for i in res.json().get('issues', []):
+                f = i.get('fields', {})
+                pts = extract_story_points(f, sp_field)
+                if pts and pts > 0:
+                    history.append({"key": i.get('key'), "summary": f.get('summary', '')[:80],
+                        "type": (f.get('issuetype') or {}).get('name', ''), "priority": (f.get('priority') or {}).get('name', ''),
+                        "points": pts})
+            return history[:20]
+    except: pass
+    return []
+
 
 @app.get("/planning_poker/{project_key}/stories")
 def get_poker_stories(project_key: str, source: str = "sprint", sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
@@ -1248,13 +1236,23 @@ def get_poker_stories(project_key: str, source: str = "sprint", sprint_id: str =
                 "issue_type": (f.get('issuetype') or {}).get('name', 'Story'), "priority": (f.get('priority') or {}).get('name', 'Medium'),
                 "status": (f.get('status') or {}).get('name', 'To Do'), "assignee": (f.get('assignee') or {}).get('displayName', 'Unassigned'),
                 "current_points": extract_story_points(f, sp_field), "comments": comments})
-    return {"stories": stories, "agents": [{"id": a["id"], "name": a["name"], "emoji": a["emoji"], "title": a["title"], "votes": a["votes"], "psychology": a["psychology"]} for a in POKER_AGENTS]}
+    return {"stories": stories, "agents": [{"id": a["id"], "name": a["name"], "emoji": a["emoji"], "votes": a["votes"]} for a in POKER_AGENTS]}
 
 
 @app.post("/planning_poker/{project_key}/play")
 def run_planning_poker(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
     stories = payload.get("stories", [])
     if not stories: return {"error": "No stories selected"}
+
+    sp_field = get_story_point_field(creds)
+    historical = _fetch_historical_data(project_key, creds, sp_field)
+    history_block = "No historical data available."
+    if historical:
+        history_lines = [f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) → {h['points']} pts" for h in historical]
+        history_block = f"COMPLETED STORIES FROM RECENT SPRINTS (real data):\n" + "\n".join(history_lines)
+
+    voting = [a for a in POKER_AGENTS if a["votes"]]
+    nonvoting = [a for a in POKER_AGENTS if not a["votes"]]
     results = []
 
     for story in stories:
@@ -1263,77 +1261,101 @@ TYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}
 DESCRIPTION: {story.get('description', 'No description')[:800]}
 RECENT COMMENTS: {json.dumps(story.get('comments', [])[:3])}"""
 
-        voter_block = "\n\n".join([f"VOTER {i+1} — {a['name']} (id: \"{a['id']}\") — \"{a['title']}\"\n{a['behavior']}" for i, a in enumerate(VOTING_AGENTS)])
-        influencer_block = "\n\n".join([f"NON-VOTER — {a['name']} (id: \"{a['id']}\") — \"{a['title']}\"\n{a['behavior']}" for a in NON_VOTING_AGENTS])
+        voter_block = "\n\n".join([f"VOTER — {a['name']} (id: \"{a['id']}\")\n{a['behavior']}" for a in voting])
+        influencer_block = "\n\n".join([f"NON-VOTER — {a['name']} (id: \"{a['id']}\")\n{a['behavior']}" for a in nonvoting])
 
-        prompt = f"""You are simulating a REAL Planning Poker session with 9 team members around a table.
+        prompt = f"""You are simulating a REAL Planning Poker estimation session with 9 team members.
 
 {story_ctx}
 
-═══ THE 7 VOTING MEMBERS ═══
+{history_block}
+
+═══ 7 VOTING MEMBERS ═══
 {voter_block}
 
-═══ THE 2 NON-VOTING INFLUENCERS ═══
+═══ 2 NON-VOTING INFLUENCERS ═══
 {influencer_block}
 
 ═══ FIBONACCI SCALE: 1, 2, 3, 5, 8, 13, 21 ═══
 
-SIMULATION RULES — READ CAREFULLY:
-1. Each of the 7 voters reveals their card INDEPENDENTLY based on their psychological profile
-2. The BA and Scrum Master DO NOT vote — they provide commentary, challenges, and process observations
-3. The Junior Dev MUST sometimes throw embarrassingly low numbers on complex stories (Happy Path Illusion)
-4. The Senior Dev MUST under-point tasks they're confident about BUT over-point messy legacy code
-5. The Team Lead MUST add defensive buffer — if the room says 3, the Lead argues for 5
-6. The Architect and Senior QA are typically the HIGHEST pointers — they see blast radius and test permutations
-7. The BA MUST challenge high estimates with scope reduction suggestions
-8. The Scrum Master MUST comment on team dynamics and compare to historical stories
-9. Votes MUST show genuine disagreement — a spread of 3+ points is NORMAL for complex stories
-10. On genuinely simple/clear stories, votes CAN converge — but the Team Lead still adds a small buffer
+═══ AI-ERA ESTIMATION RULES (CRITICAL) ═══
+Modern development teams use AI coding assistants (GitHub Copilot, Claude, ChatGPT). This CHANGES estimation:
+
+REDUCED EFFORT (AI accelerates these):
+- Boilerplate code, CRUD operations, standard patterns → estimate 30-50% lower than pre-AI era
+- Simple validation rules, config changes, field additions → often 1-2 pts, NOT 5
+- Unit test generation, documentation → AI handles bulk of this
+- Standard API integrations with good docs → faster than before
+
+UNCHANGED EFFORT (AI does NOT help with):
+- Architecture decisions, system design → still requires human judgment
+- Integration testing across systems → AI can't run your test suite
+- Deployment coordination, rollback planning → process, not code
+- Legacy code archaeology — understanding WHY code exists → AI doesn't know your history
+- Cross-team dependencies, stakeholder alignment → organizational, not technical
+- Data migration, backward compatibility → risk assessment is human
+
+ESTIMATION GUIDE (AI-era realistic ranges):
+- Config/cosmetic/text change: 1 pt
+- Simple validation, field addition, minor UI: 1-2 pts
+- Standard feature with clear requirements: 2-3 pts
+- Feature with integration or legacy touch: 3-5 pts
+- Complex cross-system change: 5-8 pts
+- Major architectural change or refactor: 8-13 pts
+- Massive multi-system overhaul: 13-21 pts
+
+═══ SIMULATION RULES ═══
+1. Each voter reveals independently per their psychology
+2. The Junior Dev MUST sometimes throw 1 on complex stories (Happy Path Illusion)
+3. The Senior Dev under-points routine code BUT goes high on legacy mess
+4. The Architect and Senior QA are typically highest — they see blast radius and test permutations
+5. Votes MUST show genuine disagreement — spread of 3+ points is normal for complex stories
+6. On genuinely simple tasks, votes CAN cluster at 1-2, not everything needs to be a 5
+7. The BA challenges high estimates with scope reduction ideas
+8. The Scrum Master MUST reference actual ticket keys from the historical data provided (NOT made-up ticket numbers)
 
 ═══ SUPER AGENT — CHIEF ESTIMATION OFFICER ═══
-After all votes and commentary, the Super Agent synthesizes using FOUR formal methods:
+Uses four methods, each MUST produce a DIFFERENT number where appropriate:
 
-A) PERT ESTIMATE: (Optimistic + 4×MostLikely + Pessimistic) / 6
-   - Optimistic = lowest vote, Pessimistic = highest vote, MostLikely = median vote
-   - Round to nearest Fibonacci number
+A) PERT: (Optimistic + 4×MostLikely + Pessimistic) / 6 → round to nearest Fibonacci
+   Optimistic = minimum vote, Pessimistic = maximum vote, MostLikely = median vote
 
-B) THREE-POINT ESTIMATE: (Optimistic + MostLikely + Pessimistic) / 3
-   - Simple average rounded to Fibonacci
+B) THREE-POINT: (O + M + P) / 3 → simple average, round to Fibonacci
 
-C) HISTORICAL COMPARISON: Based on story type/priority, what would a typical team estimate?
-   - Bug fixes: typically 2-5 pts
-   - New features: typically 5-13 pts
-   - Infrastructure/refactoring: typically 8-21 pts
-   - Config/cosmetic changes: typically 1-3 pts
+C) HISTORICAL: Find the most similar story from the historical data and use its actual points.
+   If no similar story exists, estimate based on type/priority patterns.
 
-D) ANALOGOUS ESTIMATION: Compare to a hypothetical similar story the team has done before
+D) ANALOGOUS: Compare to a specific completed story from the historical data, referencing its real key.
 
-The Super Agent picks the final number by weighing all four methods, with PERT weighted most heavily.
+The final number should NOT always be the median. Consider:
+- If Architect + Senior QA both flag significant risk → lean toward higher estimate
+- If the story is genuinely simple and the Senior Dev is confident → lean toward lower
+- PERT is primary but can be overridden by strong historical evidence
 
-Return STRICT JSON — no markdown, no backticks:
+Return STRICT JSON — no markdown, no backticks, no commentary outside JSON:
 {{
   "votes": [
-    {{"agent_id": "architect", "points": 8, "confidence": "high", "reasoning": "2-3 sentences from their psychological perspective", "risks": "specific risk they identified"}},
+    {{"agent_id": "architect", "points": 8, "confidence": "high", "reasoning": "2-3 sentences from their perspective", "risks": "specific risk"}},
     {{"agent_id": "team_lead", "points": 5, "confidence": "medium", "reasoning": "...", "risks": "..."}},
     {{"agent_id": "senior_dev", "points": 3, "confidence": "high", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "mid_dev", "points": 5, "confidence": "medium", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "junior_dev", "points": 2, "confidence": "medium", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "senior_qa", "points": 8, "confidence": "high", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "junior_qa", "points": 3, "confidence": "medium", "reasoning": "...", "risks": "..."}}
+    {{"agent_id": "mid_dev", "points": 3, "confidence": "medium", "reasoning": "...", "risks": "..."}},
+    {{"agent_id": "junior_dev", "points": 1, "confidence": "medium", "reasoning": "...", "risks": "..."}},
+    {{"agent_id": "senior_qa", "points": 5, "confidence": "high", "reasoning": "...", "risks": "..."}},
+    {{"agent_id": "junior_qa", "points": 2, "confidence": "medium", "reasoning": "...", "risks": "..."}}
   ],
   "influencers": [
-    {{"agent_id": "ba", "challenge": "The BA's scope negotiation or requirement challenge", "suggestion": "Concrete scope reduction or split suggestion"}},
-    {{"agent_id": "scrum_master", "observation": "Team dynamics observation", "historical_comparison": "Comparison to similar past stories", "recommendation": "Process recommendation"}}
+    {{"agent_id": "ba", "challenge": "The BA's challenge to the estimates", "suggestion": "Scope reduction or split suggestion"}},
+    {{"agent_id": "scrum_master", "observation": "Team dynamics observation", "historical_comparison": "Reference to REAL ticket key and points from historical data", "recommendation": "Process recommendation"}}
   ],
   "super_agent": {{
-    "pert_estimate": {{"optimistic": 2, "most_likely": 5, "pessimistic": 8, "pert_raw": 4.67, "pert_fibonacci": 5}},
-    "three_point_estimate": {{"raw": 5.0, "fibonacci": 5}},
-    "historical_estimate": {{"category": "Bug fix / New feature / etc", "typical_range": "3-8", "fibonacci": 5}},
-    "analogous_estimate": {{"similar_story": "Brief description of analogous work", "fibonacci": 5}},
-    "final_points": 5,
+    "pert_estimate": {{"optimistic": 1, "most_likely": 3, "pessimistic": 8, "pert_raw": 3.5, "pert_fibonacci": 3}},
+    "three_point_estimate": {{"raw": 4.0, "fibonacci": 5}},
+    "historical_estimate": {{"matched_story": "REAL-KEY from history or null", "matched_points": 3, "fibonacci": 3}},
+    "analogous_estimate": {{"similar_story": "Description of analogous work from history", "reference_key": "REAL-KEY or null", "fibonacci": 3}},
+    "final_points": 3,
     "confidence": "high",
-    "method_used": "PERT (primary) validated by historical comparison",
-    "rationale": "3-4 sentences explaining WHY this number, referencing the estimation methods and key agent perspectives",
+    "method_used": "Which method(s) determined the final number and why",
+    "rationale": "3-4 sentences explaining the final decision, referencing specific agent perspectives and estimation methods",
     "split_recommendation": null,
     "key_assumptions": ["assumption 1", "assumption 2"]
   }}
