@@ -90,11 +90,11 @@ Base.metadata.create_all(bind=engine_db)
 
 class FeatureRoadmapRequest(BaseModel):
     tech_stack: str
-    features: List[str]
-    target_duration_value: float         # was int — now accepts 1.5, 2.5 etc.
+    features: list              # List[str] or List[dict] with name+description
+    target_duration_value: float
     target_duration_unit: str
     project_key: Optional[str] = None
-    start_date: Optional[str] = None  # ISO date string, defaults to today
+    start_date: Optional[str] = None
 
 class JiraPushRequest(BaseModel):
     epics: List[dict]
@@ -1151,51 +1151,198 @@ def save_team(project_key: str, payload: dict, creds: dict = Depends(get_jira_cr
     jira_request("PUT", f"project/{project_key.upper()}/properties/ig_agile_team", creds, team_data)
     return {"status": "saved", "count": len(team_members)}
 
+
 # ═══════════════════════════════════════════════════════════
-#  PLANNING POKER v4 — Real Historical Data, AI-Era Estimation
+#  SMART FEATURE EXTRACTION — Unstructured Data → Features
+# ═══════════════════════════════════════════════════════════
+
+def _extract_text_from_file(content_b64: str, file_type: str) -> str:
+    """Extract readable text from various file formats with intelligent noise filtering."""
+    raw_bytes = base64.b64decode(content_b64)
+    
+    if file_type in ('csv', 'txt', 'text'):
+        text = raw_bytes.decode('utf-8', errors='ignore')
+        # For CSV: try to parse as structured data with smart header detection
+        if file_type == 'csv':
+            try:
+                reader = csv.reader(io.StringIO(text))
+                rows = list(reader)
+                if len(rows) < 2:
+                    return text[:15000]
+                # First row is likely headers
+                headers = [str(h).strip().lower() for h in rows[0]]
+                # Build structured representation for AI to understand
+                lines = [f"DETECTED CSV STRUCTURE — {len(rows)-1} data rows, {len(headers)} columns"]
+                lines.append(f"COLUMN HEADERS: {' | '.join([str(h).strip() for h in rows[0]])}")
+                lines.append("---DATA ROWS---")
+                for row in rows[1:200]:  # Skip header row
+                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                    if cells and len(''.join(cells)) > 3:  # Skip empty/trivial rows
+                        # Pair with headers for context
+                        paired = [f"{str(rows[0][i]).strip()}: {str(row[i]).strip()}" for i in range(min(len(headers), len(row))) if str(row[i]).strip()]
+                        lines.append(" | ".join(paired) if paired else " | ".join(cells))
+                return "\n".join(lines)[:15000]
+            except:
+                pass
+        return text[:15000]
+    
+    if file_type in ('xlsx', 'xls'):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
+            lines = []
+            for ws in wb.worksheets[:5]:
+                rows = list(ws.iter_rows(max_row=200, values_only=True))
+                if not rows: continue
+                headers = [str(c).strip() if c else '' for c in rows[0]]
+                lines.append(f"\n[Sheet: {ws.title}] — {len(rows)-1} data rows, Columns: {' | '.join([h for h in headers if h])}")
+                lines.append("---DATA ROWS---")
+                for row in rows[1:]:
+                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
+                    if cells and len(''.join(cells)) > 3:
+                        paired = [f"{headers[i]}: {str(row[i]).strip()}" for i in range(min(len(headers), len(row))) if row[i] is not None and str(row[i]).strip() and headers[i]]
+                        lines.append(" | ".join(paired) if paired else " | ".join(cells))
+            return "\n".join(lines)[:15000]
+        except Exception as e:
+            return f"[XLSX parse error: {e}]"
+    
+    if file_type in ('pptx', 'ppt'):
+        try:
+            from pptx import Presentation
+            prs = Presentation(io.BytesIO(raw_bytes))
+            lines = []
+            for slide_num, slide in enumerate(prs.slides[:50], 1):
+                slide_text = []
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text.strip():
+                        slide_text.append(shape.text.strip())
+                if slide_text:
+                    lines.append(f"[Slide {slide_num}] " + " | ".join(slide_text))
+            return "\n".join(lines)[:15000]
+        except Exception as e:
+            return f"[PPTX parse error: {e}]"
+    
+    if file_type == 'pdf':
+        try:
+            import fitz  # PyMuPDF
+            doc = fitz.open(stream=raw_bytes, filetype="pdf")
+            text = ""
+            for page in doc[:30]:
+                text += page.get_text() + "\n"
+            return text[:15000]
+        except ImportError:
+            try:
+                from PyPDF2 import PdfReader
+                reader = PdfReader(io.BytesIO(raw_bytes))
+                text = ""
+                for page in reader.pages[:30]:
+                    text += (page.extract_text() or "") + "\n"
+                return text[:15000]
+            except Exception as e2:
+                return f"[PDF parse error: {e2}. Install PyMuPDF: pip install PyMuPDF]"
+        except Exception as e:
+            return f"[PDF parse error: {e}]"
+    
+    return raw_bytes.decode('utf-8', errors='ignore')[:15000]
+
+
+@app.post("/feature_roadmap/extract_features")
+def extract_features_from_file(payload: dict):
+    """AI-powered feature extraction from any unstructured file."""
+    content = payload.get("content", "")
+    file_type = payload.get("file_type", "txt").lower()
+    filename = payload.get("filename", "unknown")
+    
+    # If content is base64, extract text
+    if content and len(content) > 100:
+        try:
+            extracted_text = _extract_text_from_file(content, file_type)
+        except:
+            extracted_text = base64.b64decode(content).decode('utf-8', errors='ignore')[:15000]
+    else:
+        extracted_text = content[:15000]
+    
+    if not extracted_text or len(extracted_text.strip()) < 10:
+        return {"error": "Could not extract readable text from the uploaded file."}
+    
+    prompt = f"""You are an expert Product Manager analyzing an uploaded document to extract SOFTWARE FEATURES that need to be built.
+
+DOCUMENT: "{filename}" (type: {file_type})
+
+CONTENT:
+{extracted_text}
+
+═══ YOUR TASK — INTELLIGENT FEATURE EXTRACTION ═══
+
+STEP 1 — UNDERSTAND THE DOCUMENT TYPE:
+- If it's a CSV/XLSX with columns: Look for the column that contains feature names/descriptions. IGNORE columns that are purely metadata (IDs, dates, status, assignee, sprint, priority, labels). The "name", "summary", "title", "feature", "description", "requirement" columns contain features.
+- If it's a PDF/PPTX: Scan for features described in prose, bullet points, tables, diagrams, or requirement sections.
+- If it's meeting notes: Extract action items and feature decisions.
+- If it's an SOW/RFP: Extract deliverables and technical requirements.
+
+STEP 2 — EXTRACT REAL FEATURES:
+For each distinct software feature, provide:
+1. A clear, concise feature NAME (3-8 words) — what the user would call this feature
+2. A detailed DESCRIPTION (2-4 sentences) — what exactly needs to be built, the business context, and acceptance criteria
+
+STEP 3 — FILTER AGGRESSIVELY:
+INCLUDE: User-facing features, backend capabilities, integrations, data flows, automations, APIs, UI components, business rules
+EXCLUDE: Column headers, metadata rows, IDs/keys, dates, sprint names, status values, assignee names, boilerplate text, page numbers, footers, table borders, repeated headers from multi-page tables, empty or near-empty rows
+
+STEP 4 — DEDUPLICATE & GROUP:
+- Merge overlapping features (e.g., "Login Page" + "User Authentication" + "SSO Integration" → single "User Authentication & SSO" feature with comprehensive description)
+- Group very granular items into logical features (e.g., 15 individual field validations → "Form Validation & Business Rules")
+- But keep genuinely distinct features separate (e.g., "Invoice Generation" and "Payment Processing" are separate features)
+
+Return STRICT JSON — no markdown, no backticks:
+{{
+    "features": [
+        {{"name": "User Authentication & SSO", "description": "Implement secure login, registration, password reset, and session management. Integrate with enterprise SSO providers (SAML/OAuth2). Include MFA support and role-based access control."}},
+        {{"name": "Dashboard Analytics", "description": "Build real-time dashboard with KPIs, interactive charts, and activity feeds. Support role-based visibility so managers see team metrics while individual contributors see personal performance."}}
+    ],
+    "extraction_summary": "Extracted X features from [document type description]. Document covers [domain/scope].",
+    "document_type_detected": "SOW/CSV backlog/meeting notes/RFP/requirements doc/presentation",
+    "noise_filtered": "Filtered out headers, metadata columns, status fields, and N duplicate entries"
+}}"""
+
+    try:
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=60)
+        if raw:
+            cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
+            result = json.loads(cleaned)
+            return result
+        return {"error": "AI returned empty response"}
+    except Exception as e:
+        print(f"Feature extraction error: {e}", flush=True)
+        return {"error": f"Feature extraction failed: {str(e)}"}
+
+
+# ═══════════════════════════════════════════════════════════
+#  PLANNING POKER v4 — 9 Agents, Real Historical, AI-Era
 # ═══════════════════════════════════════════════════════════
 
 POKER_AGENTS = [
-    {
-        "id": "architect", "name": "The Architect", "emoji": "🏗️", "votes": True,
-        "behavior": """You are a Solutions Architect with 15+ years of enterprise experience. You estimate the COGNITIVE LOAD and BLAST RADIUS — not just lines of code. You see data model impacts, API contract risks, integration breakage, platform execution limits, and non-functional requirements. When developers say 'just add a field,' you see the cascade across integrations, audit trails, and downstream systems. You tend to point HIGHER than developers. However — if a story is genuinely isolated with no integration surface, you acknowledge that and point lower. You do NOT inflate trivially simple tasks."""
-    },
-    {
-        "id": "team_lead", "name": "The Team Lead", "emoji": "🛡️", "votes": True,
-        "behavior": """You are an Engineering Lead responsible for sprint delivery. You point DEFENSIVELY to protect velocity and prevent burnout. You factor in real-world friction: code reviews, deployment windows, team availability, and prod-support interruptions. If the team leans toward a 2, you argue for a 3 to build breathing room. However, you also know that modern AI-assisted development (copilots, code generation) has genuinely reduced implementation time for routine tasks — so you don't over-buffer simple coding work. Your buffer is for PROCESS overhead, not implementation."""
-    },
-    {
-        "id": "senior_dev", "name": "The Senior Dev", "emoji": "👨‍💻", "votes": True,
-        "behavior": """You are a Senior Developer who knows the codebase inside out. You are NOTORIOUS for under-pointing because you estimate based on YOUR capability with AI assistance — you can scaffold code with Copilot, generate tests with AI, and debug faster than ever. A validation rule? You'd have it done in an hour with AI help. HOWEVER — if the ticket touches messy legacy code, has unclear requirements, or involves complex integration, you immediately throw high (8-13) because AI tools can't navigate tangled business logic or predict side effects. You swing between extreme confidence and extreme caution."""
-    },
-    {
-        "id": "mid_dev", "name": "The Mid-Level Dev", "emoji": "💻", "votes": True,
-        "behavior": """You are a Mid-Level Developer with recent sprint trauma. Last sprint you pointed something a 3 and it took 6 days because documentation was wrong. You anchor slightly above the Senior Dev's estimate for safety. You're competent with AI tools for code generation but still need time to understand unfamiliar codebases, debug integration issues, and handle edge cases that AI misses. Integration work and third-party APIs make you nervous. On straightforward tasks you're close to the Senior Dev; on complex ones you add realistic buffer."""
-    },
-    {
-        "id": "junior_dev", "name": "The Junior Dev", "emoji": "🌱", "votes": True,
-        "behavior": """You are a Junior Developer with the Happy Path Illusion. You see 'add a validation rule' and think it's simple — just write an IF statement. You confidently throw 1s and 2s. You don't mentally account for unit tests, code reviews, deployment pipelines, edge cases, error handling, or regression risk. AI tools help you write code fast, which reinforces your belief that everything is quick. On genuinely simple tasks (config changes, text updates) you may be the MOST ACCURATE person. On anything with hidden complexity, you are dangerously optimistic. You should sometimes throw 1 where everyone else throws 5+."""
-    },
-    {
-        "id": "senior_qa", "name": "The Senior QA", "emoji": "🔍", "votes": True,
-        "behavior": """You are a Senior QA Engineer — the reality anchor. You point based on the FULL testing lifecycle: test data setup, permutation testing, regression impact, automation scripting, cross-browser testing, accessibility, and data integrity. If a Senior Dev says 'just a config change, it's a 2,' you counter with 5+ because testing a config change requires regression across all affected paths. You think about what happens when a user clicks Submit twice on 3G while their session expires. Your estimates include the bug-bounce cycles between dev and QA that always happen."""
-    },
-    {
-        "id": "junior_qa", "name": "The Junior QA", "emoji": "🧪", "votes": True,
-        "behavior": """You are a Junior QA Analyst with a checklist mentality. Three acceptance criteria = three test cases = low estimate. You estimate linearly based on ticket wording. You haven't developed the sixth sense for where developers introduce bugs, so you don't factor in 3 rounds of bug-bouncing. On well-specified tickets with clear criteria, you're reasonably accurate. On vague or complex tickets, you significantly underestimate testing effort."""
-    },
-    {
-        "id": "ba", "name": "The BA", "emoji": "📊", "votes": False,
-        "behavior": """You are a Business Analyst who DOES NOT VOTE. You act as the prosecuting attorney — when estimates go high, you challenge scope: 'What if we remove X requirement? Does that drop it from 8 to 3?' You negotiate complexity down and suggest story splitting. You also flag when requirements are unclear and will cause rework."""
-    },
-    {
-        "id": "scrum_master", "name": "The Scrum Master", "emoji": "⚡", "votes": False,
-        "behavior": """You are the Scrum Master who DOES NOT VOTE. You observe team dynamics: if there's a big spread, you call on the outliers to explain. You compare against REAL historical data from previous sprints (provided below) to ground the discussion in facts, not feelings. You reference actual completed tickets by their keys and points."""
-    }
+    {"id": "architect", "name": "The Architect", "emoji": "🏗️", "votes": True,
+     "behavior": "You are a Solutions Architect. You estimate COGNITIVE LOAD and BLAST RADIUS — not lines of code. You see data model impacts, API contract risks, integration breakage, platform limits. You tend to point HIGHER than developers. If genuinely isolated with no integration surface, you acknowledge that and point lower."},
+    {"id": "team_lead", "name": "The Team Lead", "emoji": "🛡️", "votes": True,
+     "behavior": "You are an Engineering Lead. You point DEFENSIVELY to protect velocity. You factor in code reviews, deployment windows, team availability, prod-support. If the team leans 2, you argue 3. Modern AI tools reduce implementation time for routine tasks — your buffer is for PROCESS overhead."},
+    {"id": "senior_dev", "name": "The Senior Dev", "emoji": "👨‍💻", "votes": True,
+     "behavior": "You are a Senior Developer who knows the codebase. NOTORIOUS for under-pointing because you estimate based on YOUR capability with AI assistance. A validation rule? Done in an hour. HOWEVER — if it touches messy legacy code or unclear requirements, you throw high (8-13). You swing between extreme confidence and extreme caution."},
+    {"id": "mid_dev", "name": "The Mid-Level Dev", "emoji": "💻", "votes": True,
+     "behavior": "You are a Mid-Level Developer with recent sprint trauma. You anchor slightly above the Senior Dev for safety. Competent with AI tools but still need time for unfamiliar codebases and edge cases. Integration work makes you nervous."},
+    {"id": "junior_dev", "name": "The Junior Dev", "emoji": "🌱", "votes": True,
+     "behavior": "You are a Junior Developer with the Happy Path Illusion. You see 'add validation' and think it's simple. You confidently throw 1s and 2s. You don't account for tests, reviews, deployment, edge cases. On genuinely simple tasks you may be MOST ACCURATE. On complex ones, dangerously optimistic."},
+    {"id": "senior_qa", "name": "The Senior QA", "emoji": "🔍", "votes": True,
+     "behavior": "You are the Senior QA — the reality anchor. You point based on FULL testing lifecycle: test data, permutation testing, regression impact, automation, cross-browser, accessibility. 'Config change = 2' to devs means 'full regression sweep = 5+' to you."},
+    {"id": "junior_qa", "name": "The Junior QA", "emoji": "🧪", "votes": True,
+     "behavior": "You are Junior QA with checklist mentality. 3 acceptance criteria = 3 test cases = low estimate. You estimate linearly. You don't factor in 3 rounds of bug-bouncing. On well-specified tickets, reasonably accurate."},
+    {"id": "ba", "name": "The BA", "emoji": "📊", "votes": False,
+     "behavior": "You DO NOT VOTE. You challenge high estimates with scope reduction: 'What if we remove X?' You negotiate complexity down, flag unclear requirements, suggest story splitting."},
+    {"id": "scrum_master", "name": "The Scrum Master", "emoji": "⚡", "votes": False,
+     "behavior": "You DO NOT VOTE. You observe team dynamics. You compare against REAL historical data provided. You reference actual completed tickets by their keys and points. You call on outliers to explain."}
 ]
 
 def _fetch_historical_data(project_key, creds, sp_field):
-    """Fetch completed stories from recent sprints for Scrum Master context."""
     try:
         jql = f'project="{project_key}" AND statusCategory = Done AND sprint is not EMPTY AND issuetype in (Story, Task, Bug) ORDER BY updated DESC'
         res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 30, "fields": ["summary", "issuetype", "priority", sp_field]})
@@ -1205,13 +1352,10 @@ def _fetch_historical_data(project_key, creds, sp_field):
                 f = i.get('fields', {})
                 pts = extract_story_points(f, sp_field)
                 if pts and pts > 0:
-                    history.append({"key": i.get('key'), "summary": f.get('summary', '')[:80],
-                        "type": (f.get('issuetype') or {}).get('name', ''), "priority": (f.get('priority') or {}).get('name', ''),
-                        "points": pts})
+                    history.append({"key": i.get('key'), "summary": f.get('summary', '')[:80], "type": (f.get('issuetype') or {}).get('name', ''), "priority": (f.get('priority') or {}).get('name', ''), "points": pts})
             return history[:20]
     except: pass
     return []
-
 
 @app.get("/planning_poker/{project_key}/stories")
 def get_poker_stories(project_key: str, source: str = "sprint", sprint_id: str = None, creds: dict = Depends(get_jira_creds)):
@@ -1232,39 +1376,24 @@ def get_poker_stories(project_key: str, source: str = "sprint", sprint_id: str =
             for c in (f.get('comment', {}).get('comments', []) or [])[-3:]:
                 try: comments.append(c.get('body', {}).get('content', [{}])[0].get('content', [{}])[0].get('text', '')[:200] if isinstance(c.get('body'), dict) else str(c.get('body', ''))[:200])
                 except: pass
-            stories.append({"key": i.get('key'), "summary": f.get('summary', ''), "description": desc,
-                "issue_type": (f.get('issuetype') or {}).get('name', 'Story'), "priority": (f.get('priority') or {}).get('name', 'Medium'),
-                "status": (f.get('status') or {}).get('name', 'To Do'), "assignee": (f.get('assignee') or {}).get('displayName', 'Unassigned'),
-                "current_points": extract_story_points(f, sp_field), "comments": comments})
+            stories.append({"key": i.get('key'), "summary": f.get('summary', ''), "description": desc, "issue_type": (f.get('issuetype') or {}).get('name', 'Story'), "priority": (f.get('priority') or {}).get('name', 'Medium'), "status": (f.get('status') or {}).get('name', 'To Do'), "assignee": (f.get('assignee') or {}).get('displayName', 'Unassigned'), "current_points": extract_story_points(f, sp_field), "comments": comments})
     return {"stories": stories, "agents": [{"id": a["id"], "name": a["name"], "emoji": a["emoji"], "votes": a["votes"]} for a in POKER_AGENTS]}
-
 
 @app.post("/planning_poker/{project_key}/play")
 def run_planning_poker(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
     stories = payload.get("stories", [])
     if not stories: return {"error": "No stories selected"}
-
     sp_field = get_story_point_field(creds)
     historical = _fetch_historical_data(project_key, creds, sp_field)
-    history_block = "No historical data available."
-    if historical:
-        history_lines = [f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) → {h['points']} pts" for h in historical]
-        history_block = f"COMPLETED STORIES FROM RECENT SPRINTS (real data):\n" + "\n".join(history_lines)
-
+    history_block = "No historical data available." if not historical else "COMPLETED STORIES FROM RECENT SPRINTS (real data):\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) → {h['points']} pts" for h in historical])
     voting = [a for a in POKER_AGENTS if a["votes"]]
     nonvoting = [a for a in POKER_AGENTS if not a["votes"]]
     results = []
-
     for story in stories:
-        story_ctx = f"""STORY: {story.get('key')} — {story.get('summary')}
-TYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}
-DESCRIPTION: {story.get('description', 'No description')[:800]}
-RECENT COMMENTS: {json.dumps(story.get('comments', [])[:3])}"""
-
+        story_ctx = f"STORY: {story.get('key')} — {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:800]}\nCOMMENTS: {json.dumps(story.get('comments', [])[:3])}"
         voter_block = "\n\n".join([f"VOTER — {a['name']} (id: \"{a['id']}\")\n{a['behavior']}" for a in voting])
         influencer_block = "\n\n".join([f"NON-VOTER — {a['name']} (id: \"{a['id']}\")\n{a['behavior']}" for a in nonvoting])
-
-        prompt = f"""You are simulating a REAL Planning Poker estimation session with 9 team members.
+        prompt = f"""Simulate a REAL Planning Poker session with 9 team members.
 
 {story_ctx}
 
@@ -1276,91 +1405,24 @@ RECENT COMMENTS: {json.dumps(story.get('comments', [])[:3])}"""
 ═══ 2 NON-VOTING INFLUENCERS ═══
 {influencer_block}
 
-═══ FIBONACCI SCALE: 1, 2, 3, 5, 8, 13, 21 ═══
+FIBONACCI: 1, 2, 3, 5, 8, 13, 21
 
-═══ AI-ERA ESTIMATION RULES (CRITICAL) ═══
-Modern development teams use AI coding assistants (GitHub Copilot, Claude, ChatGPT). This CHANGES estimation:
+AI-ERA RULES: Modern teams use AI coding assistants. This CHANGES estimation:
+REDUCED: Boilerplate, CRUD, standard patterns → 30-50% lower. Simple validation, field addition → often 1-2 pts. Unit test gen, docs → AI handles.
+UNCHANGED: Architecture decisions, integration testing, deployment coordination, legacy archaeology, cross-team deps, data migration.
+GUIDE: Config/text change=1pt, Simple validation=1-2pts, Standard feature=2-3pts, Feature w/ integration=3-5pts, Complex cross-system=5-8pts, Major arch change=8-13pts, Massive overhaul=13-21pts.
 
-REDUCED EFFORT (AI accelerates these):
-- Boilerplate code, CRUD operations, standard patterns → estimate 30-50% lower than pre-AI era
-- Simple validation rules, config changes, field additions → often 1-2 pts, NOT 5
-- Unit test generation, documentation → AI handles bulk of this
-- Standard API integrations with good docs → faster than before
+RULES:
+1. Junior Dev MUST sometimes throw 1 on complex stories (Happy Path)
+2. Senior Dev under-points routine BUT goes high on legacy
+3. Architect/Senior QA typically highest
+4. Genuine disagreement (3+ pt spread normal for complex)
+5. Simple tasks CAN cluster at 1-2
+6. BA challenges high estimates, SM references REAL ticket keys from history
+7. Each method in Super Agent SHOULD produce different numbers where appropriate
 
-UNCHANGED EFFORT (AI does NOT help with):
-- Architecture decisions, system design → still requires human judgment
-- Integration testing across systems → AI can't run your test suite
-- Deployment coordination, rollback planning → process, not code
-- Legacy code archaeology — understanding WHY code exists → AI doesn't know your history
-- Cross-team dependencies, stakeholder alignment → organizational, not technical
-- Data migration, backward compatibility → risk assessment is human
-
-ESTIMATION GUIDE (AI-era realistic ranges):
-- Config/cosmetic/text change: 1 pt
-- Simple validation, field addition, minor UI: 1-2 pts
-- Standard feature with clear requirements: 2-3 pts
-- Feature with integration or legacy touch: 3-5 pts
-- Complex cross-system change: 5-8 pts
-- Major architectural change or refactor: 8-13 pts
-- Massive multi-system overhaul: 13-21 pts
-
-═══ SIMULATION RULES ═══
-1. Each voter reveals independently per their psychology
-2. The Junior Dev MUST sometimes throw 1 on complex stories (Happy Path Illusion)
-3. The Senior Dev under-points routine code BUT goes high on legacy mess
-4. The Architect and Senior QA are typically highest — they see blast radius and test permutations
-5. Votes MUST show genuine disagreement — spread of 3+ points is normal for complex stories
-6. On genuinely simple tasks, votes CAN cluster at 1-2, not everything needs to be a 5
-7. The BA challenges high estimates with scope reduction ideas
-8. The Scrum Master MUST reference actual ticket keys from the historical data provided (NOT made-up ticket numbers)
-
-═══ SUPER AGENT — CHIEF ESTIMATION OFFICER ═══
-Uses four methods, each MUST produce a DIFFERENT number where appropriate:
-
-A) PERT: (Optimistic + 4×MostLikely + Pessimistic) / 6 → round to nearest Fibonacci
-   Optimistic = minimum vote, Pessimistic = maximum vote, MostLikely = median vote
-
-B) THREE-POINT: (O + M + P) / 3 → simple average, round to Fibonacci
-
-C) HISTORICAL: Find the most similar story from the historical data and use its actual points.
-   If no similar story exists, estimate based on type/priority patterns.
-
-D) ANALOGOUS: Compare to a specific completed story from the historical data, referencing its real key.
-
-The final number should NOT always be the median. Consider:
-- If Architect + Senior QA both flag significant risk → lean toward higher estimate
-- If the story is genuinely simple and the Senior Dev is confident → lean toward lower
-- PERT is primary but can be overridden by strong historical evidence
-
-Return STRICT JSON — no markdown, no backticks, no commentary outside JSON:
-{{
-  "votes": [
-    {{"agent_id": "architect", "points": 8, "confidence": "high", "reasoning": "2-3 sentences from their perspective", "risks": "specific risk"}},
-    {{"agent_id": "team_lead", "points": 5, "confidence": "medium", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "senior_dev", "points": 3, "confidence": "high", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "mid_dev", "points": 3, "confidence": "medium", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "junior_dev", "points": 1, "confidence": "medium", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "senior_qa", "points": 5, "confidence": "high", "reasoning": "...", "risks": "..."}},
-    {{"agent_id": "junior_qa", "points": 2, "confidence": "medium", "reasoning": "...", "risks": "..."}}
-  ],
-  "influencers": [
-    {{"agent_id": "ba", "challenge": "The BA's challenge to the estimates", "suggestion": "Scope reduction or split suggestion"}},
-    {{"agent_id": "scrum_master", "observation": "Team dynamics observation", "historical_comparison": "Reference to REAL ticket key and points from historical data", "recommendation": "Process recommendation"}}
-  ],
-  "super_agent": {{
-    "pert_estimate": {{"optimistic": 1, "most_likely": 3, "pessimistic": 8, "pert_raw": 3.5, "pert_fibonacci": 3}},
-    "three_point_estimate": {{"raw": 4.0, "fibonacci": 5}},
-    "historical_estimate": {{"matched_story": "REAL-KEY from history or null", "matched_points": 3, "fibonacci": 3}},
-    "analogous_estimate": {{"similar_story": "Description of analogous work from history", "reference_key": "REAL-KEY or null", "fibonacci": 3}},
-    "final_points": 3,
-    "confidence": "high",
-    "method_used": "Which method(s) determined the final number and why",
-    "rationale": "3-4 sentences explaining the final decision, referencing specific agent perspectives and estimation methods",
-    "split_recommendation": null,
-    "key_assumptions": ["assumption 1", "assumption 2"]
-  }}
-}}"""
-
+Return STRICT JSON:
+{{"votes":[{{"agent_id":"architect","points":8,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"team_lead","points":5,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":3,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":3,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":1,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":5,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":2,"confidence":"medium","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"...","suggestion":"..."}},{{"agent_id":"scrum_master","observation":"...","historical_comparison":"Reference REAL ticket key","recommendation":"..."}}],"super_agent":{{"pert_estimate":{{"optimistic":1,"most_likely":3,"pessimistic":8,"pert_raw":3.5,"pert_fibonacci":3}},"three_point_estimate":{{"raw":4.0,"fibonacci":5}},"historical_estimate":{{"matched_story":"REAL-KEY or null","matched_points":3,"fibonacci":3}},"analogous_estimate":{{"similar_story":"Description","reference_key":"REAL-KEY or null","fibonacci":3}},"final_points":3,"confidence":"high","method_used":"Which methods determined final","rationale":"3-4 sentences","split_recommendation":null,"key_assumptions":["a1","a2"]}}}}"""
         try:
             raw = generate_ai_response(prompt, temperature=0.35, timeout=90)
             if raw:
@@ -1376,7 +1438,6 @@ Return STRICT JSON — no markdown, no backticks, no commentary outside JSON:
             print(f"Planning Poker error for {story.get('key')}: {e}", flush=True)
             results.append({"story_key": story.get("key"), "story_summary": story.get("summary"), "error": str(e)})
     return {"results": results}
-
 
 @app.post("/planning_poker/{project_key}/push_jira")
 def push_poker_to_jira(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
@@ -1395,6 +1456,7 @@ def push_poker_to_jira(project_key: str, payload: dict, creds: dict = Depends(ge
         except Exception as e:
             results.append({"key": key, "status": "error", "message": str(e)})
     return {"results": results}
+
 
 @app.post("/feature_roadmap")
 def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(get_jira_creds)):
@@ -1435,7 +1497,10 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
     SINGLE_CALL_LIMIT = 20
     EPIC_BATCH_SIZE = 15
 
-    features_text = "\n".join([f"{i+1}. {f}" for i, f in enumerate(req.features)])
+    features_text = "\n".join([
+        f"{i+1}. {f['name']}: {f.get('description', '')}" if isinstance(f, dict) else f"{i+1}. {f}"
+        for i, f in enumerate(req.features)
+    ])
 
     if num_features <= SINGLE_CALL_LIMIT:
         # ═══ SINGLE CALL MODE (≤20 features) ═══
@@ -3832,9 +3897,154 @@ Return JSON: {{"capacity_summary": "2-3 sentence executive summary", "risk_level
 
     try:
         raw = generate_ai_response(prompt, temperature=0.3)
-        ai_analysis = json.loads(raw.replace('```json', '').replace('```', '').strip()) if raw else {}
+        ai_analysis = json.loads(re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())) if raw else {}
     except: ai_analysis = {}
 
     report["ai_analysis"] = ai_analysis
     report["current_sprint_issues"] = current_issues
     return report
+
+
+# ═══════════════════════════════════════════════════════════
+#  PI PLANNING — Sequencer AI (under Strategic Roadmap)
+# ═══════════════════════════════════════════════════════════
+
+@app.get("/pi_planning/{project_key}/backlog")
+def get_pi_backlog(project_key: str, creds: dict = Depends(get_jira_creds)):
+    """Fetch pre-pointed stories from backlog + active sprint for PI Planning."""
+    sp_field = get_story_point_field(creds)
+    
+    # Fetch stories with story points from backlog and current sprints
+    jql = f'project="{project_key}" AND statusCategory != Done AND issuetype in (Story, Task, Bug) AND {sp_field} is not EMPTY ORDER BY rank ASC'
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 200, "fields": ["summary", "description", "issuetype", "priority", "status", "labels", "components", sp_field]})
+    
+    stories = []
+    total_points = 0
+    if res and res.status_code == 200:
+        for i in res.json().get('issues', []):
+            f = i.get('fields', {})
+            pts = extract_story_points(f, sp_field)
+            if pts and pts > 0:
+                desc = extract_adf_text(f.get('description', {}))[:500] if f.get('description') else ""
+                stories.append({
+                    "key": i.get('key'), "summary": f.get('summary', ''),
+                    "description": desc,
+                    "type": (f.get('issuetype') or {}).get('name', 'Story'),
+                    "priority": (f.get('priority') or {}).get('name', 'Medium'),
+                    "status": (f.get('status') or {}).get('name', 'To Do'),
+                    "points": pts,
+                    "labels": [l for l in (f.get('labels') or [])],
+                    "components": [c.get('name', '') for c in (f.get('components') or [])]
+                })
+                total_points += pts
+    
+    # Fetch velocity data
+    velocity = {}
+    try:
+        boards = jira_request("GET", f"board?projectKeyOrId={project_key}&type=scrum", creds, api_version="agile")
+        if boards and boards.status_code == 200:
+            board_id = boards.json().get('values', [{}])[0].get('id')
+            if board_id:
+                sprints_res = jira_request("GET", f"board/{board_id}/sprint?state=closed&maxResults=10", creds, api_version="agile")
+                if sprints_res and sprints_res.status_code == 200:
+                    sprint_velocities = []
+                    for sp in sprints_res.json().get('values', [])[-6:]:
+                        sp_jql = f'sprint={sp["id"]} AND statusCategory = Done AND {sp_field} is not EMPTY'
+                        sp_res = jira_request("POST", "search/jql", creds, {"jql": sp_jql, "maxResults": 100, "fields": [sp_field]})
+                        if sp_res and sp_res.status_code == 200:
+                            sp_pts = sum(extract_story_points(i.get('fields', {}), sp_field) or 0 for i in sp_res.json().get('issues', []))
+                            sprint_velocities.append({"sprint": sp.get('name'), "points": sp_pts})
+                    if sprint_velocities:
+                        avg = sum(s['points'] for s in sprint_velocities) / len(sprint_velocities)
+                        velocity = {"sprints": sprint_velocities, "average": round(avg, 1), "count": len(sprint_velocities)}
+    except Exception as e:
+        print(f"PI Planning velocity error: {e}", flush=True)
+    
+    return {"stories": stories, "total_points": total_points, "velocity": velocity}
+
+
+@app.post("/pi_planning/{project_key}/generate")
+def generate_pi_plan(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """AI Sequencer: arrange pre-pointed stories into sprints with dependency detection and capacity cut-line."""
+    stories = payload.get("stories", [])
+    velocity_per_sprint = payload.get("velocity_per_sprint", 40)
+    num_sprints = payload.get("num_sprints", 5)
+    pi_name = payload.get("pi_name", "PI-1")
+    
+    if not stories:
+        return {"error": "No stories provided"}
+    
+    total_capacity = velocity_per_sprint * num_sprints
+    total_points = sum(s.get('points', 0) for s in stories)
+    
+    stories_block = "\n".join([
+        f"- {s['key']}: \"{s['summary']}\" | {s['type']} | {s['priority']} | {s['points']} pts | Labels: {','.join(s.get('labels', []))} | Components: {','.join(s.get('components', []))}"
+        + (f"\n  Desc: {s['description'][:200]}" if s.get('description') else "")
+        for s in stories[:100]
+    ])
+    
+    prompt = f"""You are a PI Planning Sequencer AI — a master at arranging pre-pointed Jira stories into sprints.
+
+STRICT RULES:
+1. DO NOT change any story points — they are immutable facts from Planning Poker
+2. DO NOT invent new stories — only sequence what's given
+3. RESPECT the capacity constraint: {velocity_per_sprint} points per sprint, {num_sprints} sprints = {total_capacity} total capacity
+4. If total points ({total_points}) exceed capacity ({total_capacity}), the OVERFLOW stories go into "Spillover" bucket
+5. Draw a HARD CAPACITY CUT-LINE — do not compress or squeeze stories
+
+PI CONFIGURATION:
+- PI Name: {pi_name}
+- Sprints: {num_sprints} (2-week sprints)
+- Velocity: {velocity_per_sprint} pts/sprint
+- Total Capacity: {total_capacity} pts
+- Total Backlog: {total_points} pts
+- {"⚠️ OVER CAPACITY by " + str(total_points - total_capacity) + " pts — spillover required" if total_points > total_capacity else "✅ Within capacity"}
+
+STORIES TO SEQUENCE (pre-pointed, ranked by priority):
+{stories_block}
+
+YOUR SEQUENCING LOGIC:
+A) DEPENDENCY DETECTION: Read story summaries and descriptions. If Story B logically requires Story A to be done first (e.g., "API endpoint" before "UI consuming API"), sequence A in an earlier sprint.
+B) PRIORITY RESPECT: Higher priority stories go into earlier sprints.
+C) CAPACITY ENFORCEMENT: Each sprint's total points MUST NOT exceed {velocity_per_sprint}. Stop adding stories when the sprint is full.
+D) BALANCED LOADING: Try to distribute points evenly across sprints. Avoid 45 pts in Sprint 1 and 10 pts in Sprint 5.
+E) LOGICAL GROUPING: Related stories (same component/label) should be in the same or adjacent sprints when possible.
+F) CUT-LINE: After {total_capacity} total points, remaining stories go to spillover.
+
+Return STRICT JSON — no markdown, no backticks:
+{{
+    "pi_name": "{pi_name}",
+    "total_capacity": {total_capacity},
+    "total_committed": 0,
+    "total_spillover": 0,
+    "sprints": [
+        {{
+            "name": "Sprint 1",
+            "capacity": {velocity_per_sprint},
+            "committed_points": 0,
+            "utilization_pct": 0,
+            "stories": [
+                {{"key": "PROJ-1", "summary": "...", "points": 5, "type": "Story", "priority": "High", "dependencies": ["PROJ-3"]}}
+            ]
+        }}
+    ],
+    "spillover": [
+        {{"key": "PROJ-99", "summary": "...", "points": 8, "type": "Story", "priority": "Low", "reason": "Exceeded PI capacity"}}
+    ],
+    "dependencies": [
+        {{"from": "PROJ-5", "to": "PROJ-2", "type": "blocks", "reason": "API endpoint needed before UI integration"}}
+    ],
+    "risks": ["Risk 1", "Risk 2"],
+    "sequencing_rationale": "2-3 sentences explaining the sequencing strategy"
+}}"""
+
+    try:
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=90)
+        if raw:
+            cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
+            result = json.loads(cleaned)
+            return result
+        return {"error": "AI returned empty response"}
+    except Exception as e:
+        print(f"PI Planning error: {e}", flush=True)
+        return {"error": f"PI Planning failed: {str(e)}"}

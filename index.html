@@ -693,19 +693,24 @@
     function FeatureRoadmapView({ project, setIsLoading }) {
     const [techStack, setTechStack] = useState('');
     const [customStack, setCustomStack] = useState('');
-    const [featuresText, setFeaturesText] = useState('');
+    const [features, setFeatures] = useState([]); // [{name, description}]
+    const [featuresText, setFeaturesText] = useState(''); // legacy compat
+    const [inputMode, setInputMode] = useState('manual'); // manual | upload
     const [durationValue, setDurationValue] = useState(6);
     const [durationUnit, setDurationUnit] = useState('months');
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [progress, setProgress] = useState(0); // <-- NEW: Progress state
+    const [progress, setProgress] = useState(0);
     const [activeSection, setActiveSection] = useState('analysis');
     const [pushingJira, setPushingJira] = useState(false);
     const [jiraResult, setJiraResult] = useState(null);
     const [downloadingXLSX, setDownloadingXLSX] = useState(false);
     const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
+    const [extracting, setExtracting] = useState(false);
+    const [extractionSummary, setExtractionSummary] = useState('');
+    const [uploadedFileName, setUploadedFileName] = useState('');
 
     // <-- NEW: Progress Bar Simulation (7 minutes = 420 seconds to reach 95%)
     React.useEffect(() => {
@@ -773,9 +778,14 @@
 
     // ── Generate ──
     const handleGenerate = async () => {
-        if (!selectedStack || !featuresText.trim() || !durationValue) return;
-        const features = featuresText.split('\n').map(f => f.replace(/^[-•*\d.)\s]+/, '').trim()).filter(f => f.length > 0);
-        if (features.length === 0) return;
+        // Build features list from either manual entries or text
+        let featuresList = [];
+        if (features.length > 0) {
+            featuresList = features.filter(f => f.name.trim()).map(f => f.description.trim() ? { name: f.name.trim(), description: f.description.trim() } : f.name.trim());
+        } else if (featuresText.trim()) {
+            featuresList = featuresText.split('\n').map(f => f.replace(/^[-•*\d.)\s]+/, '').trim()).filter(f => f.length > 0);
+        }
+        if (!selectedStack || featuresList.length === 0 || !durationValue) return;
 
         setLoading(true); setError(null); setData(null); setJiraResult(null); setIsLoading(true);
         try {
@@ -784,7 +794,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     tech_stack: selectedStack,
-                    features,
+                    features: featuresList,
                     target_duration_value: Number(durationValue),
                     target_duration_unit: durationUnit,
                     project_key: project,
@@ -796,6 +806,47 @@
             else { setData(result); setActiveSection('analysis'); }
         } catch (e) { setError('Failed to generate roadmap. Please try again.'); }
         setLoading(false); setIsLoading(false);
+    };
+
+    // Manual feature management
+    const addFeature = () => setFeatures(prev => [...prev, { name: '', description: '' }]);
+    const updateFeature = (idx, field, value) => setFeatures(prev => prev.map((f, i) => i === idx ? { ...f, [field]: value } : f));
+    const removeFeature = (idx) => setFeatures(prev => prev.filter((_, i) => i !== idx));
+
+    // Smart file upload + AI extraction
+    const handleSmartUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        setExtracting(true); setError(null); setExtractionSummary(''); setUploadedFileName(file.name);
+        
+        const ext = file.name.split('.').pop().toLowerCase();
+        const reader = new FileReader();
+        reader.onload = async (evt) => {
+            try {
+                let content;
+                if (['csv', 'txt'].includes(ext)) {
+                    content = btoa(unescape(encodeURIComponent(evt.target.result)));
+                } else {
+                    content = evt.target.result.split(',')[1]; // base64 from readAsDataURL
+                }
+                const res = await secureFetch('/feature_roadmap/extract_features', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content, file_type: ext, filename: file.name })
+                });
+                const data = await res?.json();
+                if (data?.features && data.features.length > 0) {
+                    setFeatures(data.features.map(f => ({ name: f.name || '', description: f.description || '' })));
+                    setExtractionSummary(data.extraction_summary || `Extracted ${data.features.length} features`);
+                    setInputMode('manual'); // Switch to manual to show extracted features for review
+                } else {
+                    setError(data?.error || 'No features could be extracted from this file.');
+                }
+            } catch (err) { setError('File extraction failed. Try a different format.'); }
+            setExtracting(false);
+        };
+        if (['csv', 'txt'].includes(ext)) { reader.readAsText(file); }
+        else { reader.readAsDataURL(file); }
     };
 
     // ── Push to Jira ──
@@ -832,21 +883,7 @@
         setDownloadingXLSX(false);
     };
 
-    // ── CSV Upload ──
-    const handleFileUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            const lines = evt.target.result.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-            const features = lines.map(line => {
-                const cols = line.split(',');
-                return cols.find(c => c.trim().length > 3 && !/^(id|#|sr|no|feature|name|desc)/i.test(c.trim())) || cols[0];
-            }).filter(f => f && f.trim().length > 2);
-            setFeaturesText(features.join('\n'));
-        };
-        reader.readAsText(file);
-    };
+    // (Smart upload replaces old CSV handler above)
 
     // ═══════════════════════════════════════════════
     // INPUT FORM
@@ -981,34 +1018,105 @@
                         </div>
                     </div>
 
-                    {/* Step 3: Features */}
+                    {/* Step 3: Features — Smart Input */}
                     <div className="glass-card p-7">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: 'var(--accent-gradient)' }}>3</div>
                             <div className="flex-1">
-                                <h3 className="text-base font-extrabold text-text-main">Client Features</h3>
-                                <p className="text-xs text-text-muted font-medium">Paste features (one per line) or upload CSV</p>
+                                <h3 className="text-base font-extrabold text-text-main">Features & Requirements</h3>
+                                <p className="text-xs text-text-muted font-medium">Define features with clear descriptions for accurate AI estimation, or upload any document</p>
                             </div>
-                            <label className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary-dim text-primary font-bold text-xs cursor-pointer hover:bg-primary hover:text-white transition-all border border-primary/30">
-                                <Icon name="Upload" size={14} /> Upload CSV
-                                <input type="file" accept=".csv,.txt,.xlsx" onChange={handleFileUpload} className="hidden" />
-                            </label>
                         </div>
-                        <textarea value={featuresText} onChange={e => setFeaturesText(e.target.value)}
-                            placeholder={"User Authentication (Login, Register, Password Reset)\nDashboard with real-time analytics\nPayment Gateway Integration (Stripe)\nUser Role Management (Admin, Manager, User)\nNotification System (Email + Push)\nReport Generation & Export (PDF/Excel)\nAPI Integration with 3rd party CRM\nSearch & Filter with Elasticsearch\nMulti-language support (i18n)\nAudit Logging & Compliance"}
-                            rows={10}
-                            className="w-full p-4 rounded-xl border bg-bg-body text-text-main font-medium shadow-sm outline-none hover:border-primary transition-colors border-border text-sm leading-relaxed resize-none font-mono" />
-                        <span className="text-xs text-text-muted font-bold mt-2 block">
-                            {featuresText.split('\n').filter(l => l.trim()).length} features detected
-                        </span>
+
+                        {/* Mode Tabs */}
+                        <div className="flex gap-2 mb-4">
+                            <button onClick={() => setInputMode('manual')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${inputMode === 'manual' ? 'bg-primary text-white border-primary' : 'bg-bg-body text-text-muted border-border hover:border-primary'}`}>
+                                ✏️ Manual Entry
+                            </button>
+                            <button onClick={() => setInputMode('upload')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${inputMode === 'upload' ? 'bg-primary text-white border-primary' : 'bg-bg-body text-text-muted border-border hover:border-primary'}`}>
+                                📄 Smart Upload
+                            </button>
+                        </div>
+
+                        {inputMode === 'upload' && (
+                            <div className="space-y-3">
+                                <div className="border-2 border-dashed rounded-xl p-8 text-center transition-all hover:border-primary" style={{borderColor:'var(--border)'}}>
+                                    {extracting ? (
+                                        <div className="flex flex-col items-center gap-3">
+                                            <Icon name="Loader2" size={32} className="animate-spin text-primary" />
+                                            <p className="text-sm font-bold text-text-main">AI is scanning {uploadedFileName}...</p>
+                                            <p className="text-xs text-text-muted">Intelligently extracting features — filtering noise, headers, and metadata</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <Icon name="Upload" size={32} className="text-text-muted mx-auto mb-3" />
+                                            <p className="text-sm font-bold text-text-main mb-1">Upload any document</p>
+                                            <p className="text-xs text-text-muted mb-1">PDF · PPTX · XLSX · CSV · TXT</p>
+                                            <p className="text-xs text-text-muted mb-4" style={{opacity:0.7}}>AI extracts features from SOWs, RFPs, meeting notes, backlogs, presentations — any unstructured data</p>
+                                            <label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm cursor-pointer transition-all text-white" style={{ background: 'var(--accent-gradient)' }}>
+                                                <Icon name="FileUp" size={16} /> Choose File
+                                                <input type="file" accept=".pdf,.pptx,.ppt,.xlsx,.xls,.csv,.txt" onChange={handleSmartUpload} className="hidden" />
+                                            </label>
+                                        </>
+                                    )}
+                                </div>
+                                {extractionSummary && (
+                                    <div className="p-3 rounded-lg text-sm font-semibold flex items-center gap-2" style={{background:'rgba(34,197,94,0.1)',border:'1px solid rgba(34,197,94,0.3)',color:'#22c55e'}}>
+                                        <span>✅</span> {extractionSummary} — Review extracted features below, then Generate
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {inputMode === 'manual' && (
+                            <div className="space-y-2">
+                                {features.length === 0 && (
+                                    <div className="p-4 rounded-lg text-center" style={{background:'var(--bg-body)',border:'1px solid var(--border)'}}>
+                                        <p className="text-sm text-text-muted font-semibold mb-1">No features yet</p>
+                                        <p className="text-xs text-text-muted">Add features with detailed descriptions — the more context you provide, the more accurate the AI estimation will be</p>
+                                    </div>
+                                )}
+                                {features.map((f, idx) => (
+                                    <div key={idx} className="flex gap-2 items-start p-3 rounded-lg border transition-all hover:border-primary" style={{background:'var(--bg-body)',borderColor: (!f.description?.trim() && f.name?.trim()) ? 'rgba(245,158,11,0.5)' : 'var(--border)'}}>
+                                        <span className="text-xs font-black text-text-muted mt-2.5 w-6 shrink-0">{idx + 1}.</span>
+                                        <div className="flex-1 space-y-1.5">
+                                            <input type="text" value={f.name} onChange={e => updateFeature(idx, 'name', e.target.value)}
+                                                placeholder="Feature name (e.g., User Authentication, Invoice Management)"
+                                                className="w-full p-2.5 rounded-lg border bg-bg-card text-text-main text-sm font-bold outline-none hover:border-primary transition-colors border-border" />
+                                            <textarea value={f.description} onChange={e => updateFeature(idx, 'description', e.target.value)}
+                                                placeholder="Describe what needs to be built in detail — business context, user flows, key requirements, integration points. Example: 'Build a multi-tenant authentication system supporting email/password login, Google/Microsoft SSO, MFA via authenticator app, role-based access (Admin, Manager, Viewer), and session management with auto-logout after 30 min inactivity.'"
+                                                rows={3}
+                                                className="w-full p-2.5 rounded-lg border bg-bg-card text-text-muted text-xs font-medium outline-none hover:border-primary transition-colors border-border resize-none leading-relaxed" />
+                                            {!f.description?.trim() && f.name?.trim() && (
+                                                <p className="text-xs font-semibold" style={{color:'#f59e0b'}}>⚠ Add a description for more accurate estimation</p>
+                                            )}
+                                        </div>
+                                        <button onClick={() => removeFeature(idx)} className="mt-2 p-1.5 rounded-lg hover:bg-danger/10 transition-all text-text-muted hover:text-danger">
+                                            <Icon name="X" size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                                <button onClick={addFeature} className="w-full p-3 rounded-lg border-2 border-dashed text-sm font-bold transition-all hover:border-primary hover:text-primary text-text-muted" style={{borderColor:'var(--border)'}}>
+                                    + Add Feature
+                                </button>
+                                {features.length > 0 && (
+                                    <div className="flex items-center justify-between mt-1">
+                                        <span className="text-xs text-text-muted font-bold">{features.filter(f => f.name.trim()).length} features configured</span>
+                                        {features.some(f => f.name?.trim() && !f.description?.trim()) && (
+                                            <span className="text-xs font-bold" style={{color:'#f59e0b'}}>⚠ {features.filter(f => f.name?.trim() && !f.description?.trim()).length} feature(s) missing descriptions</span>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* Generate Button */}
-                    <motion.button onClick={handleGenerate} disabled={loading || !selectedStack || !featuresText.trim()}
+                    <motion.button onClick={handleGenerate} disabled={loading || !selectedStack || (features.length === 0 && !featuresText.trim())}
                         whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
                         className="w-full p-5 rounded-2xl text-white font-black text-lg flex items-center justify-center gap-3 shadow-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                         style={{ background: 'var(--accent-gradient)' }}>
-                        <Icon name="Sparkles" size={22} /> Generate Expert-Grade Feature Roadmap
+                        <Icon name="Sparkles" size={22} /> Generate Expert-Grade Feature Roadmap ({features.filter(f => f.name?.trim()).length || featuresText.split('\n').filter(l => l.trim()).length} features)
                     </motion.button>
                 </div>
             </div>
@@ -2030,6 +2138,258 @@ const VelocitySparkline = ({ history = [], avgVelocity = 0, width = 280, height 
 };
 
 // ── Main Production Component ──
+// ═══════════════════════════════════════════════════════════
+//  PI PLANNING — Sequencer AI (inside Strategic Roadmap)
+// ═══════════════════════════════════════════════════════════
+function PIPlanningPanel({ project, velocity }) {
+    const [piName, setPiName] = useState('PI-1');
+    const [numSprints, setNumSprints] = useState(5);
+    const [velPerSprint, setVelPerSprint] = useState(velocity?.avg_velocity || 40);
+    const [backlog, setBacklog] = useState(null);
+    const [loadingBacklog, setLoadingBacklog] = useState(false);
+    const [selectedKeys, setSelectedKeys] = useState(new Set());
+    const [piPlan, setPiPlan] = useState(null);
+    const [generating, setGenerating] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => { if (velocity?.avg_velocity) setVelPerSprint(Math.round(velocity.avg_velocity)); }, [velocity]);
+
+    const loadBacklog = async () => {
+        setLoadingBacklog(true); setError('');
+        try {
+            const res = await secureFetch(`/pi_planning/${project}/backlog`);
+            const d = await res?.json();
+            if (d?.stories) {
+                setBacklog(d);
+                setSelectedKeys(new Set(d.stories.map(s => s.key)));
+                if (d.velocity?.average) setVelPerSprint(Math.round(d.velocity.average));
+            } else { setError(d?.error || 'Failed to load backlog'); }
+        } catch { setError('Failed to load backlog'); }
+        setLoadingBacklog(false);
+    };
+
+    useEffect(() => { if (project) loadBacklog(); }, [project]);
+
+    const toggleStory = k => setSelectedKeys(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
+    const totalCapacity = velPerSprint * numSprints;
+    const selectedStories = (backlog?.stories || []).filter(s => selectedKeys.has(s.key));
+    const selectedPoints = selectedStories.reduce((a, s) => a + (s.points || 0), 0);
+    const isOverCapacity = selectedPoints > totalCapacity;
+
+    const generatePlan = async () => {
+        if (!selectedStories.length) return;
+        setGenerating(true); setError(''); setPiPlan(null);
+        try {
+            const res = await secureFetch(`/pi_planning/${project}/generate`, {
+                method: 'POST', body: JSON.stringify({
+                    stories: selectedStories, velocity_per_sprint: velPerSprint,
+                    num_sprints: numSprints, pi_name: piName
+                })
+            });
+            const d = await res?.json();
+            if (d?.sprints) setPiPlan(d);
+            else setError(d?.error || 'PI Planning failed');
+        } catch { setError('PI Planning failed'); }
+        setGenerating(false);
+    };
+
+    const piCSS = `
+        .pi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;transition:all 0.2s}
+        .pi-card:hover{border-color:var(--primary)}
+        .pi-sprint{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+        .pi-sprint-hdr{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+        .pi-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}
+        .pi-bar-fill{height:100%;border-radius:3px;transition:width 0.5s}
+        .pi-story-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px}
+        .pi-story-row:last-child{border-bottom:none}
+        .pi-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}
+        .pi-input{padding:8px 12px;border-radius:8px;background:var(--bg-body);border:1px solid var(--border);color:var(--text-main);font-size:13px;font-weight:700;outline:none;width:80px;text-align:center}
+        .pi-input:focus{border-color:var(--primary)}
+        .pi-btn{background:var(--accent-gradient, linear-gradient(135deg,#f59e0b,#d97706));color:#000;font-weight:800;border:none;cursor:pointer;transition:all 0.2s;border-radius:10px}
+        .pi-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 16px rgba(245,158,11,0.35)}
+        .pi-btn:disabled{opacity:0.4;cursor:not-allowed}
+        .pi-cutline{border:2px dashed #ef4444;background:rgba(239,68,68,0.05);border-radius:12px;padding:16px;text-align:center;margin:12px 0}
+        @keyframes piSlide{0%{transform:translateY(12px);opacity:0}100%{transform:translateY(0);opacity:1}}
+        .pi-slide{animation:piSlide 0.35s ease-out forwards}
+    `;
+
+    // ═══ RESULTS VIEW ═══
+    if (piPlan) {
+        return (
+            <div className="animate-in space-y-4">
+                <style>{piCSS}</style>
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h2 className="text-xl font-black text-text-main">{piPlan.pi_name || piName} — Sprint Sequence</h2>
+                        <p className="text-sm text-text-muted mt-1">{piPlan.total_committed || 0} pts committed · {(piPlan.spillover || []).length > 0 ? `${piPlan.total_spillover || 0} pts spillover` : 'All stories fit'}</p>
+                    </div>
+                    <button onClick={() => setPiPlan(null)} className="px-4 py-2 text-xs font-bold uppercase rounded-lg border text-text-muted" style={{borderColor:'var(--border)',background:'var(--bg-card)'}}>← Reconfigure</button>
+                </div>
+
+                {/* Sprints */}
+                {(piPlan.sprints || []).map((sprint, si) => {
+                    const util = sprint.utilization_pct || Math.round((sprint.committed_points / velPerSprint) * 100);
+                    const barColor = util > 95 ? '#ef4444' : util > 80 ? '#f59e0b' : '#22c55e';
+                    return (
+                        <div key={si} className="pi-sprint pi-slide" style={{animationDelay:`${si * 80}ms`}}>
+                            <div className="pi-sprint-hdr">
+                                <div>
+                                    <span className="text-sm font-black text-text-main">{sprint.name}</span>
+                                    <span className="text-xs text-text-muted ml-2">{sprint.committed_points || 0} / {sprint.capacity || velPerSprint} pts</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="pi-bar" style={{width:100}}>
+                                        <div className="pi-bar-fill" style={{width:`${Math.min(util, 100)}%`,background:barColor}}></div>
+                                    </div>
+                                    <span className="text-xs font-bold" style={{color:barColor}}>{util}%</span>
+                                </div>
+                            </div>
+                            {(sprint.stories || []).map((s, idx) => (
+                                <div key={idx} className="pi-story-row">
+                                    <span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:70}}>{s.key}</span>
+                                    <span className="flex-1 text-text-main font-medium truncate">{s.summary}</span>
+                                    <span className="pi-chip" style={{background: s.priority === 'Highest' || s.priority === 'High' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)', color: s.priority === 'Highest' || s.priority === 'High' ? '#ef4444' : '#3b82f6'}}>{s.priority}</span>
+                                    <span className="text-sm font-black text-text-main" style={{minWidth:36,textAlign:'right'}}>{s.points} pts</span>
+                                    {s.dependencies?.length > 0 && <span className="pi-chip" style={{background:'rgba(168,85,247,0.12)',color:'#a855f7'}}>🔗 {s.dependencies.join(', ')}</span>}
+                                </div>
+                            ))}
+                        </div>
+                    );
+                })}
+
+                {/* Spillover / Capacity Cut-Line */}
+                {(piPlan.spillover || []).length > 0 && (
+                    <div className="pi-cutline">
+                        <p className="text-sm font-black text-danger mb-3">🚫 Capacity Cut-Line — {piPlan.total_spillover || 0} pts unscheduled</p>
+                        <div className="pi-sprint" style={{borderColor:'rgba(239,68,68,0.3)'}}>
+                            <div className="pi-sprint-hdr" style={{background:'rgba(239,68,68,0.05)'}}>
+                                <span className="text-sm font-black text-danger">Spillover → Next PI</span>
+                                <span className="text-xs text-text-muted">{piPlan.total_spillover || 0} pts</span>
+                            </div>
+                            {(piPlan.spillover || []).map((s, idx) => (
+                                <div key={idx} className="pi-story-row">
+                                    <span className="font-bold font-mono text-xs" style={{color:'#ef4444',minWidth:70}}>{s.key}</span>
+                                    <span className="flex-1 text-text-muted font-medium truncate">{s.summary}</span>
+                                    <span className="text-sm font-black text-text-muted">{s.points} pts</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Dependencies */}
+                {(piPlan.dependencies || []).length > 0 && (
+                    <div className="pi-card p-5">
+                        <h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">🔗 Detected Dependencies</h3>
+                        <div className="space-y-2">
+                            {piPlan.dependencies.map((d, i) => (
+                                <div key={i} className="flex items-center gap-3 text-xs p-2.5 rounded-lg" style={{background:'var(--bg-body)'}}>
+                                    <span className="font-bold font-mono" style={{color:'var(--primary)'}}>{d.from}</span>
+                                    <span className="text-text-muted">→ depends on →</span>
+                                    <span className="font-bold font-mono" style={{color:'#a855f7'}}>{d.to}</span>
+                                    <span className="text-text-muted flex-1">{d.reason}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* Rationale */}
+                {piPlan.sequencing_rationale && (
+                    <div className="pi-card p-5">
+                        <h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-2">📋 Sequencing Rationale</h3>
+                        <p className="text-sm text-text-main leading-relaxed">{piPlan.sequencing_rationale}</p>
+                    </div>
+                )}
+                {(piPlan.risks || []).length > 0 && (
+                    <div className="pi-card p-5 border-l-4" style={{borderLeftColor:'#f59e0b'}}>
+                        <h3 className="text-xs font-black text-warning uppercase tracking-widest mb-2">⚠️ Risks</h3>
+                        {piPlan.risks.map((r, i) => <p key={i} className="text-sm text-text-muted mt-1">• {r}</p>)}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // ═══ CONFIG VIEW ═══
+    return (
+        <div className="animate-in space-y-4">
+            <style>{piCSS}</style>
+            <div>
+                <h2 className="text-xl font-black text-text-main">PI Planning — Sequencer AI</h2>
+                <p className="text-sm text-text-muted mt-1">Sequence pre-pointed stories into sprints with hard capacity enforcement and dependency detection</p>
+            </div>
+
+            {error && <div className="p-3 rounded-lg text-sm font-semibold" style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',color:'#ef4444'}}>{error}</div>}
+
+            {/* PI Configuration */}
+            <div className="pi-card p-5">
+                <h3 className="text-sm font-black text-text-main mb-3">PI Configuration</h3>
+                <div className="flex items-end gap-4 flex-wrap">
+                    <div>
+                        <label className="text-xs font-bold text-text-muted uppercase tracking-wider block mb-1">PI Name</label>
+                        <input type="text" value={piName} onChange={e => setPiName(e.target.value)} className="pi-input" style={{width:100}} />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-text-muted uppercase tracking-wider block mb-1">Sprints</label>
+                        <input type="number" value={numSprints} onChange={e => setNumSprints(Number(e.target.value))} min={2} max={10} className="pi-input" />
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-text-muted uppercase tracking-wider block mb-1">Velocity / Sprint</label>
+                        <input type="number" value={velPerSprint} onChange={e => setVelPerSprint(Number(e.target.value))} min={5} max={200} className="pi-input" />
+                    </div>
+                    <div className="flex-1 flex items-center gap-3 p-3 rounded-lg" style={{background:'var(--bg-body)',border:'1px solid var(--border)'}}>
+                        <span className="text-sm font-bold text-text-main">Total Capacity: <strong style={{color:'var(--primary)'}}>{totalCapacity} pts</strong></span>
+                        {backlog && <span className="text-sm text-text-muted">· Backlog: <strong className={isOverCapacity ? 'text-danger' : 'text-success'}>{selectedPoints} pts</strong></span>}
+                        {isOverCapacity && <span className="pi-chip" style={{background:'rgba(239,68,68,0.12)',color:'#ef4444'}}>Over by {selectedPoints - totalCapacity} pts</span>}
+                    </div>
+                </div>
+            </div>
+
+            {/* Backlog Stories */}
+            {loadingBacklog ? (
+                <div className="text-center py-12">
+                    <Icon name="Loader2" size={32} className="animate-spin text-primary mx-auto mb-3" />
+                    <p className="text-sm font-bold text-text-muted">Loading pre-pointed backlog from Jira...</p>
+                </div>
+            ) : backlog && backlog.stories?.length > 0 ? (
+                <div className="pi-card overflow-hidden">
+                    <div className="p-4 flex items-center justify-between" style={{borderBottom:'1px solid var(--border)',background:'var(--bg-body)'}}>
+                        <span className="text-sm font-black text-text-main">{backlog.stories.length} Pre-Pointed Stories ({backlog.total_points} pts total)</span>
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => setSelectedKeys(p => p.size === backlog.stories.length ? new Set() : new Set(backlog.stories.map(s => s.key)))}
+                                className="text-xs font-bold uppercase text-primary" style={{background:'none',border:'none',cursor:'pointer'}}>
+                                {selectedKeys.size === backlog.stories.length ? '✕ Deselect All' : '☑ Select All'}
+                            </button>
+                            <button onClick={generatePlan} disabled={generating || !selectedStories.length} className="pi-btn px-5 py-2.5 text-sm">
+                                {generating ? '⏳ Sequencing...' : `🧩 Generate PI Plan (${selectedStories.length})`}
+                            </button>
+                        </div>
+                    </div>
+                    <div style={{maxHeight:400,overflowY:'auto'}}>
+                        {backlog.stories.map(s => (
+                            <div key={s.key} onClick={() => toggleStory(s.key)} className="pi-story-row cursor-pointer" style={{background: selectedKeys.has(s.key) ? 'rgba(245,158,11,0.04)' : 'transparent'}}>
+                                <div style={{width:20,height:20,borderRadius:5,border: selectedKeys.has(s.key) ? '2px solid #f59e0b' : '2px solid var(--border)',background: selectedKeys.has(s.key) ? '#f59e0b' : 'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                                    {selectedKeys.has(s.key) && <span style={{fontSize:10,fontWeight:900,color:'#000'}}>✓</span>}
+                                </div>
+                                <span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:70}}>{s.key}</span>
+                                <span className="flex-1 text-text-main font-medium truncate text-sm">{s.summary}</span>
+                                <span className="pi-chip" style={{background: s.type === 'Bug' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)', color: s.type === 'Bug' ? '#ef4444' : '#3b82f6'}}>{s.type}</span>
+                                <span className="pi-chip" style={{background: s.priority === 'Highest' || s.priority === 'High' ? 'rgba(239,68,68,0.12)' : 'rgba(234,179,8,0.12)', color: s.priority === 'Highest' || s.priority === 'High' ? '#ef4444' : '#eab308'}}>{s.priority}</span>
+                                <span className="text-sm font-black text-text-main" style={{minWidth:36,textAlign:'right'}}>{s.points} pts</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : (
+                <div className="pi-card p-12 text-center">
+                    <p className="text-text-muted font-semibold">No pre-pointed stories found in backlog. Run Planning Poker first to assign story points.</p>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function RoadmapView({ project, setIsLoading }) {
     const [data, setData] = React.useState(null);
     const [error, setError] = React.useState(null);
@@ -2076,6 +2436,7 @@ function RoadmapView({ project, setIsLoading }) {
         { id: "investment", label: "Backlog Breakdown", icon: "PieChart" },
         { id: "initiatives", label: "Strategic Initiatives", icon: "Layers" },
         { id: "velocity", label: "Velocity & Capacity", icon: "BarChart" },
+        { id: "pi_planning", label: "PI Planning", icon: "Calendar" },
     ];
 
     const statusColors = { in_progress: "text-primary bg-primary/10", planned: "text-warning bg-warning/10", backlog: "text-text-muted bg-bg-body", completed: "text-success bg-success/10" };
@@ -2375,6 +2736,8 @@ function RoadmapView({ project, setIsLoading }) {
                         )}
                     </div>
                 )}
+
+                {activeTab === "pi_planning" && <PIPlanningPanel project={project} velocity={velocity} />}
             </main>
         </div>
     );
@@ -4335,406 +4698,6 @@ function RoadmapView({ project, setIsLoading }) {
                             )}
                         </div>
                     )}
-                </div>
-            );
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        //  PLANNING POKER v4 — 9 Agents, Real Historical Data, AI-Era
-        // ═══════════════════════════════════════════════════════════
-        function PlanningPokerView({ project, setIsLoading }) {
-            const [phase, setPhase] = useState('setup');
-            const [source, setSource] = useState('sprint');
-            const [sprints, setSprints] = useState([]);
-            const [selectedSprint, setSelectedSprint] = useState('');
-            const [stories, setStories] = useState([]);
-            const [agents, setAgents] = useState([]);
-            const [selectedKeys, setSelectedKeys] = useState(new Set());
-            const [loading, setLoading] = useState(false);
-            const [loadingStories, setLoadingStories] = useState(false);
-            const [pokerResults, setPokerResults] = useState([]);
-            const [currentResultIdx, setCurrentResultIdx] = useState(0);
-            const [revealedAgents, setRevealedAgents] = useState(new Set());
-            const [showInfluencers, setShowInfluencers] = useState(false);
-            const [showSuperAgent, setShowSuperAgent] = useState(false);
-            const [adjustments, setAdjustments] = useState({});
-            const [pushing, setPushing] = useState(false);
-            const [pushResults, setPushResults] = useState(null);
-            const [error, setError] = useState('');
-            const FIB = [1, 2, 3, 5, 8, 13, 21];
-
-            useEffect(() => {
-                if (!project) return;
-                secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => setSprints(Array.isArray(d) ? d : [])).catch(() => {});
-            }, [project]);
-
-            const loadStories = () => {
-                if (!project) return;
-                setLoadingStories(true); setError('');
-                const params = new URLSearchParams({ source });
-                if (source === 'sprint' && selectedSprint) params.append('sprint_id', selectedSprint);
-                secureFetch(`/planning_poker/${project}/stories?${params}`).then(r => r?.json()).then(d => {
-                    setStories(d?.stories || []); setAgents(d?.agents || []); setSelectedKeys(new Set()); setLoadingStories(false);
-                }).catch(() => { setError('Failed to load stories'); setLoadingStories(false); });
-            };
-            useEffect(() => { loadStories(); }, [source, selectedSprint, project]);
-
-            const toggleStory = k => setSelectedKeys(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
-            const selectAll = () => setSelectedKeys(p => p.size === stories.length ? new Set() : new Set(stories.map(s => s.key)));
-
-            const startPoker = async () => {
-                const selected = stories.filter(s => selectedKeys.has(s.key));
-                if (!selected.length) return;
-                setLoading(true); setPhase('playing'); setPokerResults([]); setCurrentResultIdx(0);
-                setRevealedAgents(new Set()); setShowInfluencers(false); setShowSuperAgent(false); setError('');
-                try {
-                    const res = await secureFetch(`/planning_poker/${project}/play`, { method: 'POST', body: JSON.stringify({ stories: selected }) });
-                    const data = await res?.json();
-                    if (!data || data.error) { setError(data?.error || 'Failed'); setPhase('setup'); setLoading(false); return; }
-                    setPokerResults(data.results || []);
-                    const adj = {};
-                    (data.results || []).forEach(r => { if (r.super_agent) adj[r.story_key] = { points: r.super_agent.final_points, comment: '' }; });
-                    setAdjustments(adj);
-                    setPhase('results');
-                } catch (e) { setError('Planning Poker failed'); setPhase('setup'); }
-                setLoading(false);
-            };
-
-            useEffect(() => {
-                if (phase !== 'results' || !pokerResults.length) return;
-                const result = pokerResults[currentResultIdx];
-                const voteList = Array.isArray(result?.votes) ? result.votes : [];
-                if (!voteList.length) return;
-                setRevealedAgents(new Set()); setShowInfluencers(false); setShowSuperAgent(false);
-                let i = 0;
-                const iv = setInterval(() => {
-                    if (i < voteList.length) {
-                        const aid = voteList[i]?.agent_id;
-                        if (aid) setRevealedAgents(prev => new Set([...prev, aid]));
-                        i++;
-                    } else if (i === voteList.length) { setShowInfluencers(true); i++; }
-                    else { setShowSuperAgent(true); clearInterval(iv); }
-                }, 400);
-                return () => clearInterval(iv);
-            }, [phase, currentResultIdx, pokerResults]);
-
-            const pushToJira = async () => {
-                setPushing(true);
-                const updates = Object.entries(adjustments).map(([key, adj]) => ({
-                    key, points: adj.points,
-                    comment: `🃏 AI Planning Poker: ${adj.points} pts\n${adj.comment || ''}\n\n${(pokerResults.find(r => r.story_key === key)?.super_agent?.rationale) || ''}`.trim()
-                }));
-                try {
-                    const res = await secureFetch(`/planning_poker/${project}/push_jira`, { method: 'POST', body: JSON.stringify({ updates }) });
-                    setPushResults((await res?.json())?.results || []);
-                } catch (e) { setError('Push failed'); }
-                setPushing(false);
-            };
-
-            const resetAll = () => { setPhase('setup'); setPokerResults([]); setCurrentResultIdx(0); setRevealedAgents(new Set()); setShowInfluencers(false); setShowSuperAgent(false); setAdjustments({}); setPushResults(null); setError(''); };
-
-            const cr = pokerResults[currentResultIdx];
-            const votes = Array.isArray(cr?.votes) ? cr.votes : [];
-            const influencers = Array.isArray(cr?.influencers) ? cr.influencers : [];
-            const sa = cr?.super_agent || null;
-
-            const pkrCSS = `
-                .pkr-hdr{background:var(--bg-card);border:1px solid var(--border);border-radius:16px}
-                .pkr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;transition:all 0.25s;cursor:pointer}
-                .pkr-card:hover{border-color:var(--primary);transform:translateY(-1px);box-shadow:0 4px 16px rgba(0,0,0,0.08)}
-                .pkr-card.pkr-sel{border-color:#f59e0b;box-shadow:0 0 0 1px #f59e0b}
-                .pkr-btn{background:var(--accent-gradient, linear-gradient(135deg,#f59e0b,#d97706));color:#000;font-weight:800;border:none;cursor:pointer;transition:all 0.2s;border-radius:10px}
-                .pkr-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 16px rgba(245,158,11,0.35)}
-                .pkr-btn:disabled{opacity:0.4;cursor:not-allowed}
-                .pkr-tab{padding:8px 20px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;transition:all 0.2s;text-transform:uppercase;letter-spacing:0.5px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted)}
-                .pkr-tab:hover{border-color:var(--primary);color:var(--text-main)}
-                .pkr-tab-on{background:var(--accent-gradient, linear-gradient(135deg,#f59e0b,#d97706));color:#000;border-color:transparent}
-                .pkr-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}
-                .pkr-input{width:100%;padding:8px 12px;border-radius:8px;background:var(--bg-body);border:1px solid var(--border);color:var(--text-main);font-size:13px;outline:none}
-                .pkr-input:focus{border-color:var(--primary)}
-                .pkr-select{padding:6px 10px;border-radius:8px;background:var(--bg-body);border:1px solid var(--border);color:var(--text-main);font-size:12px;font-weight:600}
-                .pkr-vote{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;transition:all 0.5s}
-                .pkr-fib{width:36px;height:42px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;transition:all 0.2s;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted)}
-                .pkr-fib:hover{border-color:#f59e0b;color:var(--text-main)}
-                .pkr-fib.on{background:linear-gradient(135deg,#fbbf24,#ea580c);color:#000;border-color:transparent;box-shadow:0 3px 12px rgba(251,191,36,0.3)}
-                .pkr-pts{min-width:42px;height:50px;border-radius:8px;font-weight:900;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-                .pkr-pts-on{background:linear-gradient(135deg,#fbbf24,#ea580c);color:#000;box-shadow:0 3px 10px rgba(251,191,36,0.25)}
-                .pkr-pts-off{background:var(--bg-body);border:1px solid var(--border);color:var(--text-muted)}
-                .pkr-method{background:var(--bg-body);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center}
-                .pkr-method-val{font-size:22px;font-weight:900;color:var(--text-main)}
-                .pkr-method-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);margin-top:2px}
-                .pkr-method-sub{font-size:9px;color:var(--text-muted);margin-top:2px;line-height:1.3}
-                .pkr-row-top{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
-                .pkr-row-bot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:75%;margin:0 auto}
-                @keyframes pkrFlip{0%{transform:rotateY(90deg) scale(0.8);opacity:0}100%{transform:rotateY(0) scale(1);opacity:1}}
-                @keyframes pkrSlide{0%{transform:translateY(16px);opacity:0}100%{transform:translateY(0);opacity:1}}
-                @keyframes pkrPop{0%{transform:scale(0.5);opacity:0}50%{transform:scale(1.03)}100%{transform:scale(1);opacity:1}}
-                @keyframes pkrSpin{0%{transform:rotateY(0)}100%{transform:rotateY(360deg)}}
-                .pkr-flip{animation:pkrFlip 0.5s ease-out forwards}
-                .pkr-slide{animation:pkrSlide 0.35s ease-out forwards}
-                .pkr-pop{animation:pkrPop 0.5s ease-out forwards}
-                .pkr-spin{animation:pkrSpin 1.5s ease-in-out infinite;display:inline-block}
-            `;
-
-            const renderVoteCard = (v, idx) => {
-                const ag = agents.find(a => a.id === v.agent_id) || {};
-                const revealed = revealedAgents.has(v.agent_id);
-                return (
-                    <div key={v.agent_id || idx} className={`pkr-vote ${revealed ? 'pkr-flip' : ''}`} style={{opacity: revealed ? 1 : 0.35}}>
-                        <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                                <span style={{fontSize:18}}>{ag.emoji || '🤖'}</span>
-                                <div className="text-xs font-bold text-text-main truncate">{ag.name || v.agent_id}</div>
-                            </div>
-                            <div className={`pkr-pts ${revealed ? 'pkr-pts-on' : 'pkr-pts-off'}`}>{revealed ? (v.points || '?') : '?'}</div>
-                        </div>
-                        {revealed && <>
-                            <span className="pkr-chip" style={{background: v.confidence === 'high' ? 'rgba(34,197,94,0.15)' : v.confidence === 'low' ? 'rgba(239,68,68,0.15)' : 'rgba(234,179,8,0.15)', color: v.confidence === 'high' ? '#22c55e' : v.confidence === 'low' ? '#ef4444' : '#eab308'}}>{(v.confidence || 'medium').toUpperCase()}</span>
-                            <p className="text-xs text-text-muted mt-2" style={{lineHeight:1.5}}>{v.reasoning || ''}</p>
-                            {v.risks && <p style={{fontSize:10,color:'#ef4444',marginTop:4,fontStyle:'italic',opacity:0.85}}>⚠ {v.risks}</p>}
-                        </>}
-                    </div>
-                );
-            };
-
-            // ═══ LOADING ═══
-            if (phase === 'playing' && loading) return (
-                <div className="h-full flex flex-col items-center justify-center gap-5">
-                    <style>{pkrCSS}</style>
-                    <div className="pkr-spin" style={{fontSize:56}}>🃏</div>
-                    <h2 className="text-xl font-black text-text-main">Agents estimating...</h2>
-                    <p className="text-text-muted text-sm">{selectedKeys.size} {selectedKeys.size === 1 ? 'story' : 'stories'} · 7 voters · PERT analysis · Real historical comparison</p>
-                    <div className="flex flex-wrap gap-2 mt-3 justify-center">
-                        {agents.map(a => <div key={a.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{background:'var(--bg-card)',border:'1px solid var(--border)'}}>
-                            <span>{a.emoji}</span><span className="text-text-main">{a.name}</span>
-                            {!a.votes && <span className="pkr-chip" style={{background:'rgba(168,85,247,0.12)',color:'#a855f7',marginLeft:2}}>Observer</span>}
-                        </div>)}
-                    </div>
-                </div>
-            );
-
-            // ═══ RESULTS ═══
-            if (phase === 'results' && pokerResults.length > 0) {
-                const topRow = votes.slice(0, 4);
-                const botRow = votes.slice(4, 7);
-                return (
-                <div className="h-full overflow-y-auto">
-                    <style>{pkrCSS}</style>
-
-                    {/* Header */}
-                    <div className="pkr-hdr p-5 mb-4">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3 min-w-0">
-                                <span style={{fontSize:24}}>🃏</span>
-                                <div className="min-w-0">
-                                    <h1 className="text-lg font-black text-text-main">Planning Poker Results</h1>
-                                    <p className="text-sm font-bold font-mono truncate" style={{color:'var(--primary)'}}>{cr?.story_key} — {cr?.story_summary}</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                                {pokerResults.length > 1 && <>
-                                    <button onClick={() => setCurrentResultIdx(Math.max(0, currentResultIdx - 1))} disabled={currentResultIdx === 0} style={{width:32,height:32,borderRadius:8,fontWeight:700,fontSize:14,background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-main)',cursor:'pointer',opacity:currentResultIdx===0?0.3:1}}>‹</button>
-                                    <span className="text-sm font-bold text-text-muted">{currentResultIdx + 1}/{pokerResults.length}</span>
-                                    <button onClick={() => setCurrentResultIdx(Math.min(pokerResults.length - 1, currentResultIdx + 1))} disabled={currentResultIdx >= pokerResults.length - 1} style={{width:32,height:32,borderRadius:8,fontWeight:700,fontSize:14,background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-main)',cursor:'pointer',opacity:currentResultIdx>=pokerResults.length-1?0.3:1}}>›</button>
-                                </>}
-                                <button onClick={resetAll} style={{fontSize:11,fontWeight:700,textTransform:'uppercase',padding:'6px 12px',borderRadius:8,background:'var(--bg-card)',border:'1px solid var(--border)',color:'var(--text-muted)',cursor:'pointer'}}>← New</button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {cr?.error ? <div style={{padding:14,borderRadius:12,background:'rgba(239,68,68,0.1)',border:'1px solid rgba(239,68,68,0.3)',color:'#ef4444',fontSize:13,fontWeight:600}}>Error: {cr.error}</div> : <>
-
-                    {/* Votes: 4 top + 3 bottom centered */}
-                    <div style={{marginBottom:4}}>
-                        <h3 style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',color:'var(--text-muted)',marginBottom:8}}>🗳️ Votes ({votes.length} members)</h3>
-                        <div className="pkr-row-top">{topRow.map((v, i) => renderVoteCard(v, i))}</div>
-                        <div className="pkr-row-bot">{botRow.map((v, i) => renderVoteCard(v, i + 4))}</div>
-                    </div>
-
-                    {/* Influencers */}
-                    {showInfluencers && influencers.length > 0 && <div className="pkr-slide" style={{marginTop:16,marginBottom:4}}>
-                        <h3 style={{fontSize:11,fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',color:'var(--text-muted)',marginBottom:8}}>💬 Non-Voting Influencers</h3>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                            {influencers.map(inf => {
-                                const ag = agents.find(a => a.id === inf.agent_id) || {};
-                                const isBA = inf.agent_id === 'ba';
-                                return (
-                                    <div key={inf.agent_id} style={{borderRadius:12,padding:14,background:'var(--bg-card)',border:`1px solid ${isBA ? 'rgba(244,63,94,0.35)' : 'rgba(168,85,247,0.35)'}`,borderLeft:`3px solid ${isBA ? '#f43f5e' : '#a855f7'}`}}>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span style={{fontSize:16}}>{ag.emoji || (isBA ? '📊' : '⚡')}</span>
-                                            <span className="text-xs font-bold text-text-main">{ag.name || inf.agent_id}</span>
-                                            <span className="pkr-chip" style={{background:isBA ? 'rgba(244,63,94,0.12)' : 'rgba(168,85,247,0.12)',color:isBA ? '#f43f5e' : '#a855f7'}}>DOESN'T VOTE</span>
-                                        </div>
-                                        {isBA ? <>
-                                            <p className="text-xs text-text-muted" style={{lineHeight:1.5}}><strong style={{color:'var(--text-main)'}}>Challenge:</strong> {inf.challenge || ''}</p>
-                                            {inf.suggestion && <p className="text-xs mt-1.5" style={{color:'#f43f5e',fontWeight:600}}>💡 {inf.suggestion}</p>}
-                                        </> : <>
-                                            <p className="text-xs text-text-muted" style={{lineHeight:1.5}}><strong style={{color:'var(--text-main)'}}>Dynamics:</strong> {inf.observation || ''}</p>
-                                            {inf.historical_comparison && <p className="text-xs mt-1.5 text-text-muted" style={{lineHeight:1.5}}><strong style={{color:'var(--text-main)'}}>Historical:</strong> {inf.historical_comparison}</p>}
-                                            {inf.recommendation && <p className="text-xs mt-1.5" style={{color:'#a855f7',fontWeight:600}}>📋 {inf.recommendation}</p>}
-                                        </>}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>}
-
-                    {/* Super Agent */}
-                    {showSuperAgent && sa && <div className="pkr-pop" style={{borderRadius:14,padding:20,marginTop:16,marginBottom:16,background:'var(--bg-card)',border:'2px solid #f59e0b'}}>
-                        <div className="flex items-center gap-4 mb-4">
-                            <span style={{fontSize:28}}>🏆</span>
-                            <div className="flex-1 min-w-0">
-                                <h3 className="text-base font-black" style={{color:'#f59e0b'}}>Super Agent — Chief Estimation Officer</h3>
-                                <p className="text-xs text-text-muted">{sa.method_used || 'PERT-weighted multi-method analysis'}</p>
-                            </div>
-                            <div style={{textAlign:'center',flexShrink:0}}>
-                                <div style={{width:56,height:68,borderRadius:10,background:'linear-gradient(135deg,#fbbf24,#ea580c)',color:'#000',fontWeight:900,fontSize:26,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 6px 18px rgba(251,191,36,0.3)'}}>{sa.final_points || '?'}</div>
-                                <div style={{fontSize:9,color:'#f59e0b',fontWeight:700,marginTop:2}}>FINAL</div>
-                            </div>
-                        </div>
-
-                        {/* 4-Method Breakdown */}
-                        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8,marginBottom:14}}>
-                            {sa.pert_estimate && <div className="pkr-method">
-                                <div className="pkr-method-val">{sa.pert_estimate.pert_fibonacci || '—'}</div>
-                                <div className="pkr-method-lbl">PERT</div>
-                                <div className="pkr-method-sub">({sa.pert_estimate.optimistic || '?'}+4×{sa.pert_estimate.most_likely || '?'}+{sa.pert_estimate.pessimistic || '?'})÷6</div>
-                            </div>}
-                            {sa.three_point_estimate && <div className="pkr-method">
-                                <div className="pkr-method-val">{sa.three_point_estimate.fibonacci || '—'}</div>
-                                <div className="pkr-method-lbl">3-Point</div>
-                                <div className="pkr-method-sub">Avg: {sa.three_point_estimate.raw || '?'}</div>
-                            </div>}
-                            {sa.historical_estimate && <div className="pkr-method">
-                                <div className="pkr-method-val">{sa.historical_estimate.fibonacci || '—'}</div>
-                                <div className="pkr-method-lbl">Historical</div>
-                                <div className="pkr-method-sub">{sa.historical_estimate.matched_story || sa.historical_estimate.category || '—'}</div>
-                            </div>}
-                            {sa.analogous_estimate && <div className="pkr-method">
-                                <div className="pkr-method-val">{sa.analogous_estimate.fibonacci || '—'}</div>
-                                <div className="pkr-method-lbl">Analogous</div>
-                                <div className="pkr-method-sub">{(sa.analogous_estimate.reference_key || sa.analogous_estimate.similar_story || '').slice(0, 35)}</div>
-                            </div>}
-                        </div>
-
-                        <p className="text-sm text-text-main" style={{lineHeight:1.6,marginBottom:10}}>{sa.rationale || ''}</p>
-                        {Array.isArray(sa.key_assumptions) && sa.key_assumptions.length > 0 && <div className="flex flex-wrap gap-1.5 mb-2">
-                            {sa.key_assumptions.map((a, i) => <span key={i} className="pkr-chip" style={{background:'var(--bg-body)',color:'var(--text-muted)',border:'1px solid var(--border)'}}>{String(a)}</span>)}
-                        </div>}
-                        {sa.split_recommendation && <div style={{marginTop:8,padding:10,borderRadius:8,background:'rgba(59,130,246,0.08)',border:'1px solid rgba(59,130,246,0.25)',color:'#3b82f6',fontSize:12,fontWeight:600}}>✂️ {sa.split_recommendation}</div>}
-                    </div>}
-
-                    {/* Vote Distribution */}
-                    {showSuperAgent && votes.length > 0 && <div style={{borderRadius:12,padding:14,background:'var(--bg-card)',border:'1px solid var(--border)',marginBottom:16}}>
-                        <h4 style={{fontSize:11,fontWeight:700,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:10}}>Vote Distribution</h4>
-                        <div className="flex items-end gap-1" style={{height:50}}>
-                            {FIB.map(pt => {
-                                const count = votes.filter(v => Number(v.points) === pt).length;
-                                const mx = Math.max(...FIB.map(p => votes.filter(v => Number(v.points) === p).length), 1);
-                                return (<div key={pt} className="flex-1 flex flex-col items-center gap-1">
-                                    {count > 0 && <span style={{fontSize:10,fontWeight:700,color:'#f59e0b'}}>{count}</span>}
-                                    <div style={{width:'100%',borderRadius:'3px 3px 0 0',height: count > 0 ? `${(count/mx)*100}%` : '3px',minHeight:3,background: count > 0 ? 'linear-gradient(to top,#f59e0b,#fbbf24)' : 'var(--border)'}}></div>
-                                    <span style={{fontSize:10,fontWeight:700,color:'var(--text-muted)'}}>{pt}</span>
-                                </div>);
-                            })}
-                        </div>
-                    </div>}
-
-                    {/* Adjust */}
-                    {showSuperAgent && <div style={{borderRadius:12,padding:16,background:'var(--bg-card)',border:'1px solid var(--border)',marginBottom:16}}>
-                        <h4 className="text-sm font-black text-text-main mb-3">✏️ Review & Adjust</h4>
-                        <div className="flex items-center gap-4 flex-wrap">
-                            <div>
-                                <label style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',fontWeight:700,display:'block',marginBottom:4}}>Final Points</label>
-                                <div className="flex gap-1.5">
-                                    {FIB.map(pt => { const cur = Number(adjustments[cr?.story_key]?.points || sa?.final_points || 0); return <button key={pt} className={`pkr-fib ${cur === pt ? 'on' : ''}`} onClick={() => setAdjustments(p => ({...p, [cr.story_key]: {...(p[cr.story_key] || {}), points: pt}}))}>{pt}</button>; })}
-                                </div>
-                            </div>
-                            <div className="flex-1" style={{minWidth:200}}>
-                                <label style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',fontWeight:700,display:'block',marginBottom:4}}>Comment (optional)</label>
-                                <input type="text" className="pkr-input" placeholder="Add a note..." value={adjustments[cr?.story_key]?.comment || ''} onChange={e => setAdjustments(p => ({...p, [cr.story_key]: {...(p[cr.story_key] || {}), comment: e.target.value}}))} />
-                            </div>
-                        </div>
-                    </div>}
-
-                    {/* Push to Jira */}
-                    {showSuperAgent && currentResultIdx === pokerResults.length - 1 && <div className="flex items-center justify-between flex-wrap gap-3" style={{borderRadius:12,padding:16,background:'var(--bg-card)',border:'2px solid #22c55e'}}>
-                        <div>
-                            <h4 className="text-sm font-black" style={{color:'#22c55e'}}>🚀 Push All Results to Jira</h4>
-                            <p className="text-xs text-text-muted mt-1">{pokerResults.filter(r => !r.error).length} stories — points + AI reasoning as comments</p>
-                        </div>
-                        {pushResults
-                            ? <div className="text-sm font-bold" style={{color:'#22c55e'}}>✅ {pushResults.filter(r => r.status === 'success').length}/{pushResults.length} pushed</div>
-                            : <button onClick={pushToJira} disabled={pushing} className="pkr-btn px-5 py-2.5 text-sm">{pushing ? '⏳ Pushing...' : '🚀 Push to Jira'}</button>}
-                    </div>}
-
-                    </>}
-                </div>
-                );
-            }
-
-            // ═══ SETUP ═══
-            return (
-                <div className="h-full overflow-y-auto">
-                    <style>{pkrCSS}</style>
-                    <div className="pkr-hdr p-6 mb-4">
-                        <div className="flex items-center gap-4">
-                            <span style={{fontSize:30}}>🃏</span>
-                            <div>
-                                <h1 className="text-xl font-black text-text-main tracking-tight">AI Planning Poker</h1>
-                                <p className="text-text-muted text-sm mt-0.5">9 AI agents · AI-era estimation · PERT analysis · Real sprint history</p>
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2 mt-4">
-                            {agents.map(a => <div key={a.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs" style={{background:'var(--bg-body)',border:'1px solid var(--border)'}}>
-                                <span>{a.emoji}</span>
-                                <span className="font-bold text-text-main">{a.name}</span>
-                                {!a.votes && <span className="pkr-chip" style={{background:'rgba(168,85,247,0.12)',color:'#a855f7',marginLeft:2}}>Observer</span>}
-                            </div>)}
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-3 mb-4 flex-wrap">
-                        <button className={`pkr-tab ${source === 'sprint' ? 'pkr-tab-on' : ''}`} onClick={() => setSource('sprint')}>🏃 Sprint</button>
-                        <button className={`pkr-tab ${source === 'backlog' ? 'pkr-tab-on' : ''}`} onClick={() => setSource('backlog')}>📋 Backlog</button>
-                        {source === 'sprint' && <select value={selectedSprint} onChange={e => setSelectedSprint(e.target.value)} className="pkr-select ml-1">
-                            <option value="">Active Sprint</option>
-                            {sprints.map(s => <option key={s.id} value={s.id}>{s.name} ({s.state})</option>)}
-                        </select>}
-                        <div className="ml-auto flex items-center gap-3">
-                            {stories.length > 0 && <button onClick={selectAll} style={{fontSize:12,color:'var(--primary)',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.5px',background:'none',border:'none',cursor:'pointer'}}>
-                                {selectedKeys.size === stories.length ? '✕ Deselect All' : '☑ Select All'}
-                            </button>}
-                            <button onClick={startPoker} disabled={!selectedKeys.size || loading} className="pkr-btn px-5 py-2.5 text-sm">
-                                🃏 Start Poker ({selectedKeys.size})
-                            </button>
-                        </div>
-                    </div>
-
-                    {error && <div className="mb-4 p-3 rounded-lg text-sm font-semibold" style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',color:'#ef4444'}}>{error}</div>}
-
-                    {loadingStories ? <div className="space-y-2">{[1,2,3,4].map(i => <div key={i} style={{height:68,borderRadius:10,background:'var(--bg-card)',border:'1px solid var(--border)',opacity:0.5}} />)}</div>
-                    : stories.length === 0 ? <div className="text-center py-16 text-text-muted font-semibold">No stories found. Try changing source or sprint.</div>
-                    : <div className="space-y-2">{stories.map(s => (
-                        <div key={s.key} onClick={() => toggleStory(s.key)} className={`pkr-card p-4 flex items-center gap-3 ${selectedKeys.has(s.key) ? 'pkr-sel' : ''}`}>
-                            <div style={{width:22,height:22,borderRadius:6,border: selectedKeys.has(s.key) ? '2px solid #f59e0b' : '2px solid var(--border)',background: selectedKeys.has(s.key) ? '#f59e0b' : 'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                                {selectedKeys.has(s.key) && <span style={{fontSize:11,fontWeight:900,color:'#000'}}>✓</span>}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-bold font-mono text-text-main" style={{fontSize:11}}>{s.key}</span>
-                                    <span className="pkr-chip" style={{background: s.issue_type === 'Bug' ? 'rgba(239,68,68,0.12)' : s.issue_type === 'Task' ? 'rgba(59,130,246,0.12)' : 'rgba(34,197,94,0.12)', color: s.issue_type === 'Bug' ? '#ef4444' : s.issue_type === 'Task' ? '#3b82f6' : '#22c55e'}}>{s.issue_type}</span>
-                                    <span className="pkr-chip" style={{background:'var(--bg-body)',color:'var(--text-muted)',border:'1px solid var(--border)'}}>{s.priority}</span>
-                                </div>
-                                <p className="font-semibold text-sm mt-1 text-text-main truncate">{s.summary}</p>
-                                {s.description && <p className="text-xs mt-0.5 truncate text-text-muted">{s.description.slice(0, 120)}</p>}
-                            </div>
-                            <div style={{textAlign:'right',flexShrink:0}}>
-                                <div style={{fontSize:10,color:'var(--text-muted)',textTransform:'uppercase',fontWeight:700}}>Current</div>
-                                <div className="text-lg font-black text-text-main">{s.current_points || '—'}</div>
-                            </div>
-                        </div>
-                    ))}</div>}
                 </div>
             );
         }
