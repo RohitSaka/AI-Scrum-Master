@@ -856,7 +856,7 @@
                 const res = await secureFetch('/feature_roadmap/extract_features', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, file_type: ext, filename: file.name }) });
                 const data = await res?.json();
                 if (data?.features?.length > 0) { setFeatures(data.features.map(f => ({ name: f.name || '', description: f.description || '' }))); setExtractionSummary(data.extraction_summary || `Extracted ${data.features.length} features`); setInputMode('manual'); }
-                else { setError(data?.error || 'No features extracted.'); }
+                else { setError(data?.error || 'No features extracted from file.'); }
             } catch { setError('File extraction failed.'); }
             setExtracting(false);
         };
@@ -889,7 +889,7 @@
                         <Icon name="Loader2" size={48} className="animate-spin text-primary mb-6" />
                         <h3 className="text-2xl font-extrabold text-text-main mb-2">Architecting Your Roadmap</h3>
                         <p className="text-text-muted text-center max-w-md mb-8 leading-relaxed">
-                            Our AI is analyzing {featuresText.split('\n').filter(l => l.trim()).length} features, calculating capacity, and mapping sprint phases.
+                            Our AI is analyzing {features.filter(f => f.name?.trim()).length || featuresText.split('\n').filter(l => l.trim()).length} features, calculating capacity, and mapping sprint phases.
                             <br/><br/>
                             <span className="font-bold text-warning">This enterprise batch process takes ~7-9 minutes. Please do not close this tab.</span>
                         </p>
@@ -1002,7 +1002,7 @@
                             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm" style={{ background: 'var(--accent-gradient)' }}>3</div>
                             <div className="flex-1">
                                 <h3 className="text-base font-extrabold text-text-main">Features & Requirements</h3>
-                                <p className="text-xs text-text-muted font-medium">Define features with descriptions, or upload any document (PDF, PPTX, CSV, XLSX)</p>
+                                <p className="text-xs text-text-muted font-medium">Define features manually or upload any document (PDF, PPTX, DOCX, XLSX, CSV)</p>
                             </div>
                         </div>
                         <div className="flex gap-2 mb-4">
@@ -1012,9 +1012,9 @@
                         {inputMode === 'upload' && (
                             <div className="space-y-3">
                                 <div className="border-2 border-dashed rounded-xl p-8 text-center transition-all hover:border-primary" style={{borderColor:'var(--border)'}}>
-                                    {extracting ? (<div className="flex flex-col items-center gap-3"><Icon name="Loader2" size={32} className="animate-spin text-primary" /><p className="text-sm font-bold text-text-main">AI is scanning {uploadedFileName}...</p><p className="text-xs text-text-muted">Intelligently extracting features — filtering noise, headers, metadata</p></div>) : (<><Icon name="Upload" size={32} className="text-text-muted mx-auto mb-3" /><p className="text-sm font-bold text-text-main mb-1">Upload any document</p><p className="text-xs text-text-muted mb-1">PDF · PPTX · XLSX · CSV · TXT</p><p className="text-xs text-text-muted mb-4" style={{opacity:0.7}}>AI extracts features from SOWs, RFPs, meeting notes, backlogs — any unstructured data</p><label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm cursor-pointer transition-all text-white" style={{ background: 'var(--accent-gradient)' }}><Icon name="FileUp" size={16} /> Choose File<input type="file" accept=".pdf,.pptx,.ppt,.xlsx,.xls,.csv,.txt" onChange={handleSmartUpload} className="hidden" /></label></>)}
+                                    {extracting ? (<div className="flex flex-col items-center gap-3"><Icon name="Loader2" size={32} className="animate-spin text-primary" /><p className="text-sm font-bold text-text-main">AI is scanning {uploadedFileName}...</p><p className="text-xs text-text-muted">Extracting features — filtering sizing labels, metadata, headers automatically</p></div>) : (<><Icon name="Upload" size={32} className="text-text-muted mx-auto mb-3" /><p className="text-sm font-bold text-text-main mb-1">Upload any document</p><p className="text-xs text-text-muted mb-1">PDF · PPTX · DOCX · XLSX · CSV · TXT</p><p className="text-xs text-text-muted mb-4" style={{opacity:0.7}}>AI extracts features from SOWs, RFPs, estimation sheets, meeting notes — filters out sizing labels, metadata noise</p><label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm cursor-pointer transition-all text-white" style={{ background: 'var(--accent-gradient)' }}><Icon name="FileUp" size={16} /> Choose File<input type="file" accept=".pdf,.pptx,.ppt,.xlsx,.xls,.csv,.txt,.docx,.doc" onChange={handleSmartUpload} className="hidden" /></label></>)}
                                 </div>
-                                {extractionSummary && (<div className="p-3 rounded-lg text-sm font-semibold flex items-center gap-2" style={{background:'rgba(34,197,94,0.1)',border:'1px solid rgba(34,197,94,0.3)',color:'#22c55e'}}><span>✅</span> {extractionSummary} — Review extracted features below, then Generate</div>)}
+                                {extractionSummary && (<div className="p-3 rounded-lg text-sm font-semibold flex items-center gap-2" style={{background:'rgba(34,197,94,0.1)',border:'1px solid rgba(34,197,94,0.3)',color:'#22c55e'}}><span>✅</span> {extractionSummary} — Review below, then Generate</div>)}
                             </div>
                         )}
                         {inputMode === 'manual' && (
@@ -1024,14 +1024,14 @@
                                         <span className="text-xs font-black text-text-muted mt-2.5 w-6 shrink-0">{idx + 1}.</span>
                                         <div className="flex-1 space-y-1.5">
                                             <input type="text" value={f.name} onChange={e => updateFeature(idx, 'name', e.target.value)} placeholder="Feature name (e.g., User Authentication)" className="w-full p-2.5 rounded-lg border bg-bg-card text-text-main text-sm font-bold outline-none hover:border-primary transition-colors border-border" />
-                                            <textarea value={f.description} onChange={e => updateFeature(idx, 'description', e.target.value)} placeholder="Describe what needs to be built — business context, user flows, integration points..." rows={2} className="w-full p-2.5 rounded-lg border bg-bg-card text-text-muted text-xs font-medium outline-none hover:border-primary transition-colors border-border resize-none leading-relaxed" />
-                                            {!f.description?.trim() && f.name?.trim() && <p className="text-xs font-semibold" style={{color:'#f59e0b'}}>⚠ Add a description for more accurate estimation</p>}
+                                            <textarea value={f.description} onChange={e => updateFeature(idx, 'description', e.target.value)} placeholder="Describe what needs to be built..." rows={2} className="w-full p-2.5 rounded-lg border bg-bg-card text-text-muted text-xs font-medium outline-none hover:border-primary transition-colors border-border resize-none leading-relaxed" />
+                                            {!f.description?.trim() && f.name?.trim() && <p className="text-xs font-semibold" style={{color:'#f59e0b'}}>⚠ Add description for better estimation</p>}
                                         </div>
                                         <button onClick={() => removeFeature(idx)} className="mt-2 p-1.5 rounded-lg hover:bg-danger/10 transition-all text-text-muted hover:text-danger"><Icon name="X" size={14} /></button>
                                     </div>
                                 ))}
                                 <button onClick={addFeature} className="w-full p-3 rounded-lg border-2 border-dashed text-sm font-bold transition-all hover:border-primary hover:text-primary text-text-muted" style={{borderColor:'var(--border)'}}>+ Add Feature</button>
-                                {features.length > 0 && <div className="flex items-center justify-between mt-1"><span className="text-xs text-text-muted font-bold">{features.filter(f => f.name.trim()).length} features configured</span>{features.some(f => f.name?.trim() && !f.description?.trim()) && <span className="text-xs font-bold" style={{color:'#f59e0b'}}>⚠ {features.filter(f => f.name?.trim() && !f.description?.trim()).length} missing descriptions</span>}</div>}
+                                {features.length > 0 && <div className="flex items-center justify-between mt-1"><span className="text-xs text-text-muted font-bold">{features.filter(f => f.name.trim()).length} features</span>{features.some(f => f.name?.trim() && !f.description?.trim()) && <span className="text-xs font-bold" style={{color:'#f59e0b'}}>⚠ {features.filter(f => f.name?.trim() && !f.description?.trim()).length} missing descriptions</span>}</div>}
                             </div>
                         )}
                     </div>
@@ -2062,9 +2062,8 @@ const VelocitySparkline = ({ history = [], avgVelocity = 0, width = 280, height 
     );
 };
 
-// ── Main Production Component ──
 // ═══════════════════════════════════════════════════════════
-//  PLANNING POKER v4 — 9 AI Agents, AI-Era Estimation
+//  PLANNING POKER v4 — 9 AI Agents
 // ═══════════════════════════════════════════════════════════
 function PlanningPokerView({ project, setIsLoading }) {
     const [phase, setPhase] = useState('setup');
@@ -2085,11 +2084,8 @@ function PlanningPokerView({ project, setIsLoading }) {
         secureFetch(`/planning_poker/${project}/stories?source=${source}${sprintId !== 'active' ? `&sprint_id=${sprintId}` : ''}`)
             .then(r => r?.json()).then(d => { if (d?.stories) { setStories(d.stories); setAgents(d.agents || []); setSelected(new Set(d.stories.map(s => s.key))); } });
     }, [project, source, sprintId]);
-
     useEffect(() => { if (project) secureFetch(`/sprints/${project}`).then(r => r?.json()).then(d => { if (d?.sprints) setSprints(d.sprints); }).catch(() => {}); }, [project]);
-
     const toggle = k => setSelected(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
-
     const startPoker = async () => {
         const sel = stories.filter(s => selected.has(s.key));
         if (!sel.length) return;
@@ -2101,37 +2097,22 @@ function PlanningPokerView({ project, setIsLoading }) {
             else { setError(d?.error || 'Poker failed'); setPhase('setup'); }
         } catch { setError('Poker failed'); setPhase('setup'); }
     };
-
     useEffect(() => { if (phase === 'results') { const t = setInterval(() => setRevealed(p => p < 10 ? p + 1 : p), 400); return () => clearInterval(t); } }, [phase, currentIdx]);
 
     const cr = results[currentIdx] || {};
     const votes = Array.isArray(cr?.votes) ? cr.votes : [];
     const influencers = Array.isArray(cr?.influencers) ? cr.influencers : [];
     const sa = cr?.super_agent || {};
-    const agentMap = {};
-    agents.forEach(a => { agentMap[a.id] = a; });
+    const agentMap = {}; agents.forEach(a => { agentMap[a.id] = a; });
 
     const pushToJira = async () => {
-        const updates = results.map(r => ({ key: r.story_key, points: adjustments[r.story_key]?.points ?? r.super_agent?.final_points, comment: adjustments[r.story_key]?.comment || `AI Planning Poker: ${r.super_agent?.final_points} pts (${r.super_agent?.method_used})` })).filter(u => u.points);
+        const updates = results.map(r => ({ key: r.story_key, points: adjustments[r.story_key]?.points ?? r.super_agent?.final_points, comment: `AI Planning Poker: ${r.super_agent?.final_points} pts (${r.super_agent?.method_used || 'Multi-method'})` })).filter(u => u.points);
         const res = await secureFetch(`/planning_poker/${project}/push_jira`, { method: 'POST', body: JSON.stringify({ updates }) });
         const d = await res?.json();
         alert(`Pushed ${(d?.results || []).filter(r => r.status === 'success').length} updates to Jira`);
     };
 
-    const pkrCSS = `
-        .pkr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;transition:all .3s;opacity:0;transform:translateY(20px)}
-        .pkr-show{opacity:1;transform:translateY(0)}
-        .pkr-row-top{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
-        .pkr-row-bot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:75%;margin:0 auto}
-        .pkr-chip{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:36px;border-radius:10px;font-weight:900;font-size:16px;background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#78350f;box-shadow:0 2px 8px rgba(245,158,11,0.3)}
-        .pkr-chip-lg{min-width:56px;height:56px;font-size:24px;border-radius:14px}
-        .pkr-conf{font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px}
-        .pkr-inf{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;opacity:0;transform:translateX(-20px);transition:all .4s}
-        .pkr-inf-show{opacity:1;transform:translateX(0)}
-        .pkr-super{background:var(--bg-card);border:2px solid #f59e0b;border-radius:16px;padding:20px;opacity:0;transform:scale(0.9);transition:all .5s}
-        .pkr-super-show{opacity:1;transform:scale(1)}
-        .pkr-method{background:var(--bg-body);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center}
-    `;
+    const pkrCSS = `.pkr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;transition:all .3s;opacity:0;transform:translateY(20px)}.pkr-show{opacity:1;transform:translateY(0)}.pkr-row-top{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}.pkr-row-bot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:75%;margin:0 auto}.pkr-chip{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:36px;border-radius:10px;font-weight:900;font-size:16px;background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#78350f}.pkr-chip-lg{min-width:56px;height:56px;font-size:24px;border-radius:14px}.pkr-conf{font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px}.pkr-inf{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;opacity:0;transform:translateX(-20px);transition:all .4s}.pkr-inf-show{opacity:1;transform:translateX(0)}.pkr-super{background:var(--bg-card);border:2px solid #f59e0b;border-radius:16px;padding:20px;opacity:0;transform:scale(0.9);transition:all .5s}.pkr-super-show{opacity:1;transform:scale(1)}.pkr-method{background:var(--bg-body);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center}`;
 
     if (phase === 'playing') return (<div className="animate-fade-in h-full flex items-center justify-center"><style>{pkrCSS}</style><div className="text-center"><div className="text-6xl mb-4 animate-bounce">🃏</div><p className="text-lg font-black text-text-main">Agents estimating...</p><p className="text-sm text-text-muted mt-2">9 AI agents analyzing {selected.size} stories</p></div></div>);
 
@@ -2141,498 +2122,377 @@ function PlanningPokerView({ project, setIsLoading }) {
         const voteDist = {}; fibScale.forEach(f => { voteDist[f] = 0; }); votes.forEach(v => { const p = Number(v.points); if (voteDist[p] !== undefined) voteDist[p]++; });
         const maxVotes = Math.max(1, ...Object.values(voteDist));
         const adjPts = adjustments[cr.story_key]?.points;
-
         return (
             <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4"><style>{pkrCSS}</style>
                 <header className="flex justify-between items-center pb-4 border-b border-border mb-4">
-                    <div><h2 className="text-2xl font-black text-text-main">AI Planning Poker</h2><p className="text-sm text-text-muted">Story {currentIdx + 1} of {results.length} — <span className="text-primary font-bold">{cr.story_key}</span>: {cr.story_summary}</p></div>
+                    <div><h2 className="text-2xl font-black text-text-main">AI Planning Poker</h2><p className="text-sm text-text-muted">Story {currentIdx + 1}/{results.length} — <span className="text-primary font-bold">{cr.story_key}</span>: {cr.story_summary}</p></div>
                     <div className="flex gap-2">{results.map((_, i) => <button key={i} onClick={() => { setCurrentIdx(i); setRevealed(0); }} className={`w-8 h-8 rounded-lg text-xs font-black ${i === currentIdx ? 'bg-primary text-white' : 'bg-bg-card text-text-muted border border-border'}`}>{i + 1}</button>)}</div>
                 </header>
-                {/* 7 Voter Cards — 4+3 */}
-                <div className="pkr-row-top">{topVoters.map((v, i) => { const a = agentMap[v.agent_id] || {}; return (<div key={i} className={`pkr-card ${i < revealed ? 'pkr-show' : ''}`} style={{transitionDelay:`${i*100}ms`}}><div className="flex items-center justify-between mb-2"><span className="text-lg">{a.emoji}</span><span className={`pkr-conf ${v.confidence === 'high' ? 'bg-success/15 text-success' : v.confidence === 'low' ? 'bg-danger/15 text-danger' : 'bg-warning/15 text-warning'}`}>{v.confidence}</span></div><div className="text-xs font-black text-text-main mb-1">{a.name}</div><div className="pkr-chip mb-2">{v.points}</div><p className="text-xs text-text-muted leading-relaxed">{v.reasoning}</p>{v.risks && <p className="text-xs mt-1 font-semibold" style={{color:'#ef4444'}}>⚠ {v.risks}</p>}</div>); })}</div>
-                <div className="pkr-row-bot">{botVoters.map((v, i) => { const a = agentMap[v.agent_id] || {}; const ri = i + 4; return (<div key={ri} className={`pkr-card ${ri < revealed ? 'pkr-show' : ''}`} style={{transitionDelay:`${ri*100}ms`}}><div className="flex items-center justify-between mb-2"><span className="text-lg">{a.emoji}</span><span className={`pkr-conf ${v.confidence === 'high' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'}`}>{v.confidence}</span></div><div className="text-xs font-black text-text-main mb-1">{a.name}</div><div className="pkr-chip mb-2">{v.points}</div><p className="text-xs text-text-muted leading-relaxed">{v.reasoning}</p>{v.risks && <p className="text-xs mt-1 font-semibold" style={{color:'#ef4444'}}>⚠ {v.risks}</p>}</div>); })}</div>
-                {/* Influencers */}
-                <div className="grid grid-cols-2 gap-3 mt-4">{influencers.map((inf, i) => { const a = agentMap[inf.agent_id] || {}; const isBA = inf.agent_id === 'ba'; return (<div key={i} className={`pkr-inf ${revealed >= 7 + i ? 'pkr-inf-show' : ''}`} style={{borderLeft:`4px solid ${isBA ? '#ec4899' : '#a855f7'}`,transitionDelay:`${(7+i)*100}ms`}}><div className="flex items-center gap-2 mb-2"><span className="text-lg">{a.emoji}</span><span className="text-sm font-black text-text-main">{a.name}</span><span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{background:'rgba(168,85,247,0.12)',color:'#a855f7'}}>Observer</span></div>{isBA ? <><p className="text-xs text-text-muted mb-1"><strong>Challenge:</strong> {inf.challenge}</p><p className="text-xs text-text-muted"><strong>Suggestion:</strong> {inf.suggestion}</p></> : <><p className="text-xs text-text-muted mb-1"><strong>Dynamics:</strong> {inf.observation}</p><p className="text-xs text-text-muted mb-1"><strong>Historical:</strong> {inf.historical_comparison}</p><p className="text-xs text-text-muted"><strong>Recommendation:</strong> {inf.recommendation}</p></>}</div>); })}</div>
-                {/* Super Agent */}
+                <div className="pkr-row-top">{topVoters.map((v, i) => { const a = agentMap[v.agent_id] || {}; return (<div key={i} className={`pkr-card ${i < revealed ? 'pkr-show' : ''}`} style={{transitionDelay:`${i*100}ms`}}><div className="flex items-center justify-between mb-2"><span className="text-lg">{a.emoji}</span><span className={`pkr-conf ${v.confidence === 'high' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'}`}>{v.confidence}</span></div><div className="text-xs font-black text-text-main mb-1">{a.name}</div><div className="pkr-chip mb-2">{v.points}</div><p className="text-xs text-text-muted leading-relaxed">{v.reasoning}</p>{v.risks && <p className="text-xs mt-1 font-semibold" style={{color:'#ef4444'}}>⚠ {v.risks}</p>}</div>); })}</div>
+                <div className="pkr-row-bot">{botVoters.map((v, i) => { const a = agentMap[v.agent_id] || {}; const ri = i + 4; return (<div key={ri} className={`pkr-card ${ri < revealed ? 'pkr-show' : ''}`} style={{transitionDelay:`${ri*100}ms`}}><div className="flex items-center justify-between mb-2"><span className="text-lg">{a.emoji}</span><span className={`pkr-conf ${v.confidence === 'high' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'}`}>{v.confidence}</span></div><div className="text-xs font-black text-text-main mb-1">{a.name}</div><div className="pkr-chip mb-2">{v.points}</div><p className="text-xs text-text-muted leading-relaxed">{v.reasoning}</p></div>); })}</div>
+                <div className="grid grid-cols-2 gap-3 mt-4">{influencers.map((inf, i) => { const a = agentMap[inf.agent_id] || {}; return (<div key={i} className={`pkr-inf ${revealed >= 7 + i ? 'pkr-inf-show' : ''}`} style={{borderLeft:`4px solid ${inf.agent_id === 'ba' ? '#ec4899' : '#a855f7'}`,transitionDelay:`${(7+i)*100}ms`}}><div className="flex items-center gap-2 mb-2"><span className="text-lg">{a.emoji}</span><span className="text-sm font-black text-text-main">{a.name}</span><span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{background:'rgba(168,85,247,0.12)',color:'#a855f7'}}>Observer</span></div>{inf.agent_id === 'ba' ? <><p className="text-xs text-text-muted mb-1"><strong>Challenge:</strong> {inf.challenge}</p><p className="text-xs text-text-muted"><strong>Suggestion:</strong> {inf.suggestion}</p></> : <><p className="text-xs text-text-muted mb-1"><strong>Observation:</strong> {inf.observation}</p><p className="text-xs text-text-muted"><strong>Historical:</strong> {inf.historical_comparison}</p></>}</div>); })}</div>
                 <div className={`pkr-super mt-4 ${revealed >= 9 ? 'pkr-super-show' : ''}`} style={{transitionDelay:'900ms'}}>
-                    <div className="flex items-center gap-3 mb-4"><span className="text-2xl">🏆</span><div><h3 className="text-base font-black text-text-main">Chief Estimation Officer</h3><p className="text-xs text-text-muted">{sa.method_used || 'Multi-method analysis'}</p></div><div className="ml-auto pkr-chip pkr-chip-lg">{adjPts ?? sa.final_points ?? '?'}</div></div>
-                    <div className="grid grid-cols-4 gap-2 mb-4">
-                        <div className="pkr-method"><div className="text-[10px] font-bold text-text-muted uppercase mb-1">PERT</div><div className="text-lg font-black text-text-main">{sa.pert_estimate?.pert_fibonacci ?? '—'}</div><div className="text-[9px] text-text-muted">({sa.pert_estimate?.optimistic}/{sa.pert_estimate?.most_likely}/{sa.pert_estimate?.pessimistic})</div></div>
-                        <div className="pkr-method"><div className="text-[10px] font-bold text-text-muted uppercase mb-1">3-Point</div><div className="text-lg font-black text-text-main">{sa.three_point_estimate?.fibonacci ?? '—'}</div><div className="text-[9px] text-text-muted">avg: {sa.three_point_estimate?.raw ?? '—'}</div></div>
-                        <div className="pkr-method"><div className="text-[10px] font-bold text-text-muted uppercase mb-1">Historical</div><div className="text-lg font-black text-text-main">{sa.historical_estimate?.fibonacci ?? '—'}</div><div className="text-[9px] text-text-muted">{sa.historical_estimate?.matched_story || '—'}</div></div>
-                        <div className="pkr-method"><div className="text-[10px] font-bold text-text-muted uppercase mb-1">Analogous</div><div className="text-lg font-black text-text-main">{sa.analogous_estimate?.fibonacci ?? '—'}</div><div className="text-[9px] text-text-muted truncate">{sa.analogous_estimate?.reference_key || sa.analogous_estimate?.similar_story?.substring(0,20) || '—'}</div></div>
-                    </div>
-                    <p className="text-sm text-text-main leading-relaxed mb-3">{sa.rationale}</p>
-                    {Array.isArray(sa.key_assumptions) && sa.key_assumptions.length > 0 && <div className="flex flex-wrap gap-1.5">{sa.key_assumptions.map((a, i) => <span key={i} className="text-[10px] font-bold px-2 py-1 rounded-full" style={{background:'var(--bg-body)',border:'1px solid var(--border)',color:'var(--text-muted)'}}>{a}</span>)}</div>}
+                    <div className="flex items-center gap-3 mb-4"><span className="text-2xl">🏆</span><div><h3 className="text-base font-black text-text-main">Chief Estimation Officer</h3><p className="text-xs text-text-muted">{sa.method_used || 'Multi-method'}</p></div><div className="ml-auto pkr-chip pkr-chip-lg">{adjPts ?? sa.final_points ?? '?'}</div></div>
+                    <div className="grid grid-cols-4 gap-2 mb-4">{[{l:'PERT',v:sa.pert_estimate?.pert_fibonacci,s:`${sa.pert_estimate?.optimistic}/${sa.pert_estimate?.most_likely}/${sa.pert_estimate?.pessimistic}`},{l:'3-Point',v:sa.three_point_estimate?.fibonacci,s:`avg: ${sa.three_point_estimate?.raw}`},{l:'Historical',v:sa.historical_estimate?.fibonacci,s:sa.historical_estimate?.matched_story||'—'},{l:'Analogous',v:sa.analogous_estimate?.fibonacci,s:sa.analogous_estimate?.reference_key||'—'}].map((m,i) => <div key={i} className="pkr-method"><div className="text-[10px] font-bold text-text-muted uppercase mb-1">{m.l}</div><div className="text-lg font-black text-text-main">{m.v ?? '—'}</div><div className="text-[9px] text-text-muted truncate">{m.s}</div></div>)}</div>
+                    <p className="text-sm text-text-main leading-relaxed">{sa.rationale}</p>
                 </div>
-                {/* Vote Distribution */}
-                <div className="mt-4 p-4 rounded-xl" style={{background:'var(--bg-card)',border:'1px solid var(--border)'}}>
-                    <h4 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Vote Distribution</h4>
-                    <div className="flex items-end gap-2 h-16">{fibScale.map(f => (<div key={f} className="flex-1 flex flex-col items-center"><div className="w-full rounded-t" style={{height:`${(voteDist[f] / maxVotes) * 48}px`,background: voteDist[f] > 0 ? 'linear-gradient(to top,#f59e0b,#fbbf24)' : 'var(--border)',minHeight: voteDist[f] > 0 ? 8 : 2,transition:'height 0.5s'}} /><span className="text-[10px] font-bold text-text-muted mt-1">{f}</span></div>))}</div>
-                </div>
-                {/* Adjust & Push */}
-                <div className="mt-4 p-4 rounded-xl" style={{background:'var(--bg-card)',border:'1px solid var(--border)'}}>
-                    <h4 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Review & Adjust</h4>
-                    <div className="flex gap-2 mb-3">{[1,2,3,5,8,13,21].map(f => <button key={f} onClick={() => setAdjustments(p => ({...p, [cr.story_key]: {...(p[cr.story_key]||{}), points: f}}))} className="px-3 py-2 rounded-lg text-sm font-black border transition-all" style={{background: adjPts === f ? '#f59e0b' : 'var(--bg-body)', color: adjPts === f ? '#78350f' : 'var(--text-muted)', borderColor: adjPts === f ? '#f59e0b' : 'var(--border)'}}>{f}</button>)}</div>
-                    <input type="text" value={adjustments[cr.story_key]?.comment || ''} onChange={e => setAdjustments(p => ({...p, [cr.story_key]: {...(p[cr.story_key]||{}), comment: e.target.value}}))} placeholder="Optional comment..." className="w-full p-2.5 rounded-lg border text-sm bg-bg-body text-text-main border-border outline-none" />
-                </div>
-                {currentIdx === results.length - 1 && <button onClick={pushToJira} className="mt-4 w-full p-4 rounded-xl text-white font-black text-base" style={{background:'var(--accent-gradient)'}}>🚀 Push All Results to Jira</button>}
+                <div className="mt-4 p-4 rounded-xl" style={{background:'var(--bg-card)',border:'1px solid var(--border)'}}><h4 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Vote Distribution</h4><div className="flex items-end gap-2 h-16">{fibScale.map(f => (<div key={f} className="flex-1 flex flex-col items-center"><div className="w-full rounded-t" style={{height:`${(voteDist[f] / maxVotes) * 48}px`,background: voteDist[f] > 0 ? 'linear-gradient(to top,#f59e0b,#fbbf24)' : 'var(--border)',minHeight: voteDist[f] > 0 ? 8 : 2,transition:'height 0.5s'}} /><span className="text-[10px] font-bold text-text-muted mt-1">{f}</span></div>))}</div></div>
+                <div className="mt-4 p-4 rounded-xl" style={{background:'var(--bg-card)',border:'1px solid var(--border)'}}><h4 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">Adjust & Push</h4><div className="flex gap-2 mb-3">{[1,2,3,5,8,13,21].map(f => <button key={f} onClick={() => setAdjustments(p => ({...p, [cr.story_key]: {...(p[cr.story_key]||{}), points: f}}))} className="px-3 py-2 rounded-lg text-sm font-black border transition-all" style={{background: adjPts === f ? '#f59e0b' : 'var(--bg-body)', color: adjPts === f ? '#78350f' : 'var(--text-muted)', borderColor: adjPts === f ? '#f59e0b' : 'var(--border)'}}>{f}</button>)}</div></div>
+                {currentIdx === results.length - 1 && <button onClick={pushToJira} className="mt-4 w-full p-4 rounded-xl text-white font-black text-base" style={{background:'var(--accent-gradient)'}}>🚀 Push All to Jira</button>}
             </div>
         );
     }
-
-    // SETUP
     return (
         <div className="animate-fade-in h-full overflow-y-auto pb-12 pr-4"><style>{pkrCSS}</style>
             <header className="pb-4 border-b border-border mb-6"><h2 className="text-3xl font-extrabold text-text-main">AI Planning Poker</h2><p className="text-sm text-text-muted mt-1">9 AI agents · AI-era estimation · PERT analysis · Real sprint history</p></header>
             {error && <div className="p-3 rounded-lg text-sm font-semibold mb-4" style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',color:'#ef4444'}}>{error}</div>}
-            {/* Agent Roster */}
             <div className="flex flex-wrap gap-2 mb-4">{agents.map(a => <span key={a.id} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold" style={{background:'var(--bg-card)',border:'1px solid var(--border)'}}>{a.emoji} {a.name} {!a.votes && <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{background:'rgba(168,85,247,0.12)',color:'#a855f7'}}>Observer</span>}</span>)}</div>
-            {/* Source */}
             <div className="flex gap-2 mb-4">
                 <button onClick={() => setSource('sprint')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase border ${source === 'sprint' ? 'bg-primary text-white border-primary' : 'bg-bg-body text-text-muted border-border'}`}>🏃 Sprint</button>
                 <button onClick={() => setSource('backlog')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase border ${source === 'backlog' ? 'bg-primary text-white border-primary' : 'bg-bg-body text-text-muted border-border'}`}>📋 Backlog</button>
                 {source === 'sprint' && sprints.length > 0 && <select value={sprintId} onChange={e => setSprintId(e.target.value)} className="px-3 py-2 rounded-lg text-xs font-bold bg-bg-body border border-border text-text-main"><option value="active">Active Sprint</option>{sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>}
             </div>
-            {/* Stories */}
             <div className="rounded-xl border overflow-hidden" style={{borderColor:'var(--border)',background:'var(--bg-card)'}}>
-                <div className="p-3 flex justify-between items-center" style={{borderBottom:'1px solid var(--border)',background:'var(--bg-body)'}}>
-                    <span className="text-sm font-black text-text-main">{stories.length} Stories</span>
-                    <button onClick={() => setSelected(p => p.size === stories.length ? new Set() : new Set(stories.map(s => s.key)))} className="text-xs font-bold text-primary" style={{background:'none',border:'none',cursor:'pointer'}}>{selected.size === stories.length ? '✕ Deselect' : '☑ Select All'}</button>
-                </div>
-                <div style={{maxHeight:350,overflowY:'auto'}}>{stories.map(s => (
-                    <div key={s.key} onClick={() => toggle(s.key)} className="flex items-center gap-3 px-4 py-2.5 text-sm cursor-pointer transition-all hover:bg-bg-body" style={{borderBottom:'1px solid var(--border)',background:selected.has(s.key)?'rgba(245,158,11,0.04)':'transparent'}}>
-                        <div style={{width:18,height:18,borderRadius:4,border:selected.has(s.key)?'2px solid #f59e0b':'2px solid var(--border)',background:selected.has(s.key)?'#f59e0b':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{selected.has(s.key) && <span style={{fontSize:9,fontWeight:900,color:'#000'}}>✓</span>}</div>
-                        <span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:60}}>{s.key}</span>
-                        <span className="flex-1 text-text-main font-medium truncate">{s.summary}</span>
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{background:'rgba(59,130,246,0.1)',color:'#3b82f6'}}>{s.issue_type}</span>
-                        {s.current_points ? <span className="text-xs font-black text-text-muted">{s.current_points} pts</span> : null}
-                    </div>
-                ))}</div>
+                <div className="p-3 flex justify-between items-center" style={{borderBottom:'1px solid var(--border)',background:'var(--bg-body)'}}><span className="text-sm font-black text-text-main">{stories.length} Stories</span><button onClick={() => setSelected(p => p.size === stories.length ? new Set() : new Set(stories.map(s => s.key)))} className="text-xs font-bold text-primary" style={{background:'none',border:'none',cursor:'pointer'}}>{selected.size === stories.length ? '✕ Deselect' : '☑ Select All'}</button></div>
+                <div style={{maxHeight:350,overflowY:'auto'}}>{stories.map(s => (<div key={s.key} onClick={() => toggle(s.key)} className="flex items-center gap-3 px-4 py-2.5 text-sm cursor-pointer transition-all hover:bg-bg-body" style={{borderBottom:'1px solid var(--border)',background:selected.has(s.key)?'rgba(245,158,11,0.04)':'transparent'}}><div style={{width:18,height:18,borderRadius:4,border:selected.has(s.key)?'2px solid #f59e0b':'2px solid var(--border)',background:selected.has(s.key)?'#f59e0b':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{selected.has(s.key) && <span style={{fontSize:9,fontWeight:900,color:'#000'}}>✓</span>}</div><span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:60}}>{s.key}</span><span className="flex-1 text-text-main font-medium truncate">{s.summary}</span><span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{background:'rgba(59,130,246,0.1)',color:'#3b82f6'}}>{s.issue_type}</span>{s.current_points ? <span className="text-xs font-black text-text-muted">{s.current_points}pts</span> : null}</div>))}</div>
             </div>
             <button onClick={startPoker} disabled={!selected.size} className="mt-4 w-full p-4 rounded-xl text-white font-black text-lg disabled:opacity-40" style={{background:'var(--accent-gradient)'}}>🃏 Start Poker ({selected.size})</button>
         </div>
     );
 }
 
+// ═══════════════════════════════════════════════════════════
+//  STRATEGIC ROADMAP — SAFe PI Planning Hub (5 Tabs)
+// ═══════════════════════════════════════════════════════════
 function RoadmapView({ project, setIsLoading }) {
-    const [data, setData] = React.useState(null);
+    const [activeTab, setActiveTab] = React.useState("pi_planning");
+    const [piPlan, setPiPlan] = React.useState(null);
+    const [backlog, setBacklog] = React.useState(null);
+    const [loadingBacklog, setLoadingBacklog] = React.useState(false);
+    const [generating, setGenerating] = React.useState(false);
     const [error, setError] = React.useState(null);
-    const [activeTab, setActiveTab] = React.useState("overview");
-    const [expandedInitiative, setExpandedInitiative] = React.useState(null);
+    const [piName, setPiName] = React.useState('PI-1');
+    const [numSprints, setNumSprints] = React.useState(5);
+    const [velPerSprint, setVelPerSprint] = React.useState(40);
+    const [selectedKeys, setSelectedKeys] = React.useState(new Set());
+    const [teams, setTeams] = React.useState(['Core Team']);
+    const [teamInput, setTeamInput] = React.useState('');
+    // ROAM state
+    const [roamRisks, setRoamRisks] = React.useState([]);
+    const [roamLoading, setRoamLoading] = React.useState(false);
+    const [newRisk, setNewRisk] = React.useState({ title: '', description: '', status: 'Owned', owner: '' });
+    // Objectives state
+    const [objectives, setObjectives] = React.useState([]);
+    const [objLoading, setObjLoading] = React.useState(false);
+    const [newObj, setNewObj] = React.useState({ name: '', planned_value: 5, epics: '' });
 
-    // Fetch REAL data from the backend
-    React.useEffect(() => {
-        setData(null); setError(null); setIsLoading(true);
-        secureFetch(`/roadmap/${project}`)
-            .then(r => r.json())
-            .then(d => {
-                if (d && !d.error) { setData(d); }
-                else { setError(d?.error || "AI could not generate roadmap data."); }
-                setIsLoading(false);
-            }).catch((e) => { 
-                console.error("Roadmap fetch error:", e);
-                setError("Network error loading roadmap. Please check backend server."); 
-                setIsLoading(false); 
-            });
-    }, [project, setIsLoading]);
-
-    if (!data && !error) return <LoadingScreen msg="Analyzing Sprint History & Strategic Items..." />;
-    if (error) return (
-        <div className="animate-fade-in h-full flex items-center justify-center">
-            <div className="glass-card p-12 max-w-lg text-center border border-border bg-bg-card">
-                <StrategicIcon name="AlertTriangle" size={48} color={THEME.warning} className="mx-auto mb-4 opacity-80" />
-                <h3 className="text-xl font-extrabold text-text-main mb-3">Roadmap Unavailable</h3>
-                <p className="text-text-muted font-medium">{error}</p>
-            </div>
-        </div>
-    );
-
-    // Safe destructuring of API payload
-    const velocity = data.velocity || {};
-    const slippage = data.slippage || { avg_completion_rate: 0, slippage_events: [] };
-    const sprintHistory = data.sprint_history || [];
-    const investmentBuckets = data.investment_buckets || {};
-    const initiatives = data.initiatives || [];
-
-    // Removed the "Alignment/Delta" tab entirely. 
     const tabs = [
-        { id: "overview", label: "Command Center", icon: "Target" },
-        { id: "investment", label: "Backlog Breakdown", icon: "PieChart" },
-        { id: "initiatives", label: "Strategic Initiatives", icon: "Layers" },
-        { id: "velocity", label: "Velocity & Capacity", icon: "BarChart" },
         { id: "pi_planning", label: "PI Planning", icon: "Calendar" },
+        { id: "program_board", label: "Program Board", icon: "Grid" },
+        { id: "capacity", label: "Capacity Heatmap", icon: "BarChart" },
+        { id: "roam", label: "ROAM Risks", icon: "AlertTriangle" },
+        { id: "objectives", label: "PI Objectives", icon: "Target" },
     ];
 
-    const statusColors = { in_progress: "text-primary bg-primary/10", planned: "text-warning bg-warning/10", backlog: "text-text-muted bg-bg-body", completed: "text-success bg-success/10" };
-    const statusLabels = { in_progress: "In Progress", planned: "Planned", backlog: "Backlog", completed: "Completed" };
-
-    return (
-        <div className="h-full overflow-y-auto pb-12 pr-4 bg-bg-body text-text-main animate-fade-in transition-colors duration-300">
-            <style>{`
-                .strat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; transition: background-color 0.3s; }
-                .strat-glow { box-shadow: 0 4px 30px rgba(0,0,0,0.05); }
-                .strat-tab-active { background: var(--primary); color: white; box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
-                .strat-tab-inactive { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
-                .strat-tab-inactive:hover { color: var(--text-main); border-color: var(--primary); background: var(--bg-card); }
-                .strat-badge { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; border: 1px solid var(--border); }
-                .initiative-row:hover { background: var(--bg-body); }
-            `}</style>
-
-            {/* ═══ HEADER ═══ */}
-            <header className="flex justify-between items-end pb-6 border-b border-border mb-6">
-                <div>
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-lg" style={{ background: "linear-gradient(135deg, var(--primary), #8B5CF6)" }}>
-                            <StrategicIcon name="Target" size={24} color="white"/>
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-extrabold tracking-tight">Strategic Roadmap</h1>
-                            <p className="text-sm font-medium mt-1 text-text-muted">
-                                Project <span className="text-primary font-black">{project}</span> &middot; Velocity-Based Planning
-                            </p>
-                        </div>
-                    </div>
-                </div>
-                <div className="flex items-center gap-4">
-                    <HealthRing score={data.health_score || 0} size={56}/>
-                    <div>
-                        <div className="text-[11px] font-bold text-text-muted uppercase tracking-widest">Roadmap Health</div>
-                        <div className="text-base font-black" style={{ color: (data.health_score || 0) >= 75 ? THEME.success : (data.health_score || 0) >= 50 ? THEME.warning : THEME.danger }}>
-                            {(data.health_score || 0) >= 75 ? "Strong" : (data.health_score || 0) >= 50 ? "Needs Attention" : "At Risk"}
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            {/* ═══ TAB NAV ═══ */}
-            <nav className="flex gap-2 border-b border-border pb-4 mb-6">
-                {tabs.map(tab => (
-                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === tab.id ? 'strat-tab-active' : 'strat-tab-inactive'}`}>
-                        <StrategicIcon name={tab.icon} size={16}/> {tab.label}
-                    </button>
-                ))}
-            </nav>
-
-            {/* ═══ CONTENT ═══ */}
-            <main>
-                {/* ────── OVERVIEW TAB ────── */}
-                {activeTab === "overview" && (
-                    <div className="space-y-6">
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            {[
-                                { label: "Avg Velocity", value: `${velocity.avg_velocity || '—'}`, unit: "pts/sprint", color: THEME.primary, icon: "Zap" },
-                                { label: "Trend", value: velocity.trend === "improving" ? "▲ Up" : velocity.trend === "declining" ? "▼ Down" : "→ Stable", color: velocity.trend === "improving" ? THEME.success : velocity.trend === "declining" ? THEME.danger : THEME.warning, icon: "TrendingUp" },
-                                { label: "Completion Rate", value: `${slippage.avg_completion_rate || 0}%`, color: (slippage.avg_completion_rate || 0) >= 80 ? THEME.success : THEME.warning, icon: "Check" },
-                                { label: "Backlog", value: data.backlog_count || 0, unit: `${data.total_backlog_pts || 0} pts`, color: THEME.purple, icon: "Layers" },
-                                { label: "Initiatives", value: initiatives.length || 0, unit: "strategic goals", color: THEME.cyan, icon: "Target" },
-                            ].map((kpi, i) => (
-                                <div key={i} className="strat-card strat-glow p-5" style={{ borderLeft: `4px solid ${kpi.color}` }}>
-                                    <div className="flex justify-between items-start">
-                                        <div className="text-[11px] font-bold text-text-muted uppercase tracking-widest">{kpi.label}</div>
-                                        <StrategicIcon name={kpi.icon} size={16} color={kpi.color}/>
-                                    </div>
-                                    <div className="text-3xl font-black mt-2 leading-none">{kpi.value}</div>
-                                    {kpi.unit && <div className="text-xs text-text-muted font-bold mt-1.5">{kpi.unit}</div>}
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Sprint Velocity History */}
-                            <div className="strat-card p-6">
-                                <div className="flex justify-between items-center mb-6">
-                                    <h3 className="text-sm font-black text-text-muted uppercase tracking-widest">Sprint Velocity History</h3>
-                                    <span className="text-xs font-bold px-3 py-1 rounded-full bg-primary/10 text-primary">{velocity.sprints_analyzed || 0} sprints</span>
-                                </div>
-                                <VelocitySparkline history={sprintHistory} avgVelocity={velocity.avg_velocity} width={460} height={100}/>
-                                <div className="flex justify-between mt-4">
-                                    {sprintHistory.map((s, i) => (
-                                        <div key={i} className="text-center flex-1">
-                                            <div className="text-sm font-black" style={{ color: s.velocity >= (velocity.avg_velocity || 0) ? THEME.success : THEME.warning }}>{s.velocity}</div>
-                                            <div className="text-[10px] font-bold text-text-muted uppercase">{s.name?.replace("Sprint ", "S")}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Backlog Investment Split */}
-                            <div className="strat-card p-6">
-                                <h3 className="text-sm font-black text-text-muted uppercase tracking-widest mb-6">Backlog Theme Distribution</h3>
-                                <div className="flex items-center gap-8">
-                                    <DonutChart buckets={investmentBuckets}/>
-                                    <div className="flex-1 space-y-3">
-                                        {Object.entries(investmentBuckets).map(([key, bucket]) => (
-                                            <div key={key} className="flex items-center justify-between pb-3 border-b border-border last:border-0">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: BUCKET_COLORS[key] || THEME.textDim }}/>
-                                                    <span className="text-sm font-bold">{bucket.label}</span>
-                                                </div>
-                                                <div className="flex items-center gap-4">
-                                                    <span className="text-xs font-black text-text-muted">{bucket.actual_pct}%</span>
-                                                    <span className="text-sm font-black text-primary">{bucket.actual_pts} pts</span>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* ────── INVESTMENT BUCKETS TAB ────── */}
-                {activeTab === "investment" && (
-                    <div className="animate-in">
-                        <div className="strat-card p-8 flex flex-col items-center max-w-2xl mx-auto">
-                            <h3 className="text-base font-black text-text-main uppercase tracking-widest mb-8">Actual Backlog Allocation</h3>
-                            <DonutChart buckets={investmentBuckets} size={240}/>
-                            <div className="mt-8 w-full space-y-2">
-                                {Object.entries(investmentBuckets).map(([key, b]) => (
-                                    <div key={key} className="flex items-center justify-between p-3 rounded-lg bg-bg-body border border-border">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-4 h-4 rounded-md shadow-sm" style={{ background: BUCKET_COLORS[key] || THEME.textDim }}/>
-                                            <span className="text-sm font-bold">{b.label}</span>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <span className="text-sm font-black">{b.actual_pts} pts</span>
-                                            <span className="text-sm font-black px-3 py-1 rounded-full bg-bg-card border border-border text-text-muted">{b.actual_pct}%</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* ────── STRATEGIC INITIATIVES TAB ────── */}
-                {activeTab === "initiatives" && (
-                    <div className="animate-in space-y-4">
-                        <div className="flex justify-between items-end mb-6">
-                            <div>
-                                <h3 className="text-xl font-black">Strategic Initiatives</h3>
-                                <p className="text-sm text-text-muted font-medium mt-1">High-level goals mapped directly to Jira Epics</p>
-                            </div>
-                        </div>
-
-                        {initiatives.map((init, i) => (
-                            <div key={init.id} className="strat-card overflow-hidden">
-                                <div className="initiative-row p-6 cursor-pointer flex items-center gap-6 transition-colors"
-                                    onClick={() => setExpandedInitiative(expandedInitiative === init.id ? null : init.id)}>
-                                    
-                                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-bg-body border border-border">
-                                        <span className="text-lg font-black text-primary">{init.id}</span>
-                                    </div>
-                                    
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-1">
-                                            <h4 className="text-lg font-bold">{init.theme}</h4>
-                                            <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border ${statusColors[init.status] || "text-text-muted bg-bg-body border-border"}`}>
-                                                {statusLabels[init.status] || "Unknown"}
-                                            </span>
-                                        </div>
-                                        <p className="text-sm text-text-muted font-medium">{init.objective}</p>
-                                    </div>
-                                    
-                                    <div className="flex gap-8 items-center border-l border-border pl-8">
-                                        <div className="text-center">
-                                            <div className="text-xl font-black text-primary">{init.total_points || 0}</div>
-                                            <div className="text-[10px] font-bold text-text-muted uppercase">pts</div>
-                                        </div>
-                                        <div className="text-center">
-                                            <div className="text-xl font-black">{init.feature_count || 0}</div>
-                                            <div className="text-[10px] font-bold text-text-muted uppercase">epics</div>
-                                        </div>
-                                        <StrategicIcon name="ChevronDown" size={20} color={THEME.textDim} className={`transition-transform duration-300 ${expandedInitiative === init.id ? 'rotate-180' : ''}`}/>
-                                    </div>
-                                </div>
-
-                                {expandedInitiative === init.id && (
-                                    <div className="border-t border-border p-6 bg-bg-body">
-                                        <h5 className="text-xs font-black text-text-muted uppercase tracking-widest mb-4">Linked Jira Epics</h5>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                            {(init.epics || []).map((e, ei) => (
-                                                <div key={ei} className="p-4 bg-bg-card rounded-xl border border-border shadow-sm">
-                                                    <div className="text-sm font-bold mb-3 truncate">{e.name}</div>
-                                                    <div className="flex justify-between items-center">
-                                                        <span className="text-xs font-black bg-primary/10 text-primary px-2.5 py-1 rounded-md">{e.points || 0} pts</span>
-                                                        <span className="text-xs font-bold text-text-muted">{e.stories || 0} stories</span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            {(!init.epics || init.epics.length === 0) && (
-                                                <div className="text-sm text-text-muted italic">No Jira Epics mapped to this initiative yet.</div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                        {initiatives.length === 0 && (
-                            <div className="text-center py-12 border-2 border-dashed border-border rounded-xl">
-                                <p className="text-text-muted font-bold">No strategic initiatives configured for this project.</p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* ────── VELOCITY & CAPACITY TAB ────── */}
-                {activeTab === "velocity" && (
-                    <div className="animate-in space-y-6">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            {[
-                                { label: "Avg Velocity", value: velocity.avg_velocity || '—', unit: "pts/sprint", color: THEME.primary },
-                                { label: "Min / Max", value: `${velocity.min || 0} / ${velocity.max || 0}`, unit: "pts range", color: THEME.warning },
-                                { label: "Completion", value: `${slippage.avg_completion_rate || 0}%`, unit: "avg rate", color: (slippage.avg_completion_rate || 0) >= 80 ? THEME.success : THEME.warning },
-                                { label: "Slippage Risk", value: slippage.at_risk ? "HIGH" : "LOW", unit: slippage.trend || "stable", color: slippage.at_risk ? THEME.danger : THEME.success },
-                            ].map((kpi, i) => (
-                                <div key={i} className="strat-card p-5 border-t-4" style={{ borderTopColor: kpi.color }}>
-                                    <div className="text-[11px] font-bold text-text-muted uppercase tracking-widest">{kpi.label}</div>
-                                    <div className="text-3xl font-black mt-2">{kpi.value}</div>
-                                    <div className="text-xs font-bold text-text-muted mt-1 uppercase">{kpi.unit}</div>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="strat-card overflow-hidden">
-                            <div className="p-5 border-b border-border bg-bg-body">
-                                <h3 className="text-sm font-black text-text-main uppercase tracking-widest">Sprint Performance History</h3>
-                            </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="bg-bg-card border-b border-border">
-                                            {["Sprint", "Velocity", "Completion", "Issues Done", "vs Avg", "Status"].map(h => (
-                                                <th key={h} className="p-4 text-xs font-black text-text-muted uppercase tracking-widest">{h}</th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border">
-                                        {sprintHistory.map((s, i) => {
-                                            const vsAvg = (s.velocity || 0) - (velocity.avg_velocity || 0);
-                                            const isAbove = vsAvg >= 0;
-                                            return (
-                                                <tr key={i} className="hover:bg-bg-body transition-colors">
-                                                    <td className="p-4 text-sm font-bold">{s.name}</td>
-                                                    <td className="p-4 text-base font-black text-primary">{s.velocity}</td>
-                                                    <td className="p-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-16 h-2 bg-border rounded-full overflow-hidden">
-                                                                <div className="h-full rounded-full" style={{ width: `${s.completion_rate || 0}%`, background: (s.completion_rate || 0) >= 80 ? THEME.success : THEME.warning }}/>
-                                                            </div>
-                                                            <span className="text-xs font-bold text-text-muted">{s.completion_rate || 0}%</span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-4 text-sm font-medium text-text-muted">{s.completed_issues || 0} / {s.total_issues || 0}</td>
-                                                    <td className="p-4 text-sm font-black" style={{ color: isAbove ? THEME.success : THEME.danger }}>
-                                                        {isAbove ? "+" : ""}{vsAvg.toFixed(0)}
-                                                    </td>
-                                                    <td className="p-4">
-                                                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-md ${isAbove ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}`}>
-                                                            {isAbove ? "Above Avg" : "Below Avg"}
-                                                        </span>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                        {sprintHistory.length === 0 && (
-                                            <tr><td colSpan="6" className="p-8 text-center text-sm font-medium text-text-muted">No sprint history available.</td></tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        {(slippage.slippage_events || []).length > 0 && (
-                            <div className="strat-card p-6 border-l-4 border-warning">
-                                <h3 className="text-sm font-black text-warning uppercase tracking-widest mb-4 flex items-center gap-2">
-                                    <StrategicIcon name="AlertTriangle" size={16} /> Slippage Events
-                                </h3>
-                                <div className="space-y-2">
-                                    {slippage.slippage_events.map((evt, i) => (
-                                        <div key={i} className="p-3 bg-warning/10 rounded-lg flex items-center gap-3">
-                                            <span className="text-sm font-bold text-text-main">{evt.sprint}</span>
-                                            <span className="text-sm text-text-muted font-medium">— Only {evt.completion_rate}% completion rate</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* ────── PI PLANNING TAB ────── */}
-                {activeTab === "pi_planning" && <PIPlanningPanel project={project} velocity={velocity} />}
-            </main>
-        </div>
-    );
-}
-
-// ═══════════════════════════════════════════════════════════
-//  PI PLANNING — Sequencer AI (inside Strategic Roadmap)
-// ═══════════════════════════════════════════════════════════
-function PIPlanningPanel({ project, velocity }) {
-    const [piName, setPiName] = useState('PI-1');
-    const [numSprints, setNumSprints] = useState(5);
-    const [velPerSprint, setVelPerSprint] = useState(velocity?.avg_velocity || 40);
-    const [backlog, setBacklog] = useState(null);
-    const [loadingBacklog, setLoadingBacklog] = useState(false);
-    const [selectedKeys, setSelectedKeys] = useState(new Set());
-    const [piPlan, setPiPlan] = useState(null);
-    const [generating, setGenerating] = useState(false);
-    const [error, setError] = useState('');
-    useEffect(() => { if (velocity?.avg_velocity) setVelPerSprint(Math.round(velocity.avg_velocity)); }, [velocity]);
+    // Load backlog
     const loadBacklog = async () => {
-        setLoadingBacklog(true); setError('');
-        try { const res = await secureFetch(`/pi_planning/${project}/backlog`); const d = await res?.json(); if (d?.stories) { setBacklog(d); setSelectedKeys(new Set(d.stories.map(s => s.key))); if (d.velocity?.average) setVelPerSprint(Math.round(d.velocity.average)); } else setError(d?.error || 'Failed'); } catch { setError('Failed'); }
+        setLoadingBacklog(true); setError(null);
+        try {
+            const res = await secureFetch(`/pi_planning/${project}/backlog`);
+            const d = await res?.json();
+            if (d?.stories) { setBacklog(d); setSelectedKeys(new Set(d.stories.map(s => s.key))); if (d.velocity?.average) setVelPerSprint(Math.round(d.velocity.average)); }
+        } catch { setError('Failed to load backlog'); }
         setLoadingBacklog(false);
     };
-    useEffect(() => { if (project) loadBacklog(); }, [project]);
+    React.useEffect(() => { if (project) loadBacklog(); }, [project]);
+
+    // Load ROAM
+    React.useEffect(() => {
+        if (project && activeTab === 'roam') {
+            setRoamLoading(true);
+            secureFetch(`/pi_planning/${project}/roam`, { method: 'POST', body: JSON.stringify({ action: 'load' }) })
+                .then(r => r?.json()).then(d => { if (d?.risks) setRoamRisks(d.risks); }).finally(() => setRoamLoading(false));
+        }
+    }, [project, activeTab]);
+    const saveRoam = async (risks) => {
+        setRoamRisks(risks);
+        await secureFetch(`/pi_planning/${project}/roam`, { method: 'POST', body: JSON.stringify({ action: 'save', risks }) });
+    };
+
+    // Load Objectives
+    React.useEffect(() => {
+        if (project && activeTab === 'objectives') {
+            setObjLoading(true);
+            secureFetch(`/pi_planning/${project}/objectives`, { method: 'POST', body: JSON.stringify({ action: 'load' }) })
+                .then(r => r?.json()).then(d => { if (d?.objectives) setObjectives(d.objectives); }).finally(() => setObjLoading(false));
+        }
+    }, [project, activeTab]);
+    const saveObjectives = async (objs) => {
+        setObjectives(objs);
+        await secureFetch(`/pi_planning/${project}/objectives`, { method: 'POST', body: JSON.stringify({ action: 'save', objectives: objs }) });
+    };
+
     const toggleStory = k => setSelectedKeys(p => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; });
     const totalCapacity = velPerSprint * numSprints;
     const selectedStories = (backlog?.stories || []).filter(s => selectedKeys.has(s.key));
     const selectedPoints = selectedStories.reduce((a, s) => a + (s.points || 0), 0);
-    const isOverCapacity = selectedPoints > totalCapacity;
+
     const generatePlan = async () => {
-        if (!selectedStories.length) return; setGenerating(true); setError(''); setPiPlan(null);
-        try { const res = await secureFetch(`/pi_planning/${project}/generate`, { method: 'POST', body: JSON.stringify({ stories: selectedStories, velocity_per_sprint: velPerSprint, num_sprints: numSprints, pi_name: piName }) }); const d = await res?.json(); if (d?.sprints) setPiPlan(d); else setError(d?.error || 'Failed'); } catch { setError('Failed'); }
+        if (!selectedStories.length) return; setGenerating(true); setError(null); setPiPlan(null);
+        try {
+            const res = await secureFetch(`/pi_planning/${project}/generate`, { method: 'POST', body: JSON.stringify({ stories: selectedStories, velocity_per_sprint: velPerSprint, num_sprints: numSprints, pi_name: piName, teams }) });
+            const d = await res?.json();
+            if (d?.sprints) setPiPlan(d); else setError(d?.error || 'Failed');
+        } catch { setError('Failed'); }
         setGenerating(false);
     };
-    const piCSS = `.pi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px}.pi-sprint{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden}.pi-sprint-hdr{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}.pi-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}.pi-bar-fill{height:100%;border-radius:3px;transition:width 0.5s}.pi-story-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px}.pi-story-row:last-child{border-bottom:none}.pi-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}.pi-input{padding:8px 12px;border-radius:8px;background:var(--bg-body);border:1px solid var(--border);color:var(--text-main);font-size:13px;font-weight:700;outline:none;width:80px;text-align:center}.pi-btn{background:var(--accent-gradient,linear-gradient(135deg,#f59e0b,#d97706));color:#000;font-weight:800;border:none;cursor:pointer;border-radius:10px}.pi-btn:disabled{opacity:0.4}.pi-cutline{border:2px dashed #ef4444;background:rgba(239,68,68,0.05);border-radius:12px;padding:16px;text-align:center;margin:12px 0}@keyframes piSlide{0%{transform:translateY(12px);opacity:0}100%{transform:translateY(0);opacity:1}}.pi-slide{animation:piSlide 0.35s ease-out forwards}`;
 
-    if (piPlan) {
-        return (<div className="animate-in space-y-4"><style>{piCSS}</style>
-            <div className="flex items-center justify-between"><div><h2 className="text-xl font-black text-text-main">{piPlan.pi_name || piName} — Sprint Sequence</h2><p className="text-sm text-text-muted mt-1">{piPlan.total_committed || 0} pts committed · {(piPlan.spillover||[]).length > 0 ? `${piPlan.total_spillover || 0} pts spillover` : 'All stories fit'}</p></div><button onClick={() => setPiPlan(null)} className="px-4 py-2 text-xs font-bold uppercase rounded-lg border text-text-muted" style={{borderColor:'var(--border)',background:'var(--bg-card)'}}>← Reconfigure</button></div>
-            {(piPlan.sprints||[]).map((sprint, si) => { const util = sprint.utilization_pct || Math.round((sprint.committed_points / velPerSprint)*100); const barColor = util > 95 ? '#ef4444' : util > 80 ? '#f59e0b' : '#22c55e'; return (
-                <div key={si} className="pi-sprint pi-slide" style={{animationDelay:`${si*80}ms`}}>
-                    <div className="pi-sprint-hdr"><div><span className="text-sm font-black text-text-main">{sprint.name}</span><span className="text-xs text-text-muted ml-2">{sprint.committed_points||0} / {sprint.capacity||velPerSprint} pts</span></div><div className="flex items-center gap-2"><div className="pi-bar" style={{width:100}}><div className="pi-bar-fill" style={{width:`${Math.min(util,100)}%`,background:barColor}}></div></div><span className="text-xs font-bold" style={{color:barColor}}>{util}%</span></div></div>
-                    {(sprint.stories||[]).map((s,idx) => (<div key={idx} className="pi-story-row"><span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:70}}>{s.key}</span><span className="flex-1 text-text-main font-medium truncate">{s.summary}</span><span className="pi-chip" style={{background:s.priority==='High'||s.priority==='Highest'?'rgba(239,68,68,0.12)':'rgba(59,130,246,0.12)',color:s.priority==='High'||s.priority==='Highest'?'#ef4444':'#3b82f6'}}>{s.priority}</span><span className="text-sm font-black text-text-main" style={{minWidth:36,textAlign:'right'}}>{s.points} pts</span>{s.dependencies?.length > 0 && <span className="pi-chip" style={{background:'rgba(168,85,247,0.12)',color:'#a855f7'}}>🔗 {s.dependencies.join(', ')}</span>}</div>))}
-                </div>); })}
-            {(piPlan.spillover||[]).length > 0 && (<div className="pi-cutline"><p className="text-sm font-black text-danger mb-3">🚫 Capacity Cut-Line — {piPlan.total_spillover||0} pts unscheduled</p><div className="pi-sprint" style={{borderColor:'rgba(239,68,68,0.3)'}}><div className="pi-sprint-hdr" style={{background:'rgba(239,68,68,0.05)'}}><span className="text-sm font-black text-danger">Spillover → Next PI</span><span className="text-xs text-text-muted">{piPlan.total_spillover||0} pts</span></div>{(piPlan.spillover||[]).map((s,idx) => (<div key={idx} className="pi-story-row"><span className="font-bold font-mono text-xs" style={{color:'#ef4444',minWidth:70}}>{s.key}</span><span className="flex-1 text-text-muted font-medium truncate">{s.summary}</span><span className="text-sm font-black text-text-muted">{s.points} pts</span></div>))}</div></div>)}
-            {(piPlan.dependencies||[]).length > 0 && (<div className="pi-card p-5"><h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">🔗 Dependencies</h3><div className="space-y-2">{piPlan.dependencies.map((d,i) => (<div key={i} className="flex items-center gap-3 text-xs p-2.5 rounded-lg" style={{background:'var(--bg-body)'}}><span className="font-bold font-mono" style={{color:'var(--primary)'}}>{d.from}</span><span className="text-text-muted">→</span><span className="font-bold font-mono" style={{color:'#a855f7'}}>{d.to}</span><span className="text-text-muted flex-1">{d.reason}</span></div>))}</div></div>)}
-            {piPlan.sequencing_rationale && (<div className="pi-card p-5"><h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-2">📋 Rationale</h3><p className="text-sm text-text-main leading-relaxed">{piPlan.sequencing_rationale}</p></div>)}
-            {(piPlan.risks||[]).length > 0 && (<div className="pi-card p-5 border-l-4" style={{borderLeftColor:'#f59e0b'}}><h3 className="text-xs font-black uppercase tracking-widest mb-2" style={{color:'#f59e0b'}}>⚠️ Risks</h3>{piPlan.risks.map((r,i) => <p key={i} className="text-sm text-text-muted mt-1">• {r}</p>)}</div>)}
-        </div>);
-    }
+    const addTeam = () => { if (teamInput.trim() && !teams.includes(teamInput.trim())) { setTeams(p => [...p, teamInput.trim()]); setTeamInput(''); } };
 
-    return (<div className="animate-in space-y-4"><style>{piCSS}</style>
-        <div><h2 className="text-xl font-black text-text-main">PI Planning — Sequencer AI</h2><p className="text-sm text-text-muted mt-1">Sequence pre-pointed stories into sprints with hard capacity enforcement and dependency detection</p></div>
-        {error && <div className="p-3 rounded-lg text-sm font-semibold" style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',color:'#ef4444'}}>{error}</div>}
-        <div className="pi-card p-5"><h3 className="text-sm font-black text-text-main mb-3">PI Configuration</h3>
-            <div className="flex items-end gap-4 flex-wrap">
-                <div><label className="text-xs font-bold text-text-muted uppercase block mb-1">PI Name</label><input type="text" value={piName} onChange={e => setPiName(e.target.value)} className="pi-input" style={{width:100}} /></div>
-                <div><label className="text-xs font-bold text-text-muted uppercase block mb-1">Sprints</label><input type="number" value={numSprints} onChange={e => setNumSprints(Number(e.target.value))} min={2} max={10} className="pi-input" /></div>
-                <div><label className="text-xs font-bold text-text-muted uppercase block mb-1">Velocity / Sprint</label><input type="number" value={velPerSprint} onChange={e => setVelPerSprint(Number(e.target.value))} min={5} max={200} className="pi-input" /></div>
-                <div className="flex-1 flex items-center gap-3 p-3 rounded-lg" style={{background:'var(--bg-body)',border:'1px solid var(--border)'}}><span className="text-sm font-bold text-text-main">Capacity: <strong style={{color:'var(--primary)'}}>{totalCapacity} pts</strong></span>{backlog && <span className="text-sm text-text-muted">· Backlog: <strong className={isOverCapacity?'text-danger':'text-success'}>{selectedPoints} pts</strong></span>}{isOverCapacity && <span className="pi-chip" style={{background:'rgba(239,68,68,0.12)',color:'#ef4444'}}>Over by {selectedPoints-totalCapacity}</span>}</div>
+    const piCSS = `.pi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px}.pi-sprint{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden}.pi-sprint-hdr{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}.pi-bar{height:6px;border-radius:3px;background:var(--border);overflow:hidden}.pi-bar-fill{height:100%;border-radius:3px;transition:width 0.5s}.pi-story-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px}.pi-story-row:last-child{border-bottom:none}.pi-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700}.pi-input{padding:8px 12px;border-radius:8px;background:var(--bg-body);border:1px solid var(--border);color:var(--text-main);font-size:13px;font-weight:700;outline:none;width:80px;text-align:center}.pi-btn{background:var(--accent-gradient,linear-gradient(135deg,#f59e0b,#d97706));color:#000;font-weight:800;border:none;cursor:pointer;border-radius:10px;padding:10px 20px}.pi-btn:disabled{opacity:0.4}.pi-cutline{border:2px dashed #ef4444;background:rgba(239,68,68,0.05);border-radius:12px;padding:16px;margin:12px 0}.pi-dep-line{stroke:#ef4444;stroke-width:2;fill:none;stroke-dasharray:6,4}.roam-col{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;min-height:200px;padding:12px}.roam-card{background:var(--bg-body);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;cursor:grab}@keyframes piSlide{0%{transform:translateY(12px);opacity:0}100%{transform:translateY(0);opacity:1}}.pi-slide{animation:piSlide 0.35s ease-out forwards}`;
+
+    return (
+        <div className="h-full flex flex-col overflow-hidden">
+            <style>{piCSS}</style>
+            {/* Tab Bar */}
+            <div className="flex items-center gap-1 pb-4 border-b border-border mb-4 flex-wrap">
+                {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border ${activeTab === tab.id ? 'bg-primary text-white border-primary shadow-lg' : 'bg-bg-card text-text-muted border-border hover:border-primary'}`}>
+                        <Icon name={tab.icon} size={14} /> {tab.label}
+                    </button>
+                ))}
             </div>
+
+            <main className="flex-1 overflow-y-auto pr-2 pb-12">
+                {error && <div className="p-3 rounded-lg text-sm font-semibold mb-4" style={{background:'rgba(239,68,68,0.08)',border:'1px solid rgba(239,68,68,0.25)',color:'#ef4444'}}>{error}</div>}
+
+                {/* ─── TAB 1: PI PLANNING SEQUENCER ─── */}
+                {activeTab === "pi_planning" && !piPlan && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div><h2 className="text-xl font-black text-text-main">PI Planning — Sequencer AI</h2><p className="text-sm text-text-muted mt-1">Sequence pre-pointed stories into sprints with hard capacity enforcement</p></div>
+                        <div className="pi-card p-5"><h3 className="text-sm font-black text-text-main mb-3">PI Configuration</h3>
+                            <div className="flex items-end gap-4 flex-wrap">
+                                <div><label className="text-xs font-bold text-text-muted uppercase block mb-1">PI Name</label><input type="text" value={piName} onChange={e => setPiName(e.target.value)} className="pi-input" style={{width:100}} /></div>
+                                <div><label className="text-xs font-bold text-text-muted uppercase block mb-1">Sprints</label><input type="number" value={numSprints} onChange={e => setNumSprints(Number(e.target.value))} min={2} max={10} className="pi-input" /></div>
+                                <div><label className="text-xs font-bold text-text-muted uppercase block mb-1">Velocity/Sprint</label><input type="number" value={velPerSprint} onChange={e => setVelPerSprint(Number(e.target.value))} min={5} max={200} className="pi-input" /></div>
+                                <div className="flex-1 p-3 rounded-lg" style={{background:'var(--bg-body)',border:'1px solid var(--border)'}}><span className="text-sm font-bold text-text-main">Capacity: <strong style={{color:'var(--primary)'}}>{totalCapacity} pts</strong></span>{backlog && <span className="text-sm text-text-muted ml-2">· Selected: <strong className={selectedPoints > totalCapacity ? 'text-danger' : 'text-success'}>{selectedPoints} pts</strong></span>}{selectedPoints > totalCapacity && <span className="pi-chip ml-2" style={{background:'rgba(239,68,68,0.12)',color:'#ef4444'}}>Over by {selectedPoints-totalCapacity}</span>}</div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-3"><label className="text-xs font-bold text-text-muted uppercase">Teams:</label>{teams.map((t,i) => <span key={i} className="pi-chip" style={{background:'rgba(59,130,246,0.1)',color:'#3b82f6'}}>{t} <button onClick={() => setTeams(p => p.filter((_,j) => j!==i))} className="ml-1 text-danger" style={{fontSize:8,cursor:'pointer'}}>✕</button></span>)}<input type="text" value={teamInput} onChange={e => setTeamInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTeam()} placeholder="Add team..." className="pi-input" style={{width:120,textAlign:'left'}} /><button onClick={addTeam} className="text-xs font-bold text-primary" style={{cursor:'pointer'}}>+Add</button></div>
+                        </div>
+                        {loadingBacklog ? <div className="text-center py-12"><Icon name="Loader2" size={32} className="animate-spin text-primary mx-auto" /><p className="text-sm font-bold text-text-muted mt-3">Loading backlog...</p></div> :
+                        backlog?.stories?.length > 0 ? (<div className="pi-card overflow-hidden">
+                            <div className="p-4 flex items-center justify-between" style={{borderBottom:'1px solid var(--border)',background:'var(--bg-body)'}}><span className="text-sm font-black text-text-main">{backlog.stories.length} Pre-Pointed Stories ({backlog.total_points} pts)</span><div className="flex gap-3"><button onClick={() => setSelectedKeys(p => p.size===backlog.stories.length ? new Set() : new Set(backlog.stories.map(s=>s.key)))} className="text-xs font-bold text-primary" style={{background:'none',border:'none',cursor:'pointer'}}>{selectedKeys.size===backlog.stories.length?'Deselect All':'Select All'}</button><button onClick={generatePlan} disabled={generating||!selectedStories.length} className="pi-btn text-sm">{generating?'⏳ Sequencing...':'🧩 Generate PI Plan'}</button></div></div>
+                            <div style={{maxHeight:400,overflowY:'auto'}}>{backlog.stories.map(s => (<div key={s.key} onClick={() => toggleStory(s.key)} className="pi-story-row cursor-pointer" style={{background:selectedKeys.has(s.key)?'rgba(245,158,11,0.04)':'transparent'}}><div style={{width:18,height:18,borderRadius:4,border:selectedKeys.has(s.key)?'2px solid #f59e0b':'2px solid var(--border)',background:selectedKeys.has(s.key)?'#f59e0b':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{selectedKeys.has(s.key) && <span style={{fontSize:9,fontWeight:900,color:'#000'}}>✓</span>}</div><span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:70}}>{s.key}</span><span className="flex-1 text-text-main font-medium truncate text-sm">{s.summary}</span><span className="pi-chip" style={{background:'rgba(59,130,246,0.12)',color:'#3b82f6'}}>{s.type}</span><span className="pi-chip" style={{background:s.priority==='Highest'||s.priority==='High'?'rgba(239,68,68,0.12)':'rgba(234,179,8,0.12)',color:s.priority==='Highest'||s.priority==='High'?'#ef4444':'#eab308'}}>{s.priority}</span><span className="text-sm font-black text-text-main" style={{minWidth:36,textAlign:'right'}}>{s.points}pts</span></div>))}</div>
+                        </div>) : <div className="pi-card p-12 text-center"><p className="text-text-muted font-semibold">No pre-pointed stories found. Run Planning Poker first.</p></div>}
+                    </div>
+                )}
+
+                {/* PI Plan Results + Gantt */}
+                {activeTab === "pi_planning" && piPlan && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div className="flex items-center justify-between"><div><h2 className="text-xl font-black text-text-main">{piPlan.pi_name} — Sprint Sequence</h2><p className="text-sm text-text-muted mt-1">{piPlan.total_committed || 0} pts committed{(piPlan.spillover||[]).length > 0 && ` · ${piPlan.total_spillover || 0} pts spillover`}</p></div><button onClick={() => setPiPlan(null)} className="px-4 py-2 text-xs font-bold uppercase rounded-lg border text-text-muted" style={{borderColor:'var(--border)',background:'var(--bg-card)'}}>← Reconfigure</button></div>
+                        {/* GANTT VIEW */}
+                        <div className="pi-card p-5 overflow-x-auto"><h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-4">📊 Gantt View</h3>
+                            <div style={{minWidth: numSprints * 140 + 200}}>
+                                <div className="flex" style={{borderBottom:'1px solid var(--border)',paddingBottom:8,marginBottom:8}}><div style={{width:200,flexShrink:0}} className="text-xs font-black text-text-muted">Story</div>{(piPlan.sprints||[]).map((sp,i) => <div key={i} style={{flex:1,minWidth:120}} className="text-xs font-black text-text-muted text-center">{sp.name}</div>)}</div>
+                                {(piPlan.sprints||[]).flatMap(sp => (sp.stories||[]).map(s => ({...s, sprint: sp.name, sprintIdx: (piPlan.sprints||[]).indexOf(sp)}))).reduce((acc, s) => { if (!acc.find(x => x.key === s.key)) acc.push(s); return acc; }, []).slice(0,30).map((s, si) => {
+                                    const spIdx = s.sprintIdx; const span = Math.max(1, Math.ceil(s.points / 5));
+                                    return (<div key={si} className="flex items-center" style={{marginBottom:3,minHeight:28}}>
+                                        <div style={{width:200,flexShrink:0}} className="text-xs font-medium text-text-main truncate pr-2" title={s.summary}><span className="font-mono font-bold text-primary">{s.key}</span> {s.summary?.substring(0,25)}{(s.summary||'').length > 25 ? '...' : ''}</div>
+                                        <div className="flex flex-1">{Array.from({length: numSprints}).map((_, i) => (<div key={i} style={{flex:1,minWidth:120,padding:'2px 4px'}}>{i === spIdx && <div className="rounded-md px-2 py-1 text-[10px] font-bold text-white truncate" style={{background: s.priority === 'High' || s.priority === 'Highest' ? '#ef4444' : s.priority === 'Medium' ? '#f59e0b' : '#3b82f6', width: `${Math.min(100, span * 50)}%`, minWidth: 60}}>{s.points}pts</div>}</div>))}</div>
+                                    </div>);
+                                })}
+                            </div>
+                        </div>
+                        {/* Sprint Cards */}
+                        {(piPlan.sprints||[]).map((sprint, si) => { const util = sprint.utilization_pct || Math.round((sprint.committed_points / velPerSprint)*100); const barColor = util > 95 ? '#ef4444' : util > 80 ? '#f59e0b' : '#22c55e'; return (
+                            <div key={si} className="pi-sprint pi-slide" style={{animationDelay:`${si*80}ms`}}>
+                                <div className="pi-sprint-hdr"><div><span className="text-sm font-black text-text-main">{sprint.name}</span><span className="text-xs text-text-muted ml-2">{sprint.committed_points||0}/{sprint.capacity||velPerSprint}pts</span></div><div className="flex items-center gap-2"><div className="pi-bar" style={{width:100}}><div className="pi-bar-fill" style={{width:`${Math.min(util,100)}%`,background:barColor}}></div></div><span className="text-xs font-bold" style={{color:barColor}}>{util}%</span></div></div>
+                                {(sprint.stories||[]).map((s,idx) => (<div key={idx} className="pi-story-row"><span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:70}}>{s.key}</span><span className="flex-1 text-text-main font-medium truncate">{s.summary}</span>{s.team && <span className="pi-chip" style={{background:'rgba(59,130,246,0.12)',color:'#3b82f6'}}>{s.team}</span>}<span className="pi-chip" style={{background:s.priority==='High'||s.priority==='Highest'?'rgba(239,68,68,0.12)':'rgba(234,179,8,0.12)',color:s.priority==='High'||s.priority==='Highest'?'#ef4444':'#eab308'}}>{s.priority}</span><span className="text-sm font-black text-text-main" style={{minWidth:36,textAlign:'right'}}>{s.points}pts</span></div>))}
+                            </div>); })}
+                        {/* Spillover */}
+                        {(piPlan.spillover||[]).length > 0 && (<div className="pi-cutline text-center"><p className="text-sm font-black text-danger mb-3">🚫 Capacity Cut-Line — {piPlan.total_spillover||0} pts unscheduled</p>{(piPlan.spillover||[]).map((s,i) => <div key={i} className="pi-story-row justify-center"><span className="font-mono font-bold text-xs text-danger">{s.key}</span><span className="text-text-muted font-medium truncate">{s.summary}</span><span className="font-black text-text-muted">{s.points}pts</span></div>)}</div>)}
+                        {/* Dependencies */}
+                        {(piPlan.dependencies||[]).length > 0 && <div className="pi-card p-5"><h3 className="text-xs font-black text-text-muted uppercase tracking-widest mb-3">🔗 Dependencies</h3>{piPlan.dependencies.map((d,i) => <div key={i} className="flex items-center gap-3 text-xs p-2 rounded-lg mb-1" style={{background:'var(--bg-body)'}}><span className="font-bold font-mono text-primary">{d.from}</span><span className="text-danger">→</span><span className="font-bold font-mono" style={{color:'#a855f7'}}>{d.to}</span><span className="text-text-muted flex-1">{d.reason}</span></div>)}</div>}
+                        {piPlan.sequencing_rationale && <div className="pi-card p-5"><h3 className="text-xs font-black text-text-muted uppercase mb-2">📋 Rationale</h3><p className="text-sm text-text-main leading-relaxed">{piPlan.sequencing_rationale}</p></div>}
+                        {(piPlan.risks||[]).length > 0 && <div className="pi-card p-5" style={{borderLeft:'4px solid #f59e0b'}}><h3 className="text-xs font-black uppercase mb-2" style={{color:'#f59e0b'}}>⚠️ Risks</h3>{piPlan.risks.map((r,i) => <p key={i} className="text-sm text-text-muted mt-1">• {r}</p>)}</div>}
+                    </div>
+                )}
+
+                {/* ─── TAB 2: PROGRAM BOARD — Red String Dependency Matrix ─── */}
+                {activeTab === "program_board" && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div><h2 className="text-xl font-black text-text-main">Program Board — Dependency Matrix</h2><p className="text-sm text-text-muted mt-1">The "Red String" board: Teams × Sprints with auto-detected dependency lines</p></div>
+                        {piPlan ? (() => {
+                            const sprintNames = (piPlan.sprints||[]).map(s => s.name);
+                            const allTeams = [...new Set((piPlan.sprints||[]).flatMap(sp => (sp.stories||[]).map(s => s.team || 'Unassigned')))];
+                            if (!allTeams.length) allTeams.push('Core Team');
+                            const deps = piPlan.dependencies || [];
+                            const storyMap = {};
+                            (piPlan.sprints||[]).forEach((sp, si) => (sp.stories||[]).forEach(s => { storyMap[s.key] = { ...s, sprintIdx: si, sprint: sp.name }; }));
+                            return (<>
+                                <div className="pi-card overflow-x-auto p-4">
+                                    <svg style={{position:'absolute',top:0,left:0,width:'100%',height:'100%',pointerEvents:'none',zIndex:5}}>
+                                        {deps.map((d,i) => {
+                                            const from = storyMap[d.from]; const to = storyMap[d.to];
+                                            if (!from || !to) return null;
+                                            return <line key={i} x1={200 + from.sprintIdx * 180 + 90} y1={60 + allTeams.indexOf(from.team || 'Unassigned') * 80 + 40} x2={200 + to.sprintIdx * 180 + 90} y2={60 + allTeams.indexOf(to.team || 'Unassigned') * 80 + 40} className="pi-dep-line" markerEnd="url(#arrowhead)" />;
+                                        })}
+                                        <defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#ef4444" /></marker></defs>
+                                    </svg>
+                                    <div style={{minWidth: sprintNames.length * 180 + 200, position: 'relative'}}>
+                                        {/* Header */}
+                                        <div className="flex" style={{borderBottom:'2px solid var(--border)',paddingBottom:8,marginBottom:4}}>
+                                            <div style={{width:200,flexShrink:0}} className="text-xs font-black text-text-muted uppercase">Team / Track</div>
+                                            {sprintNames.map((sp,i) => <div key={i} style={{width:180,flexShrink:0}} className="text-xs font-black text-text-muted text-center uppercase">{sp}</div>)}
+                                        </div>
+                                        {/* Rows */}
+                                        {allTeams.map((team, ti) => (
+                                            <div key={ti} className="flex" style={{borderBottom:'1px solid var(--border)',minHeight:80}}>
+                                                <div style={{width:200,flexShrink:0,display:'flex',alignItems:'center'}} className="text-sm font-black text-text-main px-2"><span className="pi-chip" style={{background:'rgba(59,130,246,0.1)',color:'#3b82f6'}}>{team}</span></div>
+                                                {sprintNames.map((sp, si) => {
+                                                    const storiesInCell = (piPlan.sprints[si]?.stories||[]).filter(s => (s.team || 'Unassigned') === team);
+                                                    return (<div key={si} style={{width:180,flexShrink:0,padding:4,borderLeft:'1px solid var(--border)'}}>
+                                                        {storiesInCell.map((s,j) => {
+                                                            const hasDep = deps.some(d => d.from === s.key || d.to === s.key);
+                                                            return (<div key={j} className="rounded-lg p-2 mb-1 text-xs" style={{background: hasDep ? 'rgba(239,68,68,0.08)' : 'var(--bg-body)', border: hasDep ? '1px solid rgba(239,68,68,0.3)' : '1px solid var(--border)'}}>
+                                                                <div className="font-bold font-mono" style={{color: hasDep ? '#ef4444' : 'var(--primary)',fontSize:10}}>{s.key}</div>
+                                                                <div className="text-text-muted truncate" style={{fontSize:10}}>{s.summary?.substring(0,30)}</div>
+                                                                <div className="font-black mt-0.5">{s.points}pts {hasDep && <span style={{color:'#ef4444'}}>🔗</span>}</div>
+                                                            </div>);
+                                                        })}
+                                                    </div>);
+                                                })}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                {deps.length > 0 && <div className="pi-card p-4"><h3 className="text-xs font-black text-text-muted uppercase mb-2">🔴 Red Strings ({deps.length})</h3>{deps.map((d,i) => <div key={i} className="flex items-center gap-2 text-xs p-2 rounded mb-1" style={{background:'rgba(239,68,68,0.04)'}}><span className="font-mono font-bold text-primary">{d.from}</span><span style={{color:'#ef4444'}}>⟶ {d.type} ⟶</span><span className="font-mono font-bold" style={{color:'#a855f7'}}>{d.to}</span><span className="text-text-muted">{d.reason}</span></div>)}</div>}
+                            </>);
+                        })() : <div className="pi-card p-12 text-center"><p className="text-text-muted font-semibold">Generate a PI Plan first to see the Program Board.</p><button onClick={() => setActiveTab('pi_planning')} className="pi-btn mt-4 text-sm">Go to PI Planning →</button></div>}
+                    </div>
+                )}
+
+                {/* ─── TAB 3: CAPACITY vs LOAD HEATMAP ─── */}
+                {activeTab === "capacity" && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div><h2 className="text-xl font-black text-text-main">Capacity vs. Load Heatmap</h2><p className="text-sm text-text-muted mt-1">Per-team, per-sprint load visualization. Red = over-allocated. Forces mathematical honesty.</p></div>
+                        {piPlan ? (() => {
+                            const sprintNames = (piPlan.sprints||[]).map(s => s.name);
+                            const allTeams = [...new Set((piPlan.sprints||[]).flatMap(sp => (sp.stories||[]).map(s => s.team || 'Core Team')))];
+                            const teamCap = Math.round(velPerSprint / Math.max(1, allTeams.length));
+                            return (<>
+                                <div className="pi-card p-5"><span className="text-xs font-bold text-text-muted">Velocity/Sprint: <strong className="text-primary">{velPerSprint} pts</strong> · Teams: <strong>{allTeams.length}</strong> · Capacity/Team/Sprint: <strong style={{color:'#22c55e'}}>{teamCap} pts</strong></span></div>
+                                <div className="grid gap-4" style={{gridTemplateColumns: `repeat(${Math.min(sprintNames.length, 5)}, 1fr)`}}>
+                                    {sprintNames.map((sp, si) => {
+                                        const sprintData = piPlan.sprints[si];
+                                        const totalUtil = sprintData?.utilization_pct || Math.round(((sprintData?.committed_points||0) / velPerSprint) * 100);
+                                        return (<div key={si} className="pi-card p-4 pi-slide" style={{animationDelay:`${si*60}ms`}}>
+                                            <h3 className="text-sm font-black text-text-main mb-1">{sp}</h3>
+                                            <div className="pi-bar mb-3" style={{height:10}}><div className="pi-bar-fill" style={{width:`${Math.min(totalUtil,100)}%`,background:totalUtil>95?'#ef4444':totalUtil>80?'#f59e0b':'#22c55e'}}></div></div>
+                                            <div className="text-xs font-bold mb-3" style={{color:totalUtil>95?'#ef4444':totalUtil>80?'#f59e0b':'#22c55e'}}>{sprintData?.committed_points||0}/{velPerSprint} pts ({totalUtil}%)</div>
+                                            {allTeams.map((team, ti) => {
+                                                const pts = (sprintData?.stories||[]).filter(s => (s.team || 'Core Team') === team).reduce((a,s) => a + (s.points||0), 0);
+                                                const pct = Math.round((pts / Math.max(1, teamCap)) * 100);
+                                                const over = pct > 100;
+                                                return (<div key={ti} className="mb-2">
+                                                    <div className="flex justify-between text-[10px] font-bold mb-0.5"><span className="text-text-muted">{team}</span><span style={{color: over ? '#ef4444' : pct > 80 ? '#f59e0b' : '#22c55e'}}>{pts}/{teamCap}pts</span></div>
+                                                    <div className="pi-bar" style={{height:8}}><div className="pi-bar-fill" style={{width:`${Math.min(pct,100)}%`,background: over ? '#ef4444' : pct > 80 ? '#f59e0b' : '#22c55e'}}></div></div>
+                                                    {over && <div className="text-[9px] font-bold mt-0.5" style={{color:'#ef4444'}}>⚠ Over by {pts - teamCap} pts ({pct}%)</div>}
+                                                </div>);
+                                            })}
+                                        </div>);
+                                    })}
+                                </div>
+                            </>);
+                        })() : <div className="pi-card p-12 text-center"><p className="text-text-muted font-semibold">Generate a PI Plan first to see capacity data.</p><button onClick={() => setActiveTab('pi_planning')} className="pi-btn mt-4 text-sm">Go to PI Planning →</button></div>}
+                    </div>
+                )}
+
+                {/* ─── TAB 4: ROAM RISK REGISTER ─── */}
+                {activeTab === "roam" && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div><h2 className="text-xl font-black text-text-main">ROAM Risk Register</h2><p className="text-sm text-text-muted mt-1">Resolved · Owned · Accepted · Mitigated — Drag risks between columns</p></div>
+                        {/* Add Risk */}
+                        <div className="pi-card p-4">
+                            <div className="flex gap-2 flex-wrap items-end">
+                                <div className="flex-1"><label className="text-xs font-bold text-text-muted uppercase block mb-1">Risk Title</label><input type="text" value={newRisk.title} onChange={e => setNewRisk(p => ({...p, title: e.target.value}))} placeholder="e.g., Cloud license not secured" className="w-full p-2.5 rounded-lg border bg-bg-body text-text-main text-sm font-bold border-border outline-none" /></div>
+                                <div style={{width:140}}><label className="text-xs font-bold text-text-muted uppercase block mb-1">Status</label><select value={newRisk.status} onChange={e => setNewRisk(p => ({...p, status: e.target.value}))} className="w-full p-2.5 rounded-lg border bg-bg-body text-text-main text-sm font-bold border-border outline-none">{['Resolved','Owned','Accepted','Mitigated'].map(s => <option key={s} value={s}>{s}</option>)}</select></div>
+                                <div style={{width:120}}><label className="text-xs font-bold text-text-muted uppercase block mb-1">Owner</label><input type="text" value={newRisk.owner} onChange={e => setNewRisk(p => ({...p, owner: e.target.value}))} placeholder="Who?" className="w-full p-2.5 rounded-lg border bg-bg-body text-text-main text-sm font-bold border-border outline-none" /></div>
+                                <button onClick={() => { if (!newRisk.title.trim()) return; const updated = [...roamRisks, { ...newRisk, id: Date.now() }]; saveRoam(updated); setNewRisk({ title: '', description: '', status: 'Owned', owner: '' }); }} className="pi-btn text-sm px-4 py-2.5">+ Add Risk</button>
+                            </div>
+                        </div>
+                        {/* ROAM Kanban */}
+                        <div className="grid grid-cols-4 gap-3">
+                            {[{s:'Resolved',c:'#22c55e',e:'✅'},{s:'Owned',c:'#3b82f6',e:'👤'},{s:'Accepted',c:'#f59e0b',e:'⚡'},{s:'Mitigated',c:'#a855f7',e:'🛡️'}].map(col => (
+                                <div key={col.s} className="roam-col">
+                                    <div className="flex items-center gap-2 mb-3 pb-2" style={{borderBottom:`2px solid ${col.c}`}}><span className="text-lg">{col.e}</span><span className="text-xs font-black uppercase tracking-widest" style={{color:col.c}}>{col.s}</span><span className="pi-chip ml-auto" style={{background:`${col.c}20`,color:col.c}}>{roamRisks.filter(r => r.status === col.s).length}</span></div>
+                                    {roamRisks.filter(r => r.status === col.s).map((risk, i) => (
+                                        <div key={risk.id || i} className="roam-card">
+                                            <div className="text-xs font-black text-text-main mb-1">{risk.title}</div>
+                                            {risk.owner && <div className="text-[10px] text-text-muted">👤 {risk.owner}</div>}
+                                            <div className="flex gap-1 mt-2">{['Resolved','Owned','Accepted','Mitigated'].filter(s => s !== risk.status).map(s => <button key={s} onClick={() => { const updated = roamRisks.map(r => r.id === risk.id ? {...r, status: s} : r); saveRoam(updated); }} className="text-[8px] font-bold px-1.5 py-0.5 rounded border" style={{borderColor:'var(--border)',color:'var(--text-muted)',cursor:'pointer'}}>→{s}</button>)}</div>
+                                            <button onClick={() => saveRoam(roamRisks.filter(r => r.id !== risk.id))} className="text-[8px] text-danger mt-1 font-bold" style={{cursor:'pointer'}}>Remove</button>
+                                        </div>
+                                    ))}
+                                    {roamRisks.filter(r => r.status === col.s).length === 0 && <div className="text-center text-xs text-text-muted py-4 opacity-50">No {col.s.toLowerCase()} risks</div>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── TAB 5: PI OBJECTIVES & BUSINESS VALUE ─── */}
+                {activeTab === "objectives" && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div><h2 className="text-xl font-black text-text-main">PI Objectives & Business Value</h2><p className="text-sm text-text-muted mt-1">Map delivery output to business goals. Track planned vs actual value delivery.</p></div>
+                        {/* Add Objective */}
+                        <div className="pi-card p-4">
+                            <div className="flex gap-2 flex-wrap items-end">
+                                <div className="flex-1"><label className="text-xs font-bold text-text-muted uppercase block mb-1">Objective</label><input type="text" value={newObj.name} onChange={e => setNewObj(p => ({...p, name: e.target.value}))} placeholder="e.g., Launch One-Click Checkout" className="w-full p-2.5 rounded-lg border bg-bg-body text-text-main text-sm font-bold border-border outline-none" /></div>
+                                <div style={{width:120}}><label className="text-xs font-bold text-text-muted uppercase block mb-1">Planned Value (1-10)</label><input type="number" value={newObj.planned_value} onChange={e => setNewObj(p => ({...p, planned_value: Number(e.target.value)}))} min={1} max={10} className="pi-input" /></div>
+                                <div className="flex-1"><label className="text-xs font-bold text-text-muted uppercase block mb-1">Linked Epic Keys (comma-sep)</label><input type="text" value={newObj.epics} onChange={e => setNewObj(p => ({...p, epics: e.target.value}))} placeholder="PROJ-1, PROJ-2" className="w-full p-2.5 rounded-lg border bg-bg-body text-text-main text-sm font-bold border-border outline-none" /></div>
+                                <button onClick={() => { if (!newObj.name.trim()) return; saveObjectives([...objectives, { ...newObj, id: Date.now(), actual_value: 0, epics: newObj.epics.split(',').map(e => e.trim()).filter(Boolean) }]); setNewObj({ name: '', planned_value: 5, epics: '' }); }} className="pi-btn text-sm px-4 py-2.5">+ Add</button>
+                            </div>
+                        </div>
+                        {/* Objectives List */}
+                        <div className="space-y-3">
+                            {objectives.map((obj, i) => {
+                                const pctDelivered = Math.round((obj.actual_value / Math.max(1, obj.planned_value)) * 100);
+                                const atRisk = pctDelivered < 50 && obj.planned_value >= 5;
+                                return (<div key={obj.id || i} className="pi-card p-5 pi-slide" style={{animationDelay:`${i*60}ms`, borderLeft: atRisk ? '4px solid #ef4444' : '4px solid #22c55e'}}>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div><h3 className="text-base font-black text-text-main">{obj.name}</h3><div className="flex gap-1 mt-1">{(obj.epics||[]).map((e,j) => <span key={j} className="pi-chip" style={{background:'rgba(59,130,246,0.1)',color:'#3b82f6'}}>{e}</span>)}</div></div>
+                                        <div className="text-right"><div className="text-2xl font-black" style={{color: atRisk ? '#ef4444' : '#22c55e'}}>{obj.actual_value}/{obj.planned_value}</div><div className="text-[10px] font-bold text-text-muted uppercase">Business Value</div></div>
+                                    </div>
+                                    <div className="pi-bar mb-2" style={{height:10}}><div className="pi-bar-fill" style={{width:`${pctDelivered}%`,background: atRisk ? '#ef4444' : pctDelivered > 70 ? '#22c55e' : '#f59e0b'}}></div></div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold" style={{color: atRisk ? '#ef4444' : '#22c55e'}}>{pctDelivered}% delivered {atRisk && '— AT RISK ⚠️'}</span>
+                                        <div className="flex items-center gap-2">
+                                            <label className="text-[10px] font-bold text-text-muted">Actual:</label>
+                                            <input type="number" value={obj.actual_value} onChange={e => { const updated = objectives.map((o,j) => j===i ? {...o, actual_value: Number(e.target.value)} : o); saveObjectives(updated); }} min={0} max={10} className="pi-input" style={{width:60}} />
+                                            <button onClick={() => saveObjectives(objectives.filter((_,j) => j!==i))} className="text-xs text-danger font-bold" style={{cursor:'pointer'}}>✕ Remove</button>
+                                        </div>
+                                    </div>
+                                </div>);
+                            })}
+                            {objectives.length === 0 && <div className="pi-card p-12 text-center"><p className="text-text-muted font-semibold">No PI Objectives defined yet. Add objectives above to track business value.</p></div>}
+                        </div>
+                        {/* Summary */}
+                        {objectives.length > 0 && (<div className="pi-card p-5" style={{background:'var(--bg-body)'}}>
+                            <h3 className="text-xs font-black text-text-muted uppercase mb-3">📊 Business Value Summary</h3>
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="text-center"><div className="text-2xl font-black text-primary">{objectives.reduce((a,o) => a + o.planned_value, 0)}</div><div className="text-[10px] font-bold text-text-muted uppercase">Total Planned</div></div>
+                                <div className="text-center"><div className="text-2xl font-black text-success">{objectives.reduce((a,o) => a + (o.actual_value||0), 0)}</div><div className="text-[10px] font-bold text-text-muted uppercase">Total Actual</div></div>
+                                <div className="text-center"><div className="text-2xl font-black" style={{color: objectives.filter(o => o.actual_value < o.planned_value * 0.5 && o.planned_value >= 5).length > 0 ? '#ef4444' : '#22c55e'}}>{objectives.filter(o => o.actual_value < o.planned_value * 0.5 && o.planned_value >= 5).length}</div><div className="text-[10px] font-bold text-text-muted uppercase">At Risk</div></div>
+                            </div>
+                        </div>)}
+                    </div>
+                )}
+            </main>
         </div>
-        {loadingBacklog ? (<div className="text-center py-12"><Icon name="Loader2" size={32} className="animate-spin text-primary mx-auto mb-3" /><p className="text-sm font-bold text-text-muted">Loading backlog...</p></div>) :
-        backlog?.stories?.length > 0 ? (<div className="pi-card overflow-hidden">
-            <div className="p-4 flex items-center justify-between" style={{borderBottom:'1px solid var(--border)',background:'var(--bg-body)'}}><span className="text-sm font-black text-text-main">{backlog.stories.length} Pre-Pointed Stories ({backlog.total_points} pts)</span><div className="flex items-center gap-3"><button onClick={() => setSelectedKeys(p => p.size===backlog.stories.length ? new Set() : new Set(backlog.stories.map(s=>s.key)))} className="text-xs font-bold uppercase text-primary" style={{background:'none',border:'none',cursor:'pointer'}}>{selectedKeys.size===backlog.stories.length?'✕ Deselect':'☑ Select All'}</button><button onClick={generatePlan} disabled={generating||!selectedStories.length} className="pi-btn px-5 py-2.5 text-sm">{generating?'⏳ Sequencing...':`🧩 Generate PI Plan (${selectedStories.length})`}</button></div></div>
-            <div style={{maxHeight:400,overflowY:'auto'}}>{backlog.stories.map(s => (<div key={s.key} onClick={() => toggleStory(s.key)} className="pi-story-row cursor-pointer" style={{background:selectedKeys.has(s.key)?'rgba(245,158,11,0.04)':'transparent'}}><div style={{width:20,height:20,borderRadius:5,border:selectedKeys.has(s.key)?'2px solid #f59e0b':'2px solid var(--border)',background:selectedKeys.has(s.key)?'#f59e0b':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{selectedKeys.has(s.key) && <span style={{fontSize:10,fontWeight:900,color:'#000'}}>✓</span>}</div><span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:70}}>{s.key}</span><span className="flex-1 text-text-main font-medium truncate text-sm">{s.summary}</span><span className="pi-chip" style={{background:s.type==='Bug'?'rgba(239,68,68,0.12)':'rgba(59,130,246,0.12)',color:s.type==='Bug'?'#ef4444':'#3b82f6'}}>{s.type}</span><span className="pi-chip" style={{background:s.priority==='Highest'||s.priority==='High'?'rgba(239,68,68,0.12)':'rgba(234,179,8,0.12)',color:s.priority==='Highest'||s.priority==='High'?'#ef4444':'#eab308'}}>{s.priority}</span><span className="text-sm font-black text-text-main" style={{minWidth:36,textAlign:'right'}}>{s.points} pts</span></div>))}</div>
-        </div>) : (<div className="pi-card p-12 text-center"><p className="text-text-muted font-semibold">No pre-pointed stories found. Run Planning Poker first to assign story points.</p></div>)}
-    </div>);
+    );
 }
 
 // ── Main Production Component ──

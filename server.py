@@ -1153,50 +1153,128 @@ def save_team(project_key: str, payload: dict, creds: dict = Depends(get_jira_cr
 
 
 # ═══════════════════════════════════════════════════════════
-#  SMART FEATURE EXTRACTION — Unstructured Data → Features
+#  SMART FEATURE EXTRACTION — Any File → Clean Feature List
 # ═══════════════════════════════════════════════════════════
 
+# Noise patterns that are NOT features
+_SIZING_NOISE = re.compile(r'^(EXTRA\s*SMALL|XXS|SMALL|MEDIUM|LARGE|EXTRA\s*LARGE|2x\s*EXTRA|3x\s*EXTRA|XXL|XXXL|XL|XS|SM|S\s*–|M\s*–|L\s*–|Total\s|Add$|Sizing|Feature T-Shirt|Completed Development|1\s*SP|2\s*SP|3\s*SP|SP\d|M\d+$|ID$|^OK$|^REVISED$|^\d+$|^[SMLX]{1,4}\s*–)', re.IGNORECASE)
+_HEADER_KEYWORDS = ['feature', 'name', 'requirement', 'user story', 'epic', 'module', 'description', 'title']
+
+def _detect_feature_column(headers):
+    """Find the column index most likely to contain feature names."""
+    for i, h in enumerate(headers):
+        hl = h.lower().strip()
+        if any(k in hl for k in ['feature name', 'feature', 'epic name', 'requirement', 'user story', 'module name']):
+            return i
+    for i, h in enumerate(headers):
+        hl = h.lower().strip()
+        if hl in ('name', 'title', 'summary', 'description', 'item'):
+            return i
+    return 0
+
+def _is_noise_row(cell_text):
+    """Detect if a cell value is metadata noise, not a feature."""
+    t = str(cell_text).strip()
+    if not t or len(t) < 3: return True
+    if _SIZING_NOISE.match(t): return True
+    if t.replace('.', '').replace('-', '').replace(' ', '').isdigit(): return True
+    return False
+
 def _extract_text_from_file(content_b64: str, file_type: str) -> str:
-    """Extract readable text from various file formats with intelligent noise filtering."""
+    """Extract readable text with intelligent noise filtering."""
     raw_bytes = base64.b64decode(content_b64)
+
     if file_type in ('csv', 'txt', 'text'):
         text = raw_bytes.decode('utf-8', errors='ignore')
         if file_type == 'csv':
             try:
                 reader = csv.reader(io.StringIO(text))
                 rows = list(reader)
-                if len(rows) < 2: return text[:15000]
+                if len(rows) < 2: return text[:20000]
                 headers = [str(h).strip() for h in rows[0]]
-                lines = [f"DETECTED CSV STRUCTURE — {len(rows)-1} data rows, {len(headers)} columns"]
-                lines.append(f"COLUMN HEADERS: {' | '.join(headers)}")
-                lines.append("---DATA ROWS (each row is a SEPARATE feature)---")
-                for ri, row in enumerate(rows[1:200], 1):
-                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
-                    if cells and len(''.join(cells)) > 3:
-                        paired = [f"{headers[i]}: {str(row[i]).strip()}" for i in range(min(len(headers), len(row))) if i < len(headers) and str(row[i]).strip()]
-                        lines.append(f"ROW {ri}: " + (" | ".join(paired) if paired else " | ".join(cells)))
+                feat_col = _detect_feature_column(headers)
+                lines = [f"STRUCTURED DATA — {len(rows)-1} rows"]
+                lines.append(f"COLUMNS: {' | '.join(headers)}")
+                lines.append("---EACH ROW BELOW IS ONE SEPARATE FEATURE---")
+                for ri, row in enumerate(rows[1:300], 1):
+                    if feat_col < len(row):
+                        val = str(row[feat_col]).strip()
+                        if val and not _is_noise_row(val):
+                            extra = {headers[j]: str(row[j]).strip() for j in range(len(row)) if j != feat_col and j < len(headers) and row[j] and str(row[j]).strip() and not _is_noise_row(str(row[j]))}
+                            meta = f" | METADATA: {json.dumps(extra)}" if extra else ""
+                            lines.append(f"FEATURE {ri}: {val}{meta}")
                 return "\n".join(lines)[:20000]
             except: pass
         return text[:20000]
+
     if file_type in ('xlsx', 'xls'):
         try:
             import openpyxl
             wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True, data_only=True)
-            lines = []
+            all_features = []
             for ws in wb.worksheets[:5]:
-                rows_list = list(ws.iter_rows(max_row=300, values_only=True))
+                rows_list = list(ws.iter_rows(max_row=500, values_only=True))
                 if not rows_list: continue
-                headers = [str(c).strip() if c else '' for c in rows_list[0]]
-                data_rows = rows_list[1:]
-                lines.append(f"\n[Sheet: {ws.title}] — {len(data_rows)} data rows, Columns: {' | '.join([h for h in headers if h])}")
-                lines.append("---EACH ROW BELOW IS A SEPARATE DISTINCT FEATURE/ITEM---")
-                for ri, row in enumerate(data_rows, 1):
-                    cells = [str(c).strip() for c in row if c is not None and str(c).strip()]
-                    if cells and len(''.join(cells)) > 2:
-                        paired = [f"{headers[i]}: {str(row[i]).strip()}" for i in range(min(len(headers), len(row))) if i < len(headers) and row[i] is not None and str(row[i]).strip()]
-                        lines.append(f"ROW {ri}: " + (" | ".join(paired) if paired else " | ".join(cells)))
-            return "\n".join(lines)[:20000]
+                # Phase 1: Find the header row
+                header_row_idx = None
+                headers = []
+                for ri, row in enumerate(rows_list[:30]):
+                    cells = [str(c).strip().lower() if c else '' for c in row]
+                    if any(any(kw in cell for kw in _HEADER_KEYWORDS) for cell in cells if cell):
+                        header_row_idx = ri
+                        headers = [str(c).strip() if c else f'Col{j}' for j, c in enumerate(row)]
+                        break
+                if header_row_idx is None:
+                    # No header found — treat col 0 as feature name
+                    header_row_idx = 0
+                    headers = [str(c).strip() if c else f'Col{j}' for j, c in enumerate(rows_list[0])]
+
+                feat_col = _detect_feature_column(headers)
+                data_rows = rows_list[header_row_idx + 1:]
+
+                all_features.append(f"\n[Sheet: {ws.title}] — Detected {len(data_rows)} rows, Feature column: \"{headers[feat_col]}\"")
+                all_features.append("---EACH ENTRY BELOW IS ONE SEPARATE FEATURE---")
+
+                feat_count = 0
+                for row in data_rows:
+                    if not row or feat_col >= len(row): continue
+                    # Some rows have REVISED/OK prefix shifting feature name right
+                    val = str(row[feat_col]).strip() if row[feat_col] else ''
+                    if val and val.upper() in ('REVISED', 'OK', 'NEW', 'UPDATED', 'CHANGED') and feat_col + 1 < len(row) and row[feat_col + 1]:
+                        val = str(row[feat_col + 1]).strip()
+                    if not val or _is_noise_row(val): continue
+
+                    feat_count += 1
+                    # Gather meaningful metadata from other columns
+                    meta_parts = []
+                    for j, c in enumerate(row):
+                        if j == feat_col or c is None: continue
+                        cv = str(c).strip()
+                        if cv and len(cv) > 1 and not _is_noise_row(cv) and j < len(headers):
+                            h = headers[j] if j < len(headers) else f'Col{j}'
+                            if h.lower() not in ('', 'id') and not h.startswith('Col'):
+                                meta_parts.append(f"{h}={cv}")
+                    meta = f" [{'; '.join(meta_parts[:5])}]" if meta_parts else ""
+                    all_features.append(f"FEATURE {feat_count}: {val}{meta}")
+
+            return "\n".join(all_features)[:20000]
         except Exception as e: return f"[XLSX parse error: {e}]"
+
+    if file_type in ('docx', 'doc'):
+        try:
+            from docx import Document
+            doc = Document(io.BytesIO(raw_bytes))
+            lines = []
+            for para in doc.paragraphs[:500]:
+                t = para.text.strip()
+                if t: lines.append(t)
+            for table in doc.tables[:20]:
+                for row in table.rows[:100]:
+                    cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                    if cells: lines.append(" | ".join(cells))
+            return "\n".join(lines)[:20000]
+        except Exception as e: return f"[DOCX parse error: {e}]"
+
     if file_type in ('pptx', 'ppt'):
         try:
             from pptx import Presentation
@@ -1207,6 +1285,7 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
                 if st: lines.append(f"[Slide {sn}] " + " | ".join(st))
             return "\n".join(lines)[:20000]
         except Exception as e: return f"[PPTX parse error: {e}]"
+
     if file_type == 'pdf':
         try:
             import fitz
@@ -1219,15 +1298,17 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
                 return "".join([(page.extract_text() or "") + "\n" for page in reader.pages[:30]])[:20000]
             except Exception as e2: return f"[PDF parse error: {e2}]"
         except Exception as e: return f"[PDF parse error: {e}]"
+
     return raw_bytes.decode('utf-8', errors='ignore')[:20000]
 
 
 @app.post("/feature_roadmap/extract_features")
 def extract_features_from_file(payload: dict):
-    """AI-powered feature extraction from any unstructured file."""
+    """AI-powered feature extraction from any file."""
     content = payload.get("content", "")
     file_type = payload.get("file_type", "txt").lower()
     filename = payload.get("filename", "unknown")
+
     if content and len(content) > 100:
         try: extracted_text = _extract_text_from_file(content, file_type)
         except: extracted_text = base64.b64decode(content).decode('utf-8', errors='ignore')[:20000]
@@ -1235,63 +1316,38 @@ def extract_features_from_file(payload: dict):
     if not extracted_text or len(extracted_text.strip()) < 10:
         return {"error": "Could not extract readable text from the uploaded file."}
 
-    # Count actual data rows to guide the AI
-    row_count = extracted_text.count("\nROW ")
-    row_hint = f"\nIMPORTANT: The document contains approximately {row_count} data rows. Your output should have a SIMILAR count of features." if row_count > 5 else ""
+    feat_count = extracted_text.count("\nFEATURE ")
+    count_hint = f"\nCRITICAL: The pre-parser found {feat_count} features. Your output MUST contain exactly {feat_count} features (±2)." if feat_count > 3 else ""
 
-    prompt = f"""You are an expert Product Manager extracting SOFTWARE FEATURES from an uploaded document.
+    prompt = f"""You are extracting SOFTWARE FEATURES from a document.
 
 DOCUMENT: "{filename}" (type: {file_type})
-{row_hint}
+{count_hint}
 
 CONTENT:
 {extracted_text}
 
-═══ CRITICAL EXTRACTION RULES ═══
+═══ ABSOLUTE RULES ═══
 
-RULE 1 — NEVER MERGE FEATURES FROM STRUCTURED DATA:
-If the document is a CSV, XLSX, or any tabular format where EACH ROW is a separate item:
-- Every single row MUST become its OWN feature in your output
-- Do NOT group "Client Chart SubFeature A" and "Client Chart SubFeature B" into one feature
-- Do NOT merge rows that look similar — they are DISTINCT deliverables
-- The ONLY exception: truly duplicate rows with identical text
-
-RULE 2 — SMART MERGING ONLY FOR UNSTRUCTURED DOCUMENTS:
-If the document is a PDF, PPTX, or free-form text (NOT tabular):
-- Then you MAY merge truly overlapping requirements into single features
-- Group very granular sub-items ONLY if they describe the same thing in different words
-
-RULE 3 — NOISE FILTERING:
-ALWAYS IGNORE: Column headers, metadata rows, IDs, dates, sprint names, status values, assignee names, page numbers, boilerplate text
-KEEP: Feature names, requirements, deliverables, modules, integration points
-
-RULE 4 — DESCRIPTIONS:
-For each feature provide:
-1. NAME: Use the exact feature name from the document (preserve the original wording). For structured data, copy the cell value as-is (including any IDs like CONBLD-XX).
-2. DESCRIPTION: Generate a 1-2 sentence description of what this feature likely involves based on the name and any available context.
-
-RULE 5 — PHASES vs FEATURES:
-Items like "Pilot", "Hypercare", "UAT", "Go-Live" are PROJECT PHASES, not features. Include them but mark clearly: description should say "Project phase: [phase name] — not a development feature."
+1. EVERY LINE MARKED "FEATURE N:" IS A SEPARATE FEATURE. Output EACH one individually.
+2. NEVER merge, group, or combine features. "Client Chart – Main" and "Client Chart – Clinical Tab" are TWO features.
+3. NEVER include sizing labels as features (XXS, SMALL, MEDIUM, LARGE, XL, XXL, XXXL, T-Shirt sizing, etc.)
+4. NEVER include metadata: sprint names (SP1, SP2), team names, dates, status labels, column headers, totals, IDs.
+5. Items like "Pilot", "Hypercare", "UAT", "Go-Live" are PROJECT PHASES: include them with description "Project phase — not a development feature."
+6. For each feature: NAME = exact name from the document (preserve CONBLD/JIRA IDs). DESCRIPTION = 1-2 sentences about what needs to be built.
+7. If metadata columns provide sizing/estimation info, include it in the description (e.g., "Estimated as LARGE (5 days)").
 
 Return STRICT JSON — no markdown, no backticks:
-{{
-    "features": [
-        {{"name": "Feature Name Here", "description": "What needs to be built..."}},
-        {{"name": "Another Feature", "description": "What this involves..."}}
-    ],
-    "extraction_summary": "Extracted X features from [document type]. Document covers [domain/scope].",
-    "rows_in_source": {row_count if row_count > 0 else '"unknown"'}
-}}"""
+{{"features": [{{"name": "Feature Name Here", "description": "What this involves..."}}], "extraction_summary": "Extracted N features from [doc type]."}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.15, timeout=90)
+        raw = generate_ai_response(prompt, temperature=0.1, timeout=90)
         if raw:
             cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
             result = json.loads(cleaned)
-            # Validate extraction count vs source rows
-            if row_count > 0 and result.get('features'):
+            if feat_count > 3 and result.get('features'):
                 result['extraction_summary'] = (result.get('extraction_summary', '') +
-                    f" (Source had {row_count} rows, extracted {len(result['features'])} features)")
+                    f" (Pre-parser found {feat_count} items, AI returned {len(result['features'])} features)")
             return result
         return {"error": "AI returned empty response"}
     except Exception as e:
@@ -1300,28 +1356,28 @@ Return STRICT JSON — no markdown, no backticks:
 
 
 # ═══════════════════════════════════════════════════════════
-#  PLANNING POKER v4 — 9 Agents, Real Historical, AI-Era
+#  PLANNING POKER v4 — 9 AI Agents
 # ═══════════════════════════════════════════════════════════
 
 POKER_AGENTS = [
     {"id": "architect", "name": "The Architect", "emoji": "🏗️", "votes": True,
-     "behavior": "You are a Solutions Architect. You estimate COGNITIVE LOAD and BLAST RADIUS — not lines of code. You see data model impacts, API contract risks, integration breakage, platform limits. You tend to point HIGHER than developers."},
+     "behavior": "Solutions Architect. Estimates COGNITIVE LOAD and BLAST RADIUS. Points HIGHER on integration/platform stories."},
     {"id": "team_lead", "name": "The Team Lead", "emoji": "🛡️", "votes": True,
-     "behavior": "You are an Engineering Lead. You point DEFENSIVELY to protect velocity. You factor in code reviews, deployment windows, team availability, prod-support. Your buffer is for PROCESS overhead."},
+     "behavior": "Engineering Lead. Points DEFENSIVELY for process overhead — reviews, deployments, team coordination."},
     {"id": "senior_dev", "name": "The Senior Dev", "emoji": "👨‍💻", "votes": True,
-     "behavior": "You are a Senior Developer who knows the codebase. NOTORIOUS for under-pointing because you estimate based on YOUR capability with AI assistance. HOWEVER — if it touches messy legacy code, you throw high (8-13)."},
+     "behavior": "Senior Dev. Under-points routine work (knows AI tools). Throws HIGH on legacy/messy code."},
     {"id": "mid_dev", "name": "The Mid-Level Dev", "emoji": "💻", "votes": True,
-     "behavior": "You are a Mid-Level Developer with recent sprint trauma. You anchor slightly above the Senior Dev for safety. Competent with AI tools but still need time for unfamiliar codebases."},
+     "behavior": "Mid Dev. Anchors slightly above Senior Dev. Needs time for unfamiliar codebases."},
     {"id": "junior_dev", "name": "The Junior Dev", "emoji": "🌱", "votes": True,
-     "behavior": "You are a Junior Developer with the Happy Path Illusion. You see 'add validation' and think it's simple. You confidently throw 1s and 2s. On genuinely simple tasks you may be MOST ACCURATE."},
+     "behavior": "Junior Dev with Happy Path Illusion. Confidently throws 1s and 2s. Sometimes most accurate on simple tasks."},
     {"id": "senior_qa", "name": "The Senior QA", "emoji": "🔍", "votes": True,
-     "behavior": "You are the Senior QA — the reality anchor. You point based on FULL testing lifecycle: test data, permutation testing, regression impact, automation, cross-browser, accessibility."},
+     "behavior": "Senior QA — reality anchor. Points based on FULL testing lifecycle: test data, regression, automation."},
     {"id": "junior_qa", "name": "The Junior QA", "emoji": "🧪", "votes": True,
-     "behavior": "You are Junior QA with checklist mentality. You estimate linearly. You don't factor in 3 rounds of bug-bouncing. On well-specified tickets, reasonably accurate."},
+     "behavior": "Junior QA. Estimates linearly with checklist mentality. Doesn't factor bug-bouncing rounds."},
     {"id": "ba", "name": "The BA", "emoji": "📊", "votes": False,
-     "behavior": "You DO NOT VOTE. You challenge high estimates with scope reduction: 'What if we remove X?' You negotiate complexity down, flag unclear requirements."},
+     "behavior": "DO NOT VOTE. Challenge high estimates with scope reduction. Flag unclear requirements."},
     {"id": "scrum_master", "name": "The Scrum Master", "emoji": "⚡", "votes": False,
-     "behavior": "You DO NOT VOTE. You observe team dynamics. You compare against REAL historical data provided. You reference actual completed tickets by their keys and points."}
+     "behavior": "DO NOT VOTE. Compare against REAL historical data. Reference actual completed ticket keys and points."}
 ]
 
 def _fetch_historical_data(project_key, creds, sp_field):
@@ -1348,7 +1404,7 @@ def get_poker_stories(project_key: str, source: str = "sprint", sprint_id: str =
         jql = f'project="{project_key}" AND sprint={sprint_id} AND issuetype in (Story, Task, Bug) ORDER BY rank ASC'
     else:
         jql = f'project="{project_key}" AND sprint in openSprints() AND issuetype in (Story, Task, Bug) ORDER BY rank ASC'
-    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 50, "fields": ["summary", "description", "issuetype", "priority", "status", "assignee", "comment", sp_field]})
+    res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 50, "fields": ["summary", "description", "issuetype", "priority", "status", "comment", sp_field]})
     stories = []
     if res and res.status_code == 200:
         for i in res.json().get('issues', []):
@@ -1358,7 +1414,7 @@ def get_poker_stories(project_key: str, source: str = "sprint", sprint_id: str =
             for c in (f.get('comment', {}).get('comments', []) or [])[-3:]:
                 try: comments.append(c.get('body', {}).get('content', [{}])[0].get('content', [{}])[0].get('text', '')[:200] if isinstance(c.get('body'), dict) else str(c.get('body', ''))[:200])
                 except: pass
-            stories.append({"key": i.get('key'), "summary": f.get('summary', ''), "description": desc, "issue_type": (f.get('issuetype') or {}).get('name', 'Story'), "priority": (f.get('priority') or {}).get('name', 'Medium'), "status": (f.get('status') or {}).get('name', 'To Do'), "assignee": (f.get('assignee') or {}).get('displayName', 'Unassigned'), "current_points": extract_story_points(f, sp_field), "comments": comments})
+            stories.append({"key": i.get('key'), "summary": f.get('summary', ''), "description": desc, "issue_type": (f.get('issuetype') or {}).get('name', 'Story'), "priority": (f.get('priority') or {}).get('name', 'Medium'), "status": (f.get('status') or {}).get('name', 'To Do'), "current_points": extract_story_points(f, sp_field), "comments": comments})
     return {"stories": stories, "agents": [{"id": a["id"], "name": a["name"], "emoji": a["emoji"], "votes": a["votes"]} for a in POKER_AGENTS]}
 
 @app.post("/planning_poker/{project_key}/play")
@@ -1367,44 +1423,26 @@ def run_planning_poker(project_key: str, payload: dict, creds: dict = Depends(ge
     if not stories: return {"error": "No stories selected"}
     sp_field = get_story_point_field(creds)
     historical = _fetch_historical_data(project_key, creds, sp_field)
-    history_block = "No historical data available." if not historical else "COMPLETED STORIES FROM RECENT SPRINTS (real data):\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) → {h['points']} pts" for h in historical])
+    history_block = "No historical data." if not historical else "COMPLETED STORIES:\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) → {h['points']} pts" for h in historical])
     voting = [a for a in POKER_AGENTS if a["votes"]]
     nonvoting = [a for a in POKER_AGENTS if not a["votes"]]
     results = []
     for story in stories:
-        story_ctx = f"STORY: {story.get('key')} — {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:800]}\nCOMMENTS: {json.dumps(story.get('comments', [])[:3])}"
-        voter_block = "\n\n".join([f"VOTER — {a['name']} (id: \"{a['id']}\")\n{a['behavior']}" for a in voting])
-        influencer_block = "\n\n".join([f"NON-VOTER — {a['name']} (id: \"{a['id']}\")\n{a['behavior']}" for a in nonvoting])
-        prompt = f"""Simulate a REAL Planning Poker session with 9 team members.
+        story_ctx = f"STORY: {story.get('key')} — {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:800]}"
+        voter_block = "\n".join([f"VOTER {a['id']}: {a['behavior']}" for a in voting])
+        prompt = f"""Simulate Planning Poker with 9 team members. FIBONACCI: 1,2,3,5,8,13,21
 
 {story_ctx}
 
 {history_block}
 
-═══ 7 VOTING MEMBERS ═══
-{voter_block}
+VOTERS: {voter_block}
+NON-VOTERS: {' | '.join([f"{a['id']}: {a['behavior']}" for a in nonvoting])}
 
-═══ 2 NON-VOTING INFLUENCERS ═══
-{influencer_block}
-
-FIBONACCI: 1, 2, 3, 5, 8, 13, 21
-
-AI-ERA RULES: Modern teams use AI coding assistants. This CHANGES estimation:
-REDUCED: Boilerplate, CRUD, standard patterns → 30-50% lower. Simple validation → often 1-2 pts. Unit test gen, docs → AI handles.
-UNCHANGED: Architecture decisions, integration testing, deployment coordination, legacy archaeology, cross-team deps, data migration.
-GUIDE: Config/text change=1pt, Simple validation=1-2pts, Standard feature=2-3pts, Feature w/ integration=3-5pts, Complex cross-system=5-8pts, Major arch change=8-13pts, Massive overhaul=13-21pts.
-
-RULES:
-1. Junior Dev MUST sometimes throw 1 on complex stories (Happy Path)
-2. Senior Dev under-points routine BUT goes high on legacy
-3. Architect/Senior QA typically highest
-4. Genuine disagreement (3+ pt spread normal for complex)
-5. Simple tasks CAN cluster at 1-2
-6. BA challenges high estimates, SM references REAL ticket keys from history
-7. Super Agent methods SHOULD produce different numbers
+AI-ERA: Standard CRUD/boilerplate → 30-50% lower. Architecture/integration/legacy unchanged.
 
 Return STRICT JSON:
-{{"votes":[{{"agent_id":"architect","points":8,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"team_lead","points":5,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":3,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":3,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":1,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":5,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":2,"confidence":"medium","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"...","suggestion":"..."}},{{"agent_id":"scrum_master","observation":"...","historical_comparison":"Reference REAL ticket key","recommendation":"..."}}],"super_agent":{{"pert_estimate":{{"optimistic":1,"most_likely":3,"pessimistic":8,"pert_raw":3.5,"pert_fibonacci":3}},"three_point_estimate":{{"raw":4.0,"fibonacci":5}},"historical_estimate":{{"matched_story":"REAL-KEY or null","matched_points":3,"fibonacci":3}},"analogous_estimate":{{"similar_story":"Description","reference_key":"REAL-KEY or null","fibonacci":3}},"final_points":3,"confidence":"high","method_used":"Which methods determined final","rationale":"3-4 sentences","split_recommendation":null,"key_assumptions":["a1","a2"]}}}}"""
+{{"votes":[{{"agent_id":"architect","points":8,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"team_lead","points":5,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":3,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":3,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":1,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":5,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":2,"confidence":"medium","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"...","suggestion":"..."}},{{"agent_id":"scrum_master","observation":"...","historical_comparison":"...","recommendation":"..."}}],"super_agent":{{"pert_estimate":{{"optimistic":1,"most_likely":3,"pessimistic":8,"pert_fibonacci":3}},"three_point_estimate":{{"raw":4.0,"fibonacci":5}},"historical_estimate":{{"matched_story":"KEY or null","fibonacci":3}},"analogous_estimate":{{"similar_story":"desc","fibonacci":3}},"final_points":3,"confidence":"high","method_used":"Which methods","rationale":"3-4 sentences","key_assumptions":["a1","a2"]}}}}"""
         try:
             raw = generate_ai_response(prompt, temperature=0.35, timeout=90)
             if raw:
@@ -1414,11 +1452,9 @@ Return STRICT JSON:
                 poker_result["story_summary"] = story.get("summary")
                 poker_result["current_points"] = story.get("current_points", 0)
                 results.append(poker_result)
-            else:
-                results.append({"story_key": story.get("key"), "story_summary": story.get("summary"), "error": "AI returned empty"})
+            else: results.append({"story_key": story.get("key"), "error": "AI returned empty"})
         except Exception as e:
-            print(f"Planning Poker error for {story.get('key')}: {e}", flush=True)
-            results.append({"story_key": story.get("key"), "story_summary": story.get("summary"), "error": str(e)})
+            results.append({"story_key": story.get("key"), "error": str(e)})
     return {"results": results}
 
 @app.post("/planning_poker/{project_key}/push_jira")
@@ -1426,12 +1462,11 @@ def push_poker_to_jira(project_key: str, payload: dict, creds: dict = Depends(ge
     sp_field = get_story_point_field(creds)
     results = []
     for u in payload.get("updates", []):
-        key, points, comment = u.get("key"), u.get("points"), u.get("comment", "")
+        key, points = u.get("key"), u.get("points")
         try:
             if points is not None:
-                pts_res = jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: float(points)}})
-                if pts_res is None or pts_res.status_code not in [200, 204]:
-                    jira_request("PUT", f"issue/{key}", creds, {"fields": {"story_points": float(points)}})
+                jira_request("PUT", f"issue/{key}", creds, {"fields": {sp_field: float(points)}})
+            comment = u.get("comment", "")
             if comment:
                 jira_request("POST", f"issue/{key}/comment", creds, {"body": {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": comment}]}]}})
             results.append({"key": key, "status": "success", "points": points})
@@ -1441,12 +1476,11 @@ def push_poker_to_jira(project_key: str, payload: dict, creds: dict = Depends(ge
 
 
 # ═══════════════════════════════════════════════════════════
-#  PI PLANNING — Sequencer AI
+#  PI PLANNING — Sequencer + Program Board + ROAM + Objectives
 # ═══════════════════════════════════════════════════════════
 
 @app.get("/pi_planning/{project_key}/backlog")
 def get_pi_backlog(project_key: str, creds: dict = Depends(get_jira_creds)):
-    """Fetch pre-pointed stories from backlog for PI Planning."""
     sp_field = get_story_point_field(creds)
     jql = f'project="{project_key}" AND statusCategory != Done AND issuetype in (Story, Task, Bug) ORDER BY priority DESC, rank ASC'
     res = jira_request("POST", "search/jql", creds, {"jql": jql, "maxResults": 100, "fields": ["summary", "description", "issuetype", "priority", "status", "labels", "components", sp_field]})
@@ -1473,34 +1507,34 @@ def get_pi_backlog(project_key: str, creds: dict = Depends(get_jira_creds)):
 
 @app.post("/pi_planning/{project_key}/generate")
 def generate_pi_plan(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
-    """AI Sequencer: arrange pre-pointed stories into sprints."""
     stories = payload.get("stories", [])
     velocity_per_sprint = payload.get("velocity_per_sprint", 40)
     num_sprints = payload.get("num_sprints", 5)
     pi_name = payload.get("pi_name", "PI-1")
+    teams = payload.get("teams", ["Core Team"])
     if not stories: return {"error": "No stories provided"}
     total_capacity = velocity_per_sprint * num_sprints
     total_points = sum(s.get('points', 0) for s in stories)
-    stories_block = "\n".join([f"- {s['key']}: \"{s['summary']}\" | {s['type']} | {s['priority']} | {s['points']} pts" + (f"\n  Desc: {s['description'][:200]}" if s.get('description') else "") for s in stories[:100]])
+    stories_block = "\n".join([f"- {s['key']}: \"{s['summary']}\" | {s.get('type','')} | {s.get('priority','')} | {s['points']} pts | components: {s.get('components',[])} | labels: {s.get('labels',[])}" + (f"\n  Desc: {s['description'][:200]}" if s.get('description') else "") for s in stories[:100]])
 
-    prompt = f"""You are a PI Planning Sequencer AI — arrange pre-pointed stories into sprints.
+    prompt = f"""You are a PI Planning Sequencer AI. Arrange stories into sprints AND detect cross-team dependencies.
 
 STRICT RULES:
-1. DO NOT change story points — immutable facts
-2. DO NOT invent new stories
-3. RESPECT capacity: {velocity_per_sprint} pts/sprint × {num_sprints} sprints = {total_capacity} total
-4. OVERFLOW → "Spillover" bucket. HARD CUT-LINE.
+1. DO NOT change story points — immutable
+2. DO NOT invent stories
+3. Each sprint ≤ {velocity_per_sprint} pts. Total capacity: {total_capacity}. Overflow → spillover.
 
-PI: {pi_name} | Sprints: {num_sprints} | Velocity: {velocity_per_sprint}/sprint | Capacity: {total_capacity} | Backlog: {total_points}
-{"⚠️ OVER CAPACITY by " + str(total_points - total_capacity) + " pts" if total_points > total_capacity else "✅ Within capacity"}
+PI: {pi_name} | Sprints: {num_sprints} | Velocity: {velocity_per_sprint}/sprint | Backlog: {total_points} pts
+Teams: {json.dumps(teams)}
+{"⚠️ OVER CAPACITY by " + str(total_points - total_capacity) + " pts — some stories MUST go to spillover" if total_points > total_capacity else "✅ Within capacity"}
 
 STORIES:
 {stories_block}
 
-LOGIC: A) Dependency detection from descriptions B) Priority first C) Each sprint ≤ {velocity_per_sprint} pts D) Balanced loading E) Related stories grouped F) Cut-line at {total_capacity}
+ANALYZE: Dependencies from descriptions/components, priority ordering, balanced sprint loading, team assignment from components/labels.
 
 Return STRICT JSON:
-{{"pi_name":"{pi_name}","total_capacity":{total_capacity},"total_committed":0,"total_spillover":0,"sprints":[{{"name":"Sprint 1","capacity":{velocity_per_sprint},"committed_points":0,"utilization_pct":0,"stories":[{{"key":"X-1","summary":"...","points":5,"type":"Story","priority":"High","dependencies":[]}}]}}],"spillover":[],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["..."],"sequencing_rationale":"..."}}"""
+{{"pi_name":"{pi_name}","total_capacity":{total_capacity},"total_committed":0,"total_spillover":0,"sprints":[{{"name":"Sprint 1","capacity":{velocity_per_sprint},"committed_points":0,"utilization_pct":0,"stories":[{{"key":"X-1","summary":"...","points":5,"type":"Story","priority":"High","team":"{teams[0]}","dependencies":[]}}]}}],"spillover":[],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["..."],"sequencing_rationale":"...","team_load":{json.dumps({t: {f"Sprint {i+1}": 0 for i in range(num_sprints)} for t in teams})}}}"""
 
     try:
         raw = generate_ai_response(prompt, temperature=0.2, timeout=90)
@@ -1509,8 +1543,41 @@ Return STRICT JSON:
             return json.loads(cleaned)
         return {"error": "AI returned empty response"}
     except Exception as e:
-        print(f"PI Planning error: {e}", flush=True)
         return {"error": f"PI Planning failed: {str(e)}"}
+
+@app.post("/pi_planning/{project_key}/roam")
+def manage_roam_risks(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Save/load ROAM risk register for a PI."""
+    action = payload.get("action", "load")
+    prop_key = "ig_pi_roam_risks"
+    if action == "save":
+        risks = payload.get("risks", [])
+        jira_request("PUT", f"project/{project_key.upper()}/properties/{prop_key}", creds, {"risks": risks})
+        return {"status": "saved", "count": len(risks)}
+    else:
+        try:
+            res = jira_request("GET", f"project/{project_key.upper()}/properties/{prop_key}", creds)
+            if res and res.status_code == 200:
+                return res.json().get("value", {"risks": []})
+        except: pass
+        return {"risks": []}
+
+@app.post("/pi_planning/{project_key}/objectives")
+def manage_pi_objectives(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Save/load PI Objectives with business value scoring."""
+    action = payload.get("action", "load")
+    prop_key = "ig_pi_objectives"
+    if action == "save":
+        objectives = payload.get("objectives", [])
+        jira_request("PUT", f"project/{project_key.upper()}/properties/{prop_key}", creds, {"objectives": objectives})
+        return {"status": "saved", "count": len(objectives)}
+    else:
+        try:
+            res = jira_request("GET", f"project/{project_key.upper()}/properties/{prop_key}", creds)
+            if res and res.status_code == 200:
+                return res.json().get("value", {"objectives": []})
+        except: pass
+        return {"objectives": []}
 
 @app.post("/feature_roadmap")
 def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(get_jira_creds)):
