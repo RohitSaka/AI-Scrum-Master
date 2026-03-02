@@ -879,7 +879,7 @@
                 }
                 const res = await secureFetch('/feature_roadmap/extract_features', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, file_type: ext, filename: file.name }) });
                 if (!res) {
-                    console.error('[SmartUpload] secureFetch returned null — auth or network issue');
+                    console.error('[SmartUpload] secureFetch returned null');
                     setError('Request failed. Please check your connection and try again.');
                     setExtracting(false);
                     e.target.value = '';
