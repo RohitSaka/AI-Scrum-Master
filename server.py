@@ -90,7 +90,7 @@ Base.metadata.create_all(bind=engine_db)
 
 class FeatureRoadmapRequest(BaseModel):
     tech_stack: str
-    features: List[str]
+    features: list                       # Accept List[str], List[dict], or mixed
     target_duration_value: float         # was int — now accepts 1.5, 2.5 etc.
     target_duration_unit: str
     project_key: Optional[str] = None
@@ -1158,18 +1158,33 @@ def save_team(project_key: str, payload: dict, creds: dict = Depends(get_jira_cr
 
 # Noise patterns that are NOT features
 _SIZING_NOISE = re.compile(r'^(EXTRA\s*SMALL|XXS|SMALL|MEDIUM|LARGE|EXTRA\s*LARGE|2x\s*EXTRA|3x\s*EXTRA|XXL|XXXL|XL|XS|SM|S\s*–|M\s*–|L\s*–|Total\s|Add$|Sizing|Feature T-Shirt|Completed Development|1\s*SP|2\s*SP|3\s*SP|SP\d|M\d+$|ID$|^OK$|^REVISED$|^\d+$|^[SMLX]{1,4}\s*–)', re.IGNORECASE)
-_HEADER_KEYWORDS = ['feature', 'name', 'requirement', 'user story', 'epic', 'module', 'description', 'title']
+_HEADER_KEYWORDS = ['feature', 'name', 'requirement', 'user story', 'epic', 'module', 'description', 'title', 'item', 'deliverable', 'capability', 'function', 'screen', 'component', 'work item', 'task', 'summary']
 
-def _detect_feature_column(headers):
-    """Find the column index most likely to contain feature names."""
+def _detect_feature_column(headers, data_rows=None):
+    """Find column most likely to contain feature names — multi-heuristic."""
+    # H1: Exact header name matches
     for i, h in enumerate(headers):
         hl = h.lower().strip()
-        if any(k in hl for k in ['feature name', 'feature', 'epic name', 'requirement', 'user story', 'module name']):
+        if any(k in hl for k in ['feature name', 'feature', 'epic name', 'requirement name', 'user story', 'module name', 'work item']):
             return i
     for i, h in enumerate(headers):
         hl = h.lower().strip()
-        if hl in ('name', 'title', 'summary', 'description', 'item'):
+        if hl in ('name', 'title', 'summary', 'description', 'item', 'deliverable'):
             return i
+    # H2: Data-driven — find column with longest average text (feature names are descriptive)
+    if data_rows and len(data_rows) > 2:
+        col_scores = {}
+        for ci in range(min(15, len(headers))):
+            texts = []
+            for row in data_rows[:20]:
+                if ci < len(row) and row[ci] is not None:
+                    val = str(row[ci]).strip()
+                    if val and not _is_noise_row(val) and len(val) > 5:
+                        texts.append(len(val))
+            if texts:
+                col_scores[ci] = sum(texts) / len(texts)
+        if col_scores:
+            return max(col_scores, key=col_scores.get)
     return 0
 
 def _is_noise_row(cell_text):
@@ -1231,6 +1246,8 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
 
                 feat_col = _detect_feature_column(headers)
                 data_rows = rows_list[header_row_idx + 1:]
+                # Re-detect with data rows for smarter column selection
+                feat_col = _detect_feature_column(headers, data_rows)
 
                 all_features.append(f"\n[Sheet: {ws.title}] — Detected {len(data_rows)} rows, Feature column: \"{headers[feat_col]}\"")
                 all_features.append("---EACH ENTRY BELOW IS ONE SEPARATE FEATURE---")
@@ -1265,13 +1282,41 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
             from docx import Document
             doc = Document(io.BytesIO(raw_bytes))
             lines = []
-            for para in doc.paragraphs[:500]:
+            current_module = None
+            module_desc = {}
+            # Phase 1: Heading-aware extraction
+            for para in doc.paragraphs[:1500]:
                 t = para.text.strip()
-                if t: lines.append(t)
-            for table in doc.tables[:20]:
-                for row in table.rows[:100]:
-                    cells = [c.text.strip() for c in row.cells if c.text.strip()]
-                    if cells: lines.append(" | ".join(cells))
+                if not t: continue
+                sn = para.style.name if para.style else ''
+                # H1/H2 headings = top-level features/modules
+                if 'Heading 1' in sn or 'Heading 2' in sn:
+                    current_module = t
+                    module_desc[current_module] = ''
+                    lines.append(f"\nFEATURE/MODULE: {t}")
+                # Normal paragraphs that ARE module/section headers (e.g. "User Authentication Module")
+                elif ('Normal' in sn or 'No Spacing' in sn) and 10 < len(t) < 60 and t.endswith('Module') and not any(skip in t.lower() for skip in ['version', 'date:', 'author', 'revision', 'project title']):
+                    current_module = t
+                    module_desc[current_module] = ''
+                    lines.append(f"\nFEATURE/MODULE: {t}")
+                elif 'Heading 3' in sn:
+                    lines.append(f"  SECTION: {t}")
+                elif current_module:
+                    if not module_desc.get(current_module) and len(t) > 20:
+                        module_desc[current_module] = t[:300]
+                        lines.append(f"  DESC: {t[:300]}")
+                    elif len(t) > 15:
+                        lines.append(f"  {t[:200]}")
+            # Phase 2: Table content for additional context
+            for ti, table in enumerate(doc.tables[:15]):
+                tlines = []
+                for ri, row in enumerate(table.rows[:30]):
+                    cells = [c.text.strip()[:80] for c in row.cells if c.text.strip()]
+                    if cells and len(''.join(cells)) > 5:
+                        tlines.append(" | ".join(cells))
+                if tlines:
+                    lines.append(f"\n[Table {ti+1}]")
+                    lines.extend(tlines[:20])
             return "\n".join(lines)[:20000]
         except Exception as e: return f"[DOCX parse error: {e}]"
 
@@ -1317,9 +1362,18 @@ def extract_features_from_file(payload: dict):
         return {"error": "Could not extract readable text from the uploaded file."}
 
     feat_count = extracted_text.count("\nFEATURE ")
-    count_hint = f"\nCRITICAL: The pre-parser found {feat_count} features. Your output MUST contain exactly {feat_count} features (±2)." if feat_count > 3 else ""
+    module_count = extracted_text.count("\nFEATURE/MODULE: ")
+    is_structured = feat_count > 3 and module_count == 0
+    is_fsd = module_count > 0
 
-    prompt = f"""You are extracting SOFTWARE FEATURES from a document.
+    if is_structured:
+        count_hint = f"\nCRITICAL: The pre-parser identified {feat_count} individual features. Your output MUST contain exactly {feat_count} features (±2). NEVER merge them."
+    elif is_fsd:
+        count_hint = f"\nThis is a requirements/FSD document with {module_count} modules/sections. Extract EACH module marked 'FEATURE/MODULE:' as a separate feature. Use the DESC/content below each module for the description."
+    else:
+        count_hint = ""
+
+    prompt = f"""You are a world-class Business Analyst extracting SOFTWARE FEATURES from a document.
 
 DOCUMENT: "{filename}" (type: {file_type})
 {count_hint}
@@ -1327,27 +1381,45 @@ DOCUMENT: "{filename}" (type: {file_type})
 CONTENT:
 {extracted_text}
 
-═══ ABSOLUTE RULES ═══
+═══ INTELLIGENT EXTRACTION RULES ═══
 
-1. EVERY LINE MARKED "FEATURE N:" IS A SEPARATE FEATURE. Output EACH one individually.
-2. NEVER merge, group, or combine features. "Client Chart – Main" and "Client Chart – Clinical Tab" are TWO features.
-3. NEVER include sizing labels as features (XXS, SMALL, MEDIUM, LARGE, XL, XXL, XXXL, T-Shirt sizing, etc.)
-4. NEVER include metadata: sprint names (SP1, SP2), team names, dates, status labels, column headers, totals, IDs.
-5. Items like "Pilot", "Hypercare", "UAT", "Go-Live" are PROJECT PHASES: include them with description "Project phase — not a development feature."
-6. For each feature: NAME = exact name from the document (preserve CONBLD/JIRA IDs). DESCRIPTION = 1-2 sentences about what needs to be built.
-7. If metadata columns provide sizing/estimation info, include it in the description (e.g., "Estimated as LARGE (5 days)").
+STEP 1 — UNDERSTAND THE DOCUMENT TYPE:
+- If structured data (CSV/XLSX with "FEATURE N:" lines): Extract EVERY numbered feature individually. NEVER merge.
+- If FSD/Requirements doc (with "FEATURE/MODULE:" lines): Each module = 1 feature. Use DESC/Overview as description.
+- If SOW/RFP/proposal: Each deliverable or requirement = 1 feature.
+- If meeting notes/backlog: Each action item or feature request = 1 feature.
+
+STEP 2 — WHAT IS A FEATURE (include):
+- Functional modules (Login, Dashboard, Reports, User Management)
+- UI screens, pages, tabs
+- Integrations (API, SSO, payment gateways)
+- Workflows, processes, automation
+- Data management, CRUD operations
+- Admin/configuration capabilities
+
+STEP 3 — WHAT IS NOT A FEATURE (exclude):
+- T-shirt sizing (XXS, S, M, L, XL, XXL, XXXL)
+- Sprint names (SP1, Sprint 2), team names, dates, IDs
+- Column headers, totals, metadata rows
+- Document boilerplate (TOC, revision history, approvers)
+- Sub-section labels alone ("Overview", "Preconditions", "Process Flow")
+
+STEP 4 — OUTPUT:
+- NAME: Feature/module name, concise (3-12 words)
+- DESCRIPTION: 2-3 sentences about what needs to be built
 
 Return STRICT JSON — no markdown, no backticks:
-{{"features": [{{"name": "Feature Name Here", "description": "What this involves..."}}], "extraction_summary": "Extracted N features from [doc type]."}}"""
+{{"features": [{{"name": "Feature Name", "description": "What needs to be built..."}}], "extraction_summary": "Extracted N features from [doc type]. Covers [domain]."}}"""
 
     try:
         raw = generate_ai_response(prompt, temperature=0.1, timeout=90)
         if raw:
             cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
             result = json.loads(cleaned)
-            if feat_count > 3 and result.get('features'):
-                result['extraction_summary'] = (result.get('extraction_summary', '') +
-                    f" (Pre-parser found {feat_count} items, AI returned {len(result['features'])} features)")
+            actual = len(result.get('features', []))
+            src_info = f"structured={feat_count}" if is_structured else f"modules={module_count}" if is_fsd else "unstructured"
+            result['extraction_summary'] = (result.get('extraction_summary', '') +
+                f" ({src_info} → AI extracted {actual} features)")
             return result
         return {"error": "AI returned empty response"}
     except Exception as e:
@@ -1599,6 +1671,18 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
 
     num_features = len(req.features)
     start_date = req.start_date or datetime.now().strftime('%Y-%m-%d')
+
+    # ── Normalize: convert {name, description} dicts to enriched strings ──
+    normalized = []
+    for f in req.features:
+        if isinstance(f, dict):
+            name = f.get('name', '').strip()
+            desc = f.get('description', '').strip()
+            normalized.append(f"{name} — {desc}" if desc else name)
+        else:
+            normalized.append(str(f).strip())
+    req.features = [f for f in normalized if f]
+    num_features = len(req.features)
 
     print(f"\n{'='*60}", flush=True)
     print(f"🗺️  Feature Roadmap: {num_features} features | Target: {target_months}m", flush=True)

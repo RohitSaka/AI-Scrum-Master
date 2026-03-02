@@ -712,18 +712,21 @@
     const [downloadingXLSX, setDownloadingXLSX] = useState(false);
     const [ganttScrollLeft, setGanttScrollLeft] = useState(0);
 
-    // <-- NEW: Progress Bar Simulation (7 minutes = 420 seconds to reach 95%)
+    // <-- Dynamic Progress Bar — scales with feature count
+    const featureCount = features.filter(f => f.name?.trim()).length || featuresText.split('\n').filter(l => l.trim()).length || 1;
+    const estimatedSeconds = Math.max(60, Math.min(900, featureCount <= 20 ? 120 : featureCount <= 50 ? 300 : featureCount <= 100 ? 420 : 600 + (featureCount - 100) * 3));
+    const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
     React.useEffect(() => {
         let interval;
         if (loading) {
             interval = setInterval(() => {
-                setProgress(p => (p >= 95 ? 95 : p + (95 / 420)));
+                setProgress(p => (p >= 95 ? 95 : p + (95 / estimatedSeconds)));
             }, 1000);
         } else {
             setProgress(0);
         }
         return () => clearInterval(interval);
-    }, [loading]);
+    }, [loading, estimatedSeconds]);
 
     const TECH_STACKS = [
         'React + Node.js + PostgreSQL',
@@ -891,7 +894,7 @@
                         <p className="text-text-muted text-center max-w-md mb-8 leading-relaxed">
                             Our AI is analyzing {features.filter(f => f.name?.trim()).length || featuresText.split('\n').filter(l => l.trim()).length} features, calculating capacity, and mapping sprint phases.
                             <br/><br/>
-                            <span className="font-bold text-warning">This enterprise batch process takes ~7-9 minutes. Please do not close this tab.</span>
+                            <span className="font-bold text-warning">Enterprise AI analysis — estimated ~{estimatedMinutes} {estimatedMinutes === 1 ? 'minute' : 'minutes'} for {featureCount} features. Please do not close this tab.</span>
                         </p>
                         
                         {/* Live Progress Bar */}
