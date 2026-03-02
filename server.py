@@ -284,7 +284,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
 
     for m in models_to_try:
         try:
-            gen_config = {"temperature": temperature}
+            gen_config = {"temperature": temperature, "maxOutputTokens": 8192}
             if json_mode: gen_config["responseMimeType"] = "application/json"
             payload = {"contents": contents, "generationConfig": gen_config}
             r = requests.post(
@@ -1578,10 +1578,24 @@ Return STRICT JSON (no markdown):
 
 IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter must have a DIFFERENT point value where reasonable."""
         try:
-            raw = generate_ai_response(prompt, temperature=0.4, timeout=60)
+            raw = generate_ai_response(prompt, temperature=0.4, timeout=90)
             if raw:
                 cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
-                poker_result = json.loads(cleaned)
+                # Repair truncated JSON — close any open braces/brackets
+                try:
+                    poker_result = json.loads(cleaned)
+                except json.JSONDecodeError:
+                    # Try to repair: count open/close braces
+                    opens = cleaned.count('{') - cleaned.count('}')
+                    open_b = cleaned.count('[') - cleaned.count(']')
+                    repaired = cleaned.rstrip(',') + (']' * max(0, open_b)) + ('}' * max(0, opens))
+                    try:
+                        poker_result = json.loads(repaired)
+                        print(f"[POKER] Repaired truncated JSON for {story.get('key')}", flush=True)
+                    except:
+                        # Last resort: extract what we can
+                        poker_result = {"votes": [], "influencers": [], "super_agent": {"final_points": 3, "rationale": "JSON was truncated"}}
+                        print(f"[POKER] Fallback for {story.get('key')} — response truncated at {len(cleaned)} chars", flush=True)
                 poker_result["story_key"] = story.get("key")
                 poker_result["story_summary"] = story.get("summary")
                 poker_result["current_points"] = story.get("current_points", 0)
