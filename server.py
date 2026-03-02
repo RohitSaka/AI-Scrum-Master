@@ -280,7 +280,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     if model:
         models_to_try = [model, "gemini-2.5-flash"]
     else:
-        models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+        models_to_try = ["gemini-2.5-pro", "gemini-2.5-flash"]
 
     for m in models_to_try:
         try:
@@ -1284,7 +1284,7 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
         try:
             zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
             ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-            lines = []
+            lines_out = []
             current_module = None
             module_desc = {}
             if 'word/document.xml' in zf.namelist():
@@ -1297,7 +1297,7 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
                     if pPr is not None:
                         pStyle = pPr.find('w:pStyle', ns)
                         if pStyle is not None:
-                            style_val = pStyle.get(f'{{{ns["w"]}}}val', '')
+                            style_val = pStyle.get('{' + ns['w'] + '}val', '')
                     texts = [t.text for t in para.findall('.//w:t', ns) if t.text]
                     t = ''.join(texts).strip()
                     if not t or len(t) < 3: continue
@@ -1309,21 +1309,21 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
                     if is_h1:
                         current_module = t
                         module_desc[current_module] = ''
-                        lines.append(f"\nFEATURE/MODULE: {t}")
+                        lines_out.append(f"\nFEATURE/MODULE: {t}")
                     elif is_h3 or (is_any_h and not is_h1):
-                        lines.append(f"  SECTION: {t}")
+                        lines_out.append(f"  SECTION: {t}")
                     elif is_mod and ('module' in t.lower() or 'management' in t.lower() or t.endswith('Module') or t.endswith('System')):
                         current_module = t
                         module_desc[current_module] = ''
-                        lines.append(f"\nFEATURE/MODULE: {t}")
+                        lines_out.append(f"\nFEATURE/MODULE: {t}")
                     elif current_module:
                         if not module_desc.get(current_module) and len(t) > 20:
                             module_desc[current_module] = t[:300]
-                            lines.append(f"  DESC: {t[:300]}")
+                            lines_out.append(f"  DESC: {t[:300]}")
                         elif len(t) > 15:
-                            lines.append(f"  {t[:200]}")
+                            lines_out.append(f"  {t[:200]}")
                     else:
-                        lines.append(t[:200])
+                        lines_out.append(t[:200])
             # Phase 2: Tables
             if 'word/document.xml' in zf.namelist():
                 tree2 = ET.parse(zf.open('word/document.xml'))
@@ -1336,14 +1336,15 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
                             if ct: cells.append(ct)
                         if cells and len(''.join(cells)) > 5: tlines.append(" | ".join(cells))
                     if tlines:
-                        lines.append(f"\n[Table {ti+1}]")
-                        lines.extend(tlines[:20])
+                        lines_out.append(f"\n[Table {ti+1}]")
+                        lines_out.extend(tlines[:20])
             zf.close()
-            print(f"[PARSE-DOCX] Zero-dep: {len(lines)} lines", flush=True)
-            return "\n".join(lines)[:20000]
+            print(f"[PARSE-DOCX] Zero-dep: {len(lines_out)} lines", flush=True)
+            return "\n".join(lines_out)[:20000]
         except Exception as e: return f"[DOCX parse error: {e}]"
 
     if file_type in ('pptx', 'ppt'):
+        # Zero-dependency PPTX parser — PPTX is a ZIP with ppt/slides/slideN.xml
         import zipfile
         import xml.etree.ElementTree as ET
         try:
@@ -1351,16 +1352,17 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
             ans = 'http://schemas.openxmlformats.org/drawingml/2006/main'
             slide_files = sorted([n for n in zf.namelist() if n.startswith('ppt/slides/slide') and n.endswith('.xml')],
                 key=lambda x: int(''.join(filter(str.isdigit, x.split('/')[-1])) or '0'))
-            lines = []
+            lines_out = []
             for sn, sf in enumerate(slide_files[:50], 1):
                 tree = ET.parse(zf.open(sf))
                 texts = [t.text for t in tree.getroot().findall(f'.//{{{ans}}}t') if t.text and t.text.strip()]
                 if texts:
                     combined = ' | '.join([t.strip()[:200] for t in texts if t.strip()])
-                    lines.append(f'[Slide {sn}] {combined}')
+                    lines_out.append(f"[Slide {sn}] {combined}")
             zf.close()
-            return chr(10).join(lines)[:20000]
-        except Exception as e: return f'[PPTX parse error: {e}]'
+            print(f"[PARSE-PPTX] Zero-dep: {len(lines_out)} slides", flush=True)
+            return "\n".join(lines_out)[:20000]
+        except Exception as e: return f"[PPTX parse error: {e}]"
 
     if file_type == 'pdf':
         try:
@@ -1387,8 +1389,8 @@ def extract_features_from_file(payload: dict):
 
     if content and len(content) > 100:
         try: extracted_text = _extract_text_from_file(content, file_type)
-        except: extracted_text = base64.b64decode(content).decode('utf-8', errors='ignore')[:12000]
-    else: extracted_text = content[:12000]
+        except: extracted_text = base64.b64decode(content).decode('utf-8', errors='ignore')[:20000]
+    else: extracted_text = content[:20000]
     if not extracted_text or len(extracted_text.strip()) < 10:
         return {"error": "Could not extract readable text from the uploaded file."}
 
@@ -1443,7 +1445,7 @@ Return STRICT JSON — no markdown, no backticks:
 {{"features": [{{"name": "Feature Name", "description": "What needs to be built..."}}], "extraction_summary": "Extracted N features from [doc type]. Covers [domain]."}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.1, timeout=180, model="gemini-2.5-flash")
+        raw = generate_ai_response(prompt, temperature=0.1, timeout=180)
         if raw:
             cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
             result = json.loads(cleaned)
@@ -1526,38 +1528,57 @@ def run_planning_poker(project_key: str, payload: dict, creds: dict = Depends(ge
     if not stories: return {"error": "No stories selected"}
     sp_field = get_story_point_field(creds)
     historical = _fetch_historical_data(project_key, creds, sp_field)
-    history_block = "No historical data." if not historical else "COMPLETED STORIES:\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) → {h['points']} pts" for h in historical])
+    history_block = "No historical data." if not historical else "COMPLETED STORIES:\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) → {h['points']} pts" for h in historical[:20]])
     voting = [a for a in POKER_AGENTS if a["votes"]]
     nonvoting = [a for a in POKER_AGENTS if not a["votes"]]
     results = []
     for story in stories:
-        story_ctx = f"STORY: {story.get('key')} — {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:800]}"
+        story_ctx = f"STORY: {story.get('key')} — {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:600]}"
         voter_block = "\n".join([f"VOTER {a['id']}: {a['behavior']}" for a in voting])
-        prompt = f"""Simulate Planning Poker with 9 team members. FIBONACCI SCALE ONLY: 1,2,3,5,8,13,21
+        prompt = f"""You are running a Planning Poker session. Estimate this story using FIBONACCI SCALE: 1, 2, 3, 5, 8, 13, 21.
 
 {story_ctx}
 
 {history_block}
 
-VOTERS: {voter_block}
-NON-VOTERS: {' | '.join([f"{a['id']}: {a['behavior']}" for a in nonvoting])}
+TEAM VOTERS (each must estimate INDEPENDENTLY based on their role):
+{voter_block}
 
-AI-ERA: Standard CRUD/boilerplate → 30-50% lower. Architecture/integration/legacy unchanged.
+NON-VOTING OBSERVERS:
+{' | '.join([f"{a['id']}: {a['behavior']}" for a in nonvoting])}
 
-CRITICAL SUPER AGENT RULES:
-1. PERT = (Optimistic + 4*MostLikely + Pessimistic) / 6 — round to nearest Fibonacci
-2. 3-Point = (Optimistic + MostLikely + Pessimistic) / 3 — round to nearest Fibonacci
-3. Historical = find the CLOSEST matching completed story from history, use its points
-4. Analogous = find a SIMILAR type of work pattern, estimate based on that
-5. final_points = Weighted decision: PERT (40%), 3-Point (20%), Historical (25%), Analogous (15%)
-6. final_points MUST be a Fibonacci number. It must NOT always be 3 — it should reflect actual complexity.
-7. A simple CRUD story might be 1-2. A complex integration might be 8-13. Think carefully.
-8. Each voter MUST give DIFFERENT points reflecting their role perspective. The Architect sees risk (higher). Junior Dev sees simplicity (lower). Senior QA sees test complexity.
+═══ ESTIMATION PHILOSOPHY ═══
 
-Return STRICT JSON:
-{{"votes":[{{"agent_id":"architect","points":"FIBONACCI","confidence":"high/medium/low","reasoning":"2-3 sentences","risks":"specific risks"}},{{"agent_id":"team_lead","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"...","suggestion":"..."}},{{"agent_id":"scrum_master","observation":"...","historical_comparison":"...","recommendation":"..."}}],"super_agent":{{"pert_estimate":{{"optimistic":"FIBONACCI","most_likely":"FIBONACCI","pessimistic":"FIBONACCI","pert_fibonacci":"FIBONACCI from PERT formula"}},"three_point_estimate":{{"raw":"decimal","fibonacci":"nearest FIBONACCI"}},"historical_estimate":{{"matched_story":"KEY or null","fibonacci":"FIBONACCI"}},"analogous_estimate":{{"similar_story":"description of similar work","fibonacci":"FIBONACCI"}},"final_points":"WEIGHTED FIBONACCI - NOT always 3","confidence":"high/medium/low","method_used":"Which methods dominated and why","rationale":"3-4 sentences explaining the weighted decision","key_assumptions":["assumption1","assumption2"]}}}}"""
+THINK ABOUT WHAT THIS STORY ACTUALLY REQUIRES:
+- Is it a simple field change or config update? → 1-2 points
+- Is it a standard CRUD screen with basic validation? → 2-3 points
+- Does it involve moderate business logic, multiple screens, or API integration? → 3-5 points
+- Does it require complex architecture, data migration, or cross-system integration? → 5-8 points
+- Is it a massive epic-level effort with unknowns and multiple dependencies? → 8-13+ points
+
+AI-ERA ESTIMATION — THE CHIEF ESTIMATION OFFICER MUST ANALYZE:
+- "With AI Assistance" (Copilot, code generation, test generation): How many dev-days would this realistically take?
+- "Without AI Assistance" (traditional coding): How many dev-days?
+- The RATIO between these reflects how much AI helps for THIS specific story type
+- Simple CRUD/boilerplate → AI saves 40-60%. Complex architecture/legacy → AI saves only 10-20%.
+
+CRITICAL RULES:
+1. Each voter estimates INDEPENDENTLY. The Architect sees risk (tends higher). Junior Dev sees simplicity (tends lower). Senior QA sees test complexity.
+2. Votes should VARY — a spread of 2-3 Fibonacci values across voters is NORMAL. If all voters give the same number, you are doing it wrong.
+3. The Chief Estimation Officer computes:
+   - PERT = (Optimistic + 4×MostLikely + Pessimistic) / 6
+   - 3-Point = (Optimistic + MostLikely + Pessimistic) / 3
+   - Historical = closest matching completed story
+   - Analogous = similar work pattern
+   - THEN makes a WEIGHTED JUDGMENT (not just averaging) considering the story's actual complexity
+4. final_points should reflect GENUINE complexity. Do NOT default to any single number.
+
+Return STRICT JSON (no markdown):
+{{"votes":[{{"agent_id":"architect","points":0,"confidence":"high/medium/low","reasoning":"2-3 sentences about architectural concerns","risks":"specific risks"}},{{"agent_id":"team_lead","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"question the estimate","suggestion":"actionable suggestion"}},{{"agent_id":"scrum_master","observation":"spread analysis","historical_comparison":"compare to past stories","recommendation":"what to do"}}],"super_agent":{{"pert_estimate":{{"optimistic":"lowest reasonable Fibonacci","most_likely":"most probable Fibonacci","pessimistic":"highest reasonable Fibonacci","pert_fibonacci":"PERT result as Fibonacci"}},"three_point_estimate":{{"raw":"decimal average","fibonacci":"nearest Fibonacci"}},"historical_estimate":{{"matched_story":"KEY from history or null","fibonacci":"that story points or estimate"}},"analogous_estimate":{{"similar_story":"description of similar work","fibonacci":"estimated Fibonacci"}},"ai_era_estimate":{{"with_ai_days":"realistic dev-days using AI tools","without_ai_days":"realistic dev-days without AI","ai_savings_pct":"percentage saved","recommendation":"how AI changes the estimate"}},"final_points":"YOUR WEIGHTED JUDGMENT as Fibonacci","confidence":"high/medium/low","method_used":"which methods and weights you applied","rationale":"3-4 sentences explaining your reasoning and the key factors","key_assumptions":["assumption1","assumption2"]}}}}
+
+IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter must have a DIFFERENT point value where reasonable."""
         try:
-            raw = generate_ai_response(prompt, temperature=0.35, timeout=90)
+            raw = generate_ai_response(prompt, temperature=0.4, timeout=60)
             if raw:
                 cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
                 poker_result = json.loads(cleaned)
@@ -1567,6 +1588,7 @@ Return STRICT JSON:
                 results.append(poker_result)
             else: results.append({"story_key": story.get("key"), "error": "AI returned empty"})
         except Exception as e:
+            print(f"[POKER] Error for {story.get('key')}: {e}", flush=True)
             results.append({"story_key": story.get("key"), "error": str(e)})
     return {"results": results}
 
@@ -1650,7 +1672,7 @@ Return STRICT JSON:
 {{"pi_name":"{pi_name}","total_capacity":{total_capacity},"total_committed":0,"total_spillover":0,"sprints":[{{"name":"Sprint 1","capacity":{velocity_per_sprint},"committed_points":0,"utilization_pct":0,"stories":[{{"key":"X-1","summary":"...","points":5,"type":"Story","priority":"High","team":"{teams[0]}","dependencies":[]}}]}}],"spillover":[],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["..."],"sequencing_rationale":"...","team_load":{json.dumps({t: {f"Sprint {i+1}": 0 for i in range(num_sprints)} for t in teams})}}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=180, model="gemini-2.5-flash")
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=180)
         if raw:
             cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
             return json.loads(cleaned)
@@ -1692,28 +1714,26 @@ def manage_pi_objectives(project_key: str, payload: dict, creds: dict = Depends(
         except: pass
         return {"objectives": []}
 
+
 # ═══════════════════════════════════════════════════════════
 #  WSJF — Weighted Shortest Job First Prioritization
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/pi_planning/{project_key}/wsjf")
 def calculate_wsjf(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
-    """AI-powered WSJF scoring for backlog prioritization.
-    WSJF = Cost of Delay / Job Size
-    Cost of Delay = Business Value + Time Criticality + Risk Reduction
-    """
+    """AI-powered WSJF scoring: WSJF = Cost of Delay / Job Size"""
     stories = payload.get("stories", [])
     if not stories:
         return {"error": "No stories provided"}
 
-    stories_text = "\n".join([f"- {s.get('key','?')}: \"{s.get('summary','')}\" | {s.get('priority','Med')} | {s.get('points',0)}pts | {s.get('description','')[:150]}" for s in stories[:80]])
+    stories_text = "\n".join([f"- {s.get('key','?')}: \"{s.get('summary','')}\" | {s.get('priority','Med')} | {s.get('points',0)}pts | {s.get('description','')[:100]}" for s in stories[:80]])
 
     prompt = f"""You are a SAFe WSJF Expert. Score each story using Weighted Shortest Job First.
 
 WSJF = Cost of Delay ÷ Job Size
 Cost of Delay = User/Business Value + Time Criticality + Risk Reduction/Opportunity Enablement
 
-SCORING SCALE: Use Modified Fibonacci: 1, 2, 3, 5, 8, 13, 20
+SCORING SCALE: Modified Fibonacci: 1, 2, 3, 5, 8, 13, 20
 - 1 = Minimal   - 2 = Low   - 3 = Moderate   - 5 = Significant
 - 8 = High   - 13 = Very High   - 20 = Extreme
 
@@ -1724,17 +1744,15 @@ For EACH story, assess:
 1. user_business_value (1-20): Revenue impact, user satisfaction, strategic alignment
 2. time_criticality (1-20): Deadline pressure, market window, cost of waiting
 3. risk_reduction (1-20): Enables other work, reduces technical debt, mitigates risk
-4. job_size (1-20): Implementation effort relative to team capacity (HIGHER = BIGGER job)
+4. job_size (1-20): Implementation effort (HIGHER = BIGGER job)
 5. cost_of_delay = user_business_value + time_criticality + risk_reduction
 6. wsjf_score = cost_of_delay / job_size (round to 1 decimal)
 
-CRITICAL: Score each dimension INDEPENDENTLY. High priority stories should generally score higher on value/criticality. Consider the story description and context — not just the title.
-
 Return STRICT JSON:
-{{"stories": [{{"key": "X-1", "summary": "...", "user_business_value": 8, "time_criticality": 5, "risk_reduction": 3, "job_size": 3, "cost_of_delay": 16, "wsjf_score": 5.3, "rationale": "Brief why"}}], "priority_order": ["X-1", "X-2"], "analysis": "Summary of prioritization insights"}}"""
+{{"stories": [{{"key": "X-1", "summary": "...", "user_business_value": 0, "time_criticality": 0, "risk_reduction": 0, "job_size": 0, "cost_of_delay": 0, "wsjf_score": 0.0, "rationale": "Brief why"}}], "priority_order": ["X-1", "X-2"], "analysis": "Summary of prioritization insights"}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=120, model="gemini-2.5-flash")
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=120)
         if raw:
             cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
             return json.loads(cleaned)
