@@ -2256,9 +2256,40 @@ function RoadmapView({ project, setIsLoading }) {
         if (!selectedStories.length) return; setGenerating(true); setError(null); setPiPlan(null);
         try {
             const res = await secureFetch(`/pi_planning/${project}/generate`, { method: 'POST', body: JSON.stringify({ stories: selectedStories, velocity_per_sprint: velPerSprint, num_sprints: numSprints, pi_name: piName, teams }) });
-            const d = await res?.json();
-            if (d?.sprints) setPiPlan(d); else setError(d?.error || 'Failed');
-        } catch { setError('Failed'); }
+            if (!res) { setError('Request failed — server may be restarting. Try again.'); setGenerating(false); return; }
+            const d = await res.json();
+            if (d?.sprints && Array.isArray(d.sprints)) {
+                // Sanitize: ensure every sprint has valid stories array and required fields
+                const safe = {
+                    ...d,
+                    pi_name: d.pi_name || piName,
+                    total_capacity: d.total_capacity || (velPerSprint * numSprints),
+                    total_committed: d.total_committed || 0,
+                    total_spillover: d.total_spillover || 0,
+                    sprints: d.sprints.map((sp, i) => ({
+                        name: sp?.name || `Sprint ${i+1}`,
+                        capacity: sp?.capacity || velPerSprint,
+                        committed_points: sp?.committed_points || (sp?.stories || []).reduce((a, s) => a + (Number(s?.points) || 0), 0),
+                        utilization_pct: sp?.utilization_pct || 0,
+                        stories: Array.isArray(sp?.stories) ? sp.stories.map(s => ({
+                            key: s?.key || '?', summary: s?.summary || '', points: Number(s?.points) || 0,
+                            type: s?.type || 'Story', priority: s?.priority || 'Medium',
+                            team: s?.team || teams[0] || 'Core Team', dependencies: s?.dependencies || []
+                        })) : []
+                    })),
+                    spillover: Array.isArray(d.spillover) ? d.spillover : [],
+                    dependencies: Array.isArray(d.dependencies) ? d.dependencies : [],
+                    risks: Array.isArray(d.risks) ? d.risks : [],
+                    sequencing_rationale: d.sequencing_rationale || '',
+                    team_load: d.team_load || {}
+                };
+                // Recalculate totals
+                safe.total_committed = safe.sprints.reduce((a, sp) => a + sp.committed_points, 0);
+                safe.total_spillover = safe.spillover.reduce((a, s) => a + (Number(s?.points) || 0), 0);
+                safe.sprints.forEach(sp => { if (!sp.utilization_pct) sp.utilization_pct = Math.round((sp.committed_points / velPerSprint) * 100); });
+                setPiPlan(safe);
+            } else setError(d?.error || 'AI returned invalid plan — try again.');
+        } catch (e) { console.error('[PI Plan]', e); setError('Generation failed — server may have restarted. Try again.'); }
         setGenerating(false);
     };
 
