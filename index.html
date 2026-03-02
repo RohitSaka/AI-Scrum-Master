@@ -852,16 +852,57 @@
         const file = e.target.files[0]; if (!file) return;
         setExtracting(true); setError(null); setExtractionSummary(''); setUploadedFileName(file.name);
         const ext = file.name.split('.').pop().toLowerCase();
+        console.log('[SmartUpload] File:', file.name, 'Type:', ext, 'Size:', file.size, 'bytes');
         const reader = new FileReader();
+        reader.onerror = () => {
+            console.error('[SmartUpload] FileReader error:', reader.error);
+            setError('Failed to read file. Please try again.');
+            setExtracting(false);
+            e.target.value = '';
+        };
         reader.onload = async (evt) => {
             try {
-                const content = ['csv', 'txt'].includes(ext) ? btoa(unescape(encodeURIComponent(evt.target.result))) : evt.target.result.split(',')[1];
+                const raw = evt.target.result;
+                let content;
+                if (['csv', 'txt'].includes(ext)) {
+                    content = btoa(unescape(encodeURIComponent(raw)));
+                } else {
+                    const commaIdx = raw.indexOf(',');
+                    content = commaIdx !== -1 ? raw.substring(commaIdx + 1) : raw;
+                }
+                console.log('[SmartUpload] Base64 content length:', content.length);
+                if (!content || content.length < 50) {
+                    setError('File appears to be empty or too small.');
+                    setExtracting(false);
+                    e.target.value = '';
+                    return;
+                }
                 const res = await secureFetch('/feature_roadmap/extract_features', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, file_type: ext, filename: file.name }) });
-                const data = await res?.json();
-                if (data?.features?.length > 0) { setFeatures(data.features.map(f => ({ name: f.name || '', description: f.description || '' }))); setExtractionSummary(data.extraction_summary || `Extracted ${data.features.length} features`); setInputMode('manual'); }
-                else { setError(data?.error || 'No features extracted from file.'); }
-            } catch { setError('File extraction failed.'); }
+                if (!res) {
+                    console.error('[SmartUpload] secureFetch returned null — auth or network issue');
+                    setError('Request failed. Please check your connection and try again.');
+                    setExtracting(false);
+                    e.target.value = '';
+                    return;
+                }
+                console.log('[SmartUpload] Response status:', res.status);
+                const data = await res.json();
+                console.log('[SmartUpload] Response:', JSON.stringify(data).substring(0, 500));
+                if (data?.features?.length > 0) {
+                    setFeatures(data.features.map(f => ({ name: f.name || '', description: f.description || '' })));
+                    setExtractionSummary(data.extraction_summary || `Extracted ${data.features.length} features`);
+                    setInputMode('manual');
+                } else {
+                    const errMsg = data?.error || 'No features could be extracted. Try a different file or use Manual Entry.';
+                    console.warn('[SmartUpload] No features:', errMsg);
+                    setError(errMsg);
+                }
+            } catch (err) {
+                console.error('[SmartUpload] Exception:', err);
+                setError(`File extraction failed: ${err.message || 'Unknown error'}`);
+            }
             setExtracting(false);
+            e.target.value = '';
         };
         ['csv', 'txt'].includes(ext) ? reader.readAsText(file) : reader.readAsDataURL(file);
     };

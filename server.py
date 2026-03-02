@@ -267,7 +267,7 @@ def create_adf_doc(text_content, ac_list=None):
     if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None):
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=60, model=None, file_data=None):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -277,10 +277,18 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
             contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
         except Exception as e: print(f"Image Parse Error: {e}", flush=True)
 
+    # Native document support — Gemini reads PDF, DOCX, PPTX, XLSX directly
+    if file_data and isinstance(file_data, dict):
+        mime_type = file_data.get("mime_type", "")
+        data_b64 = file_data.get("data", "")
+        if mime_type and data_b64:
+            contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": data_b64}})
+            print(f"[GEMINI] Attached native file: {mime_type}, b64_len={len(data_b64)}", flush=True)
+
     if model:
-        models_to_try = [model, "gemini-2.5-flash"]
+        models_to_try = [model, "gemini-2.5-pro"]
     else:
-        models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
+        models_to_try = ["gemini-2.5-pro", "gemini-2.5-flash"]
 
     for m in models_to_try:
         try:
@@ -310,7 +318,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
             continue
     return None
 
-def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20, model="gpt-4o"):
+def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=40, model="gpt-4o"):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
     sys_msg = "You are an elite Enterprise Strategy Consultant. Return strictly valid JSON." if json_mode else "You are an Expert Agile Coach assisting a Scrum Master."
@@ -326,15 +334,16 @@ def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None):
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None, file_data=None):
     """
     Routes AI calls. Default: Gemini. 
     force_openai=True only for endpoints that specifically need OpenAI (e.g. image analysis).
     model param: pass specific Gemini model like "gemini-2.5-pro" for premium tasks.
+    file_data: dict with {"mime_type": "...", "data": "base64..."} for native document reading (Gemini only).
     """
     if force_openai:
         return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout, model=model or "gpt-4o")
-    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout, model=model)
+    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout, model=model, file_data=file_data)
 
 # ================= APP ENDPOINTS =================
 @app.get("/")
@@ -1196,8 +1205,10 @@ def _is_noise_row(cell_text):
     return False
 
 def _extract_text_from_file(content_b64: str, file_type: str) -> str:
-    """Extract readable text with intelligent noise filtering."""
+    """Extract readable text with intelligent noise filtering. Used for XLSX/CSV/TXT directly, and as fallback for PDF/DOCX/PPTX."""
+    print(f"[PARSE] _extract_text_from_file called: type={file_type}, b64_len={len(content_b64)}", flush=True)
     raw_bytes = base64.b64decode(content_b64)
+    print(f"[PARSE] Decoded to {len(raw_bytes)} raw bytes", flush=True)
 
     if file_type in ('csv', 'txt', 'text'):
         text = raw_bytes.decode('utf-8', errors='ignore')
@@ -1280,7 +1291,9 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
     if file_type in ('docx', 'doc'):
         try:
             from docx import Document
+            print(f"[PARSE-DOCX] python-docx imported, raw_bytes: {len(raw_bytes)}", flush=True)
             doc = Document(io.BytesIO(raw_bytes))
+            print(f"[PARSE-DOCX] Loaded: {len(doc.paragraphs)} paragraphs, {len(doc.tables)} tables", flush=True)
             lines = []
             current_module = None
             module_desc = {}
@@ -1289,25 +1302,27 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
                 t = para.text.strip()
                 if not t: continue
                 sn = para.style.name if para.style else ''
-                # H1/H2 headings = top-level features/modules
                 if 'Heading 1' in sn or 'Heading 2' in sn:
                     current_module = t
                     module_desc[current_module] = ''
                     lines.append(f"\nFEATURE/MODULE: {t}")
-                # Normal paragraphs that ARE module/section headers (e.g. "User Authentication Module")
-                elif ('Normal' in sn or 'No Spacing' in sn) and 10 < len(t) < 60 and t.endswith('Module') and not any(skip in t.lower() for skip in ['version', 'date:', 'author', 'revision', 'project title']):
-                    current_module = t
-                    module_desc[current_module] = ''
-                    lines.append(f"\nFEATURE/MODULE: {t}")
                 elif 'Heading 3' in sn:
-                    lines.append(f"  SECTION: {t}")
+                    if not current_module:
+                        current_module = t
+                        module_desc[current_module] = ''
+                        lines.append(f"\nFEATURE/MODULE: {t}")
+                    else:
+                        lines.append(f"  SECTION: {t}")
                 elif current_module:
                     if not module_desc.get(current_module) and len(t) > 20:
                         module_desc[current_module] = t[:300]
                         lines.append(f"  DESC: {t[:300]}")
                     elif len(t) > 15:
                         lines.append(f"  {t[:200]}")
-            # Phase 2: Table content for additional context
+                else:
+                    if len(t) > 10:
+                        lines.append(t[:200])
+            # Phase 2: Tables
             for ti, table in enumerate(doc.tables[:15]):
                 tlines = []
                 for ri, row in enumerate(table.rows[:30]):
@@ -1317,47 +1332,166 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
                 if tlines:
                     lines.append(f"\n[Table {ti+1}]")
                     lines.extend(tlines[:20])
-            return "\n".join(lines)[:20000]
-        except Exception as e: return f"[DOCX parse error: {e}]"
+            result = "\n".join(lines)[:20000]
+            # If heading-based extraction produced very little, use raw text
+            if len(result.strip()) < 50:
+                print(f"[PARSE-DOCX] Heading extraction too short, using raw text fallback", flush=True)
+                raw_lines = [p.text.strip() for p in doc.paragraphs[:1500] if p.text.strip() and len(p.text.strip()) > 5]
+                result = "\n".join(raw_lines)[:20000]
+            print(f"[PARSE-DOCX] Extracted {len(result)} chars", flush=True)
+            return result
+        except ImportError as ie:
+            print(f"[PARSE-DOCX] IMPORT ERROR: {ie}", flush=True)
+            return f"[DOCX parse error: {ie}]"
+        except Exception as e:
+            print(f"[PARSE-DOCX] ERROR: {e}", flush=True)
+            return f"[DOCX parse error: {e}]"
 
     if file_type in ('pptx', 'ppt'):
         try:
             from pptx import Presentation
+            print(f"[PARSE-PPTX] python-pptx imported, raw_bytes: {len(raw_bytes)}", flush=True)
             prs = Presentation(io.BytesIO(raw_bytes))
+            print(f"[PARSE-PPTX] Loaded: {len(prs.slides)} slides", flush=True)
             lines = []
             for sn, slide in enumerate(prs.slides[:50], 1):
                 st = [shape.text.strip() for shape in slide.shapes if hasattr(shape, "text") and shape.text.strip()]
                 if st: lines.append(f"[Slide {sn}] " + " | ".join(st))
-            return "\n".join(lines)[:20000]
-        except Exception as e: return f"[PPTX parse error: {e}]"
+            result = "\n".join(lines)[:20000]
+            print(f"[PARSE-PPTX] Extracted {len(result)} chars from {len(lines)} slides", flush=True)
+            return result
+        except ImportError as ie:
+            print(f"[PARSE-PPTX] IMPORT ERROR: {ie}", flush=True)
+            return f"[PPTX parse error: {ie}]"
+        except Exception as e:
+            print(f"[PARSE-PPTX] ERROR: {e}", flush=True)
+            return f"[PPTX parse error: {e}]"
 
     if file_type == 'pdf':
+        print(f"[PARSE-PDF] Attempting PDF parse, raw_bytes: {len(raw_bytes)}", flush=True)
         try:
             import fitz
             doc = fitz.open(stream=raw_bytes, filetype="pdf")
-            return "".join([page.get_text() + "\n" for page in doc[:30]])[:20000]
+            result = "".join([page.get_text() + "\n" for page in doc[:30]])[:20000]
+            print(f"[PARSE-PDF] fitz extracted {len(result)} chars from {len(doc)} pages", flush=True)
+            return result
         except ImportError:
+            print(f"[PARSE-PDF] fitz not installed, trying PyPDF2", flush=True)
             try:
                 from PyPDF2 import PdfReader
                 reader = PdfReader(io.BytesIO(raw_bytes))
-                return "".join([(page.extract_text() or "") + "\n" for page in reader.pages[:30]])[:20000]
-            except Exception as e2: return f"[PDF parse error: {e2}]"
-        except Exception as e: return f"[PDF parse error: {e}]"
+                result = "".join([(page.extract_text() or "") + "\n" for page in reader.pages[:30]])[:20000]
+                print(f"[PARSE-PDF] PyPDF2 extracted {len(result)} chars", flush=True)
+                return result
+            except Exception as e2:
+                print(f"[PARSE-PDF] PyPDF2 also failed: {e2}", flush=True)
+                return f"[PDF parse error: {e2}]"
+        except Exception as e:
+            print(f"[PARSE-PDF] fitz error: {e}", flush=True)
+            return f"[PDF parse error: {e}]"
 
     return raw_bytes.decode('utf-8', errors='ignore')[:20000]
 
 
 @app.post("/feature_roadmap/extract_features")
 def extract_features_from_file(payload: dict):
-    """AI-powered feature extraction from any file."""
+    """AI-powered feature extraction from any file.
+    
+    Architecture:
+    - PDF, DOCX, PPTX → Gemini reads the file natively (no Python parsing needed)
+    - XLSX, CSV, TXT   → Python pre-parses for structured column detection, then AI extracts
+    - Fallback          → If native read fails, falls back to Python parsing
+    """
     content = payload.get("content", "")
     file_type = payload.get("file_type", "txt").lower()
     filename = payload.get("filename", "unknown")
+    print(f"[EXTRACT] File: {filename}, Type: {file_type}, Content length: {len(content)}", flush=True)
 
-    if content and len(content) > 100:
-        try: extracted_text = _extract_text_from_file(content, file_type)
-        except: extracted_text = base64.b64decode(content).decode('utf-8', errors='ignore')[:20000]
-    else: extracted_text = content[:20000]
+    if not content or len(content) < 50:
+        return {"error": "File content is empty or too small."}
+
+    # ── MIME type map for native Gemini document reading ──
+    NATIVE_MIME_TYPES = {
+        'pdf':  'application/pdf',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'doc':  'application/msword',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'ppt':  'application/vnd.ms-powerpoint',
+    }
+
+    # ── STRATEGY A: Native AI Document Reading (PDF, DOCX, PPTX) ──
+    # Gemini reads the raw file directly — same as uploading to ChatGPT/Claude/Gemini UI
+    if file_type in NATIVE_MIME_TYPES:
+        mime_type = NATIVE_MIME_TYPES[file_type]
+        print(f"[EXTRACT] Strategy A: Native Gemini document reading ({mime_type})", flush=True)
+
+        native_prompt = f"""You are a world-class Business Analyst. I've attached a document: "{filename}" ({file_type.upper()}).
+
+READ THE ENTIRE DOCUMENT and extract every software feature, module, or deliverable.
+
+═══ WHAT IS A FEATURE (include) ═══
+- Functional modules (Login, Dashboard, Reports, User Management)
+- UI screens, pages, tabs, workflows
+- Integrations (API, SSO, payment gateways)
+- Data management, CRUD operations, automation
+- Admin/configuration capabilities
+- Each distinct deliverable or requirement
+
+═══ WHAT IS NOT A FEATURE (exclude) ═══
+- T-shirt sizing labels (S, M, L, XL, XXL)
+- Sprint names, team names, dates, IDs
+- Document boilerplate (TOC, revision history, approvers, version info)
+- Sub-section labels alone ("Overview", "Preconditions")
+
+═══ OUTPUT ═══
+- NAME: Concise feature name (3-12 words)
+- DESCRIPTION: 2-3 sentences about what needs to be built
+
+Return STRICT JSON — no markdown, no backticks:
+{{"features": [{{"name": "Feature Name", "description": "What needs to be built..."}}], "extraction_summary": "Extracted N features from [doc type]. Covers [domain]."}}"""
+
+        try:
+            raw = generate_ai_response(
+                native_prompt,
+                temperature=0.1,
+                timeout=120,
+                file_data={"mime_type": mime_type, "data": content}
+            )
+            if raw:
+                cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
+                result = json.loads(cleaned)
+                feat_count = len(result.get('features', []))
+                if feat_count > 0:
+                    result['extraction_summary'] = (
+                        result.get('extraction_summary', '') +
+                        f" (native AI document reading → {feat_count} features)"
+                    )
+                    print(f"[EXTRACT] Strategy A SUCCESS: {feat_count} features extracted natively", flush=True)
+                    return result
+                else:
+                    print(f"[EXTRACT] Strategy A returned 0 features, falling back to Strategy B", flush=True)
+            else:
+                print(f"[EXTRACT] Strategy A returned empty response, falling back to Strategy B", flush=True)
+        except Exception as e:
+            print(f"[EXTRACT] Strategy A failed: {e}, falling back to Strategy B", flush=True)
+
+    # ── STRATEGY B: Python Pre-Parse + AI Extract (XLSX, CSV, TXT, or fallback) ──
+    print(f"[EXTRACT] Strategy B: Python pre-parse + AI extract for {file_type}", flush=True)
+    try:
+        extracted_text = _extract_text_from_file(content, file_type)
+        print(f"[EXTRACT] Parsed text length: {len(extracted_text) if extracted_text else 0}, preview: {(extracted_text or '')[:200]}", flush=True)
+    except Exception as parse_ex:
+        print(f"[EXTRACT] Python parse exception: {parse_ex}", flush=True)
+        extracted_text = ""
+
+    # Detect parse-error strings from Python parsers
+    if extracted_text and re.match(r'^\[.+ parse error:', extracted_text, re.IGNORECASE):
+        print(f"[EXTRACT] Python parser returned error: {extracted_text}", flush=True)
+        # If this was a native-supported type that already failed Strategy A, give clear error
+        if file_type in NATIVE_MIME_TYPES:
+            return {"error": f"Both AI-native reading and Python parsing failed for this {file_type.upper()} file. The file may be corrupted or password-protected."}
+        return {"error": f"Failed to parse {file_type.upper()} file. Server detail: {extracted_text}"}
+
     if not extracted_text or len(extracted_text.strip()) < 10:
         return {"error": "Could not extract readable text from the uploaded file."}
 
@@ -1420,10 +1554,11 @@ Return STRICT JSON — no markdown, no backticks:
             src_info = f"structured={feat_count}" if is_structured else f"modules={module_count}" if is_fsd else "unstructured"
             result['extraction_summary'] = (result.get('extraction_summary', '') +
                 f" ({src_info} → AI extracted {actual} features)")
+            print(f"[EXTRACT] Strategy B SUCCESS: {actual} features extracted", flush=True)
             return result
         return {"error": "AI returned empty response"}
     except Exception as e:
-        print(f"Feature extraction error: {e}", flush=True)
+        print(f"[EXTRACT] Strategy B failed: {e}", flush=True)
         return {"error": f"Feature extraction failed: {str(e)}"}
 
 
