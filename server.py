@@ -267,7 +267,7 @@ def create_adf_doc(text_content, ac_list=None):
     if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None, file_data=None):
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -277,18 +277,10 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
             contents[0]["parts"].append({"inline_data": {"mime_type": mime_type, "data": encoded}})
         except Exception as e: print(f"Image Parse Error: {e}", flush=True)
 
-    # Native inline_data for PDF — Gemini reads the binary directly
-    if file_data and isinstance(file_data, dict):
-        fd_mime = file_data.get("mime_type", "")
-        fd_b64 = file_data.get("data", "")
-        if fd_mime and fd_b64:
-            contents[0]["parts"].append({"inline_data": {"mime_type": fd_mime, "data": fd_b64}})
-            print(f"[GEMINI] Attached inline file: {fd_mime}, b64_len={len(fd_b64)}", flush=True)
-
     if model:
-        models_to_try = [model, "gemini-2.5-pro"]
+        models_to_try = [model, "gemini-2.5-flash"]
     else:
-        models_to_try = ["gemini-2.5-pro", "gemini-2.5-flash"]
+        models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
     for m in models_to_try:
         try:
@@ -334,16 +326,15 @@ def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None, file_data=None):
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None):
     """
     Routes AI calls. Default: Gemini. 
     force_openai=True only for endpoints that specifically need OpenAI (e.g. image analysis).
     model param: pass specific Gemini model like "gemini-2.5-pro" for premium tasks.
-    file_data: dict {"mime_type": "...", "data": "base64..."} for native PDF reading via inline_data.
     """
     if force_openai:
         return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout, model=model or "gpt-4o")
-    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout, model=model, file_data=file_data)
+    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout, model=model)
 
 # ================= APP ENDPOINTS =================
 @app.get("/")
@@ -1205,10 +1196,8 @@ def _is_noise_row(cell_text):
     return False
 
 def _extract_text_from_file(content_b64: str, file_type: str) -> str:
-    """Extract readable text — zero-dep parsers for DOCX/PPTX, openpyxl for XLSX, stdlib for CSV/TXT."""
-    print(f"[PARSE] _extract_text_from_file: type={file_type}, b64_len={len(content_b64)}", flush=True)
+    """Extract readable text with intelligent noise filtering."""
     raw_bytes = base64.b64decode(content_b64)
-    print(f"[PARSE] Decoded to {len(raw_bytes)} raw bytes", flush=True)
 
     if file_type in ('csv', 'txt', 'text'):
         text = raw_bytes.decode('utf-8', errors='ignore')
@@ -1289,156 +1278,89 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
         except Exception as e: return f"[XLSX parse error: {e}]"
 
     if file_type in ('docx', 'doc'):
-        # ── Zero-dependency DOCX parser ──
-        # DOCX = ZIP archive containing word/document.xml (text in <w:t> tags)
-        # No pip packages needed — uses only Python stdlib zipfile + xml.etree
+        # Zero-dependency DOCX parser — DOCX is a ZIP with word/document.xml
         import zipfile
         import xml.etree.ElementTree as ET
         try:
-            print(f"[PARSE-DOCX] Zero-dep parser: raw_bytes={len(raw_bytes)}", flush=True)
             zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
-            namespaces = {
-                'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
-                'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-            }
-
-            # Phase 1: Extract paragraphs from word/document.xml
+            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
             lines = []
+            current_module = None
+            module_desc = {}
             if 'word/document.xml' in zf.namelist():
                 tree = ET.parse(zf.open('word/document.xml'))
-                root = tree.getroot()
-                body = root.find('.//w:body', namespaces)
-                if body is None:
-                    body = root
-
-                for para_elem in body.findall('.//w:p', namespaces):
-                    # Check paragraph style for headings
+                body = tree.getroot().find('.//w:body', ns)
+                if body is None: body = tree.getroot()
+                for para in body.findall('.//w:p', ns):
                     style_val = ''
-                    pPr = para_elem.find('w:pPr', namespaces)
+                    pPr = para.find('w:pPr', ns)
                     if pPr is not None:
-                        pStyle = pPr.find('w:pStyle', namespaces)
+                        pStyle = pPr.find('w:pStyle', ns)
                         if pStyle is not None:
-                            style_val = pStyle.get(f'{{{namespaces["w"]}}}val', '')
-
-                    # Collect all text runs in this paragraph
-                    texts = []
-                    for t_elem in para_elem.findall('.//w:t', namespaces):
-                        if t_elem.text:
-                            texts.append(t_elem.text)
-                    para_text = ''.join(texts).strip()
-                    if not para_text:
-                        continue
-
-                    # Classify by style
-                    style_lower = style_val.lower()
-                    if any(h in style_lower for h in ['heading1', 'heading2', 'title']):
-                        lines.append(f"\nFEATURE/MODULE: {para_text}")
-                    elif 'heading3' in style_lower:
-                        lines.append(f"  SECTION: {para_text}")
-                    elif 'heading' in style_lower:
-                        lines.append(f"  SECTION: {para_text}")
+                            style_val = pStyle.get(f'{{{ns["w"]}}}val', '')
+                    texts = [t.text for t in para.findall('.//w:t', ns) if t.text]
+                    t = ''.join(texts).strip()
+                    if not t or len(t) < 3: continue
+                    sl = style_val.lower()
+                    is_h1 = any(h in sl for h in ['heading1', 'heading2', 'title'])
+                    is_h3 = 'heading3' in sl
+                    is_any_h = 'heading' in sl
+                    is_mod = (10 < len(t) < 80 and not any(skip in t.lower() for skip in ['version', 'date:', 'author', 'revision', 'table of', 'document']))
+                    if is_h1:
+                        current_module = t
+                        module_desc[current_module] = ''
+                        lines.append(f"\nFEATURE/MODULE: {t}")
+                    elif is_h3 or (is_any_h and not is_h1):
+                        lines.append(f"  SECTION: {t}")
+                    elif is_mod and ('module' in t.lower() or 'management' in t.lower() or t.endswith('Module') or t.endswith('System')):
+                        current_module = t
+                        module_desc[current_module] = ''
+                        lines.append(f"\nFEATURE/MODULE: {t}")
+                    elif current_module:
+                        if not module_desc.get(current_module) and len(t) > 20:
+                            module_desc[current_module] = t[:300]
+                            lines.append(f"  DESC: {t[:300]}")
+                        elif len(t) > 15:
+                            lines.append(f"  {t[:200]}")
                     else:
-                        lines.append(para_text[:300])
-
-            # Phase 2: Extract table content
-            table_count = 0
-            for xml_name in zf.namelist():
-                if xml_name != 'word/document.xml':
-                    continue
-                tree = ET.parse(zf.open(xml_name))
-                root = tree.getroot()
-                for tbl in root.findall('.//w:tbl', namespaces):
-                    table_count += 1
-                    if table_count > 15:
-                        break
-                    tbl_lines = []
-                    for row in tbl.findall('.//w:tr', namespaces)[:30]:
+                        lines.append(t[:200])
+            # Phase 2: Tables
+            if 'word/document.xml' in zf.namelist():
+                tree2 = ET.parse(zf.open('word/document.xml'))
+                for ti, tbl in enumerate(tree2.getroot().findall('.//w:tbl', ns)[:15]):
+                    tlines = []
+                    for row in tbl.findall('.//w:tr', ns)[:30]:
                         cells = []
-                        for cell in row.findall('.//w:tc', namespaces):
-                            cell_texts = []
-                            for t_elem in cell.findall('.//w:t', namespaces):
-                                if t_elem.text:
-                                    cell_texts.append(t_elem.text)
-                            cell_text = ''.join(cell_texts).strip()[:80]
-                            if cell_text:
-                                cells.append(cell_text)
-                        if cells and len(''.join(cells)) > 5:
-                            tbl_lines.append(" | ".join(cells))
-                    if tbl_lines:
-                        lines.append(f"\n[Table {table_count}]")
-                        lines.extend(tbl_lines[:20])
-
-            result = "\n".join(lines)[:20000]
-            print(f"[PARSE-DOCX] Extracted {len(result)} chars, {len(lines)} lines", flush=True)
+                        for cell in row.findall('.//w:tc', ns):
+                            ct = ''.join([tt.text for tt in cell.findall('.//w:t', ns) if tt.text]).strip()[:80]
+                            if ct: cells.append(ct)
+                        if cells and len(''.join(cells)) > 5: tlines.append(" | ".join(cells))
+                    if tlines:
+                        lines.append(f"\n[Table {ti+1}]")
+                        lines.extend(tlines[:20])
             zf.close()
-            return result
-        except zipfile.BadZipFile:
-            print(f"[PARSE-DOCX] Not a valid ZIP/DOCX file", flush=True)
-            return "[DOCX parse error: File is not a valid DOCX (not a ZIP archive)]"
-        except Exception as e:
-            print(f"[PARSE-DOCX] Error: {e}", flush=True)
-            return f"[DOCX parse error: {e}]"
+            print(f"[PARSE-DOCX] Zero-dep: {len(lines)} lines", flush=True)
+            return "\n".join(lines)[:20000]
+        except Exception as e: return f"[DOCX parse error: {e}]"
 
     if file_type in ('pptx', 'ppt'):
-        # ── Zero-dependency PPTX parser ──
-        # PPTX = ZIP archive containing ppt/slides/slideN.xml (text in <a:t> tags)
         import zipfile
         import xml.etree.ElementTree as ET
         try:
-            print(f"[PARSE-PPTX] Zero-dep parser: raw_bytes={len(raw_bytes)}", flush=True)
             zf = zipfile.ZipFile(io.BytesIO(raw_bytes))
-            namespaces = {
-                'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
-                'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
-                'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-            }
-
-            # Find all slide XML files and sort by slide number
-            slide_files = sorted(
-                [n for n in zf.namelist() if n.startswith('ppt/slides/slide') and n.endswith('.xml')],
-                key=lambda x: int(''.join(filter(str.isdigit, x.split('/')[-1])) or '0')
-            )
-            print(f"[PARSE-PPTX] Found {len(slide_files)} slides", flush=True)
-
+            ans = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+            slide_files = sorted([n for n in zf.namelist() if n.startswith('ppt/slides/slide') and n.endswith('.xml')],
+                key=lambda x: int(''.join(filter(str.isdigit, x.split('/')[-1])) or '0'))
             lines = []
-            for sn, slide_path in enumerate(slide_files[:50], 1):
-                tree = ET.parse(zf.open(slide_path))
-                root = tree.getroot()
-                # Extract all text from <a:t> elements in each shape
-                shape_texts = []
-                for sp in root.findall('.//p:sp', namespaces) + root.findall('.//{http://schemas.openxmlformats.org/presentationml/2006/main}sp'):
-                    texts = []
-                    for t_elem in sp.findall('.//a:t', namespaces):
-                        if t_elem.text:
-                            texts.append(t_elem.text)
-                    if not texts:
-                        # Try without namespace prefix for compatibility
-                        for t_elem in sp.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}t'):
-                            if t_elem.text:
-                                texts.append(t_elem.text)
-                    shape_text = ''.join(texts).strip()
-                    if shape_text:
-                        shape_texts.append(shape_text[:200])
-
-                # Also get text from group shapes and other containers
-                if not shape_texts:
-                    for t_elem in root.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/main}t'):
-                        if t_elem.text and t_elem.text.strip():
-                            shape_texts.append(t_elem.text.strip()[:200])
-
-                if shape_texts:
-                    lines.append(f"[Slide {sn}] " + " | ".join(shape_texts))
-
-            result = "\n".join(lines)[:20000]
-            print(f"[PARSE-PPTX] Extracted {len(result)} chars from {len(lines)} slides", flush=True)
+            for sn, sf in enumerate(slide_files[:50], 1):
+                tree = ET.parse(zf.open(sf))
+                texts = [t.text for t in tree.getroot().findall(f'.//{{{ans}}}t') if t.text and t.text.strip()]
+                if texts:
+                    combined = ' | '.join([t.strip()[:200] for t in texts if t.strip()])
+                    lines.append(f'[Slide {sn}] {combined}')
             zf.close()
-            return result
-        except zipfile.BadZipFile:
-            print(f"[PARSE-PPTX] Not a valid ZIP/PPTX file", flush=True)
-            return "[PPTX parse error: File is not a valid PPTX (not a ZIP archive)]"
-        except Exception as e:
-            print(f"[PARSE-PPTX] Error: {e}", flush=True)
-            return f"[PPTX parse error: {e}]"
+            return chr(10).join(lines)[:20000]
+        except Exception as e: return f'[PPTX parse error: {e}]'
 
     if file_type == 'pdf':
         try:
@@ -1458,90 +1380,15 @@ def _extract_text_from_file(content_b64: str, file_type: str) -> str:
 
 @app.post("/feature_roadmap/extract_features")
 def extract_features_from_file(payload: dict):
-    """AI-powered feature extraction from any file.
-    
-    Architecture:
-    - PDF             → Gemini inline_data (native binary reading — proven working)
-    - DOCX, PPTX      → Zero-dep zipfile+XML parser → AI extracts features from text
-    - XLSX, CSV, TXT   → Python pre-parser with structured column detection → AI extracts
-    """
+    """AI-powered feature extraction from any file."""
     content = payload.get("content", "")
     file_type = payload.get("file_type", "txt").lower()
     filename = payload.get("filename", "unknown")
-    print(f"[EXTRACT] File: {filename}, Type: {file_type}, Content length: {len(content)}", flush=True)
 
-    if not content or len(content) < 50:
-        return {"error": "File content is empty or too small."}
-
-    def _parse_ai_result(raw, strategy_label):
-        if not raw:
-            return None
-        try:
-            cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
-            result = json.loads(cleaned)
-            n = len(result.get('features', []))
-            if n > 0:
-                result['extraction_summary'] = result.get('extraction_summary', '') + f" ({strategy_label} → {n} features)"
-                print(f"[EXTRACT] {strategy_label} SUCCESS: {n} features", flush=True)
-                return result
-            print(f"[EXTRACT] {strategy_label} returned 0 features", flush=True)
-        except Exception as e:
-            print(f"[EXTRACT] {strategy_label} JSON parse error: {e}", flush=True)
-        return None
-
-    native_prompt = f"""You are a world-class Business Analyst. I've attached a document: "{filename}" ({file_type.upper()}).
-
-READ THE ENTIRE DOCUMENT and extract every software feature, module, or deliverable.
-
-═══ WHAT IS A FEATURE (include) ═══
-- Functional modules (Login, Dashboard, Reports, User Management)
-- UI screens, pages, tabs, workflows
-- Integrations (API, SSO, payment gateways)
-- Data management, CRUD operations, automation
-- Admin/configuration capabilities
-- Each distinct deliverable or requirement
-
-═══ WHAT IS NOT A FEATURE (exclude) ═══
-- T-shirt sizing labels (S, M, L, XL, XXL)
-- Sprint names, team names, dates, IDs
-- Document boilerplate (TOC, revision history, approvers, version info)
-- Sub-section labels alone ("Overview", "Preconditions")
-
-═══ OUTPUT ═══
-- NAME: Concise feature name (3-12 words)
-- DESCRIPTION: 2-3 sentences about what needs to be built
-
-Return STRICT JSON — no markdown, no backticks:
-{{"features": [{{"name": "Feature Name", "description": "What needs to be built..."}}], "extraction_summary": "Extracted N features from [doc type]. Covers [domain]."}}"""
-
-    # ═══ PDF → Gemini reads natively via inline_data (proven working) ═══
-    if file_type == 'pdf':
-        print(f"[EXTRACT] PDF → Gemini inline_data (native)", flush=True)
-        try:
-            raw = generate_ai_response(
-                native_prompt, temperature=0.1, timeout=120,
-                file_data={"mime_type": "application/pdf", "data": content}
-            )
-            result = _parse_ai_result(raw, "PDF native inline")
-            if result:
-                return result
-            print(f"[EXTRACT] PDF native failed, falling back to Python parse", flush=True)
-        except Exception as e:
-            print(f"[EXTRACT] PDF native error: {e}, falling back", flush=True)
-
-    # ═══ ALL file types → Python parse + AI text extract ═══
-    print(f"[EXTRACT] Python parse + AI extract for {file_type}", flush=True)
-    try:
-        extracted_text = _extract_text_from_file(content, file_type)
-        print(f"[EXTRACT] Parsed: {len(extracted_text) if extracted_text else 0} chars", flush=True)
-    except Exception as ex:
-        print(f"[EXTRACT] Parse exception: {ex}", flush=True)
-        extracted_text = ""
-
-    if extracted_text and re.match(r'^\[.+ parse error:', extracted_text, re.IGNORECASE):
-        print(f"[EXTRACT] Parser error: {extracted_text}", flush=True)
-        return {"error": f"Failed to parse {file_type.upper()} file. Detail: {extracted_text}"}
-
+    if content and len(content) > 100:
+        try: extracted_text = _extract_text_from_file(content, file_type)
+        except: extracted_text = base64.b64decode(content).decode('utf-8', errors='ignore')[:12000]
+    else: extracted_text = content[:12000]
     if not extracted_text or len(extracted_text.strip()) < 10:
         return {"error": "Could not extract readable text from the uploaded file."}
 
@@ -1596,13 +1443,18 @@ Return STRICT JSON — no markdown, no backticks:
 {{"features": [{{"name": "Feature Name", "description": "What needs to be built..."}}], "extraction_summary": "Extracted N features from [doc type]. Covers [domain]."}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.1, timeout=90)
-        result = _parse_ai_result(raw, f"Python-parsed {file_type}")
-        if result:
+        raw = generate_ai_response(prompt, temperature=0.1, timeout=180, model="gemini-2.5-flash")
+        if raw:
+            cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
+            result = json.loads(cleaned)
+            actual = len(result.get('features', []))
+            src_info = f"structured={feat_count}" if is_structured else f"modules={module_count}" if is_fsd else "unstructured"
+            result['extraction_summary'] = (result.get('extraction_summary', '') +
+                f" ({src_info} → AI extracted {actual} features)")
             return result
-        return {"error": "AI could not extract features from the parsed text."}
+        return {"error": "AI returned empty response"}
     except Exception as e:
-        print(f"[EXTRACT] AI call failed: {e}", flush=True)
+        print(f"Feature extraction error: {e}", flush=True)
         return {"error": f"Feature extraction failed: {str(e)}"}
 
 
@@ -1681,7 +1533,7 @@ def run_planning_poker(project_key: str, payload: dict, creds: dict = Depends(ge
     for story in stories:
         story_ctx = f"STORY: {story.get('key')} — {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:800]}"
         voter_block = "\n".join([f"VOTER {a['id']}: {a['behavior']}" for a in voting])
-        prompt = f"""Simulate Planning Poker with 9 team members. FIBONACCI: 1,2,3,5,8,13,21
+        prompt = f"""Simulate Planning Poker with 9 team members. FIBONACCI SCALE ONLY: 1,2,3,5,8,13,21
 
 {story_ctx}
 
@@ -1692,8 +1544,18 @@ NON-VOTERS: {' | '.join([f"{a['id']}: {a['behavior']}" for a in nonvoting])}
 
 AI-ERA: Standard CRUD/boilerplate → 30-50% lower. Architecture/integration/legacy unchanged.
 
+CRITICAL SUPER AGENT RULES:
+1. PERT = (Optimistic + 4*MostLikely + Pessimistic) / 6 — round to nearest Fibonacci
+2. 3-Point = (Optimistic + MostLikely + Pessimistic) / 3 — round to nearest Fibonacci
+3. Historical = find the CLOSEST matching completed story from history, use its points
+4. Analogous = find a SIMILAR type of work pattern, estimate based on that
+5. final_points = Weighted decision: PERT (40%), 3-Point (20%), Historical (25%), Analogous (15%)
+6. final_points MUST be a Fibonacci number. It must NOT always be 3 — it should reflect actual complexity.
+7. A simple CRUD story might be 1-2. A complex integration might be 8-13. Think carefully.
+8. Each voter MUST give DIFFERENT points reflecting their role perspective. The Architect sees risk (higher). Junior Dev sees simplicity (lower). Senior QA sees test complexity.
+
 Return STRICT JSON:
-{{"votes":[{{"agent_id":"architect","points":8,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"team_lead","points":5,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":3,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":3,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":1,"confidence":"medium","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":5,"confidence":"high","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":2,"confidence":"medium","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"...","suggestion":"..."}},{{"agent_id":"scrum_master","observation":"...","historical_comparison":"...","recommendation":"..."}}],"super_agent":{{"pert_estimate":{{"optimistic":1,"most_likely":3,"pessimistic":8,"pert_fibonacci":3}},"three_point_estimate":{{"raw":4.0,"fibonacci":5}},"historical_estimate":{{"matched_story":"KEY or null","fibonacci":3}},"analogous_estimate":{{"similar_story":"desc","fibonacci":3}},"final_points":3,"confidence":"high","method_used":"Which methods","rationale":"3-4 sentences","key_assumptions":["a1","a2"]}}}}"""
+{{"votes":[{{"agent_id":"architect","points":"FIBONACCI","confidence":"high/medium/low","reasoning":"2-3 sentences","risks":"specific risks"}},{{"agent_id":"team_lead","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":"FIBONACCI","confidence":"...","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"...","suggestion":"..."}},{{"agent_id":"scrum_master","observation":"...","historical_comparison":"...","recommendation":"..."}}],"super_agent":{{"pert_estimate":{{"optimistic":"FIBONACCI","most_likely":"FIBONACCI","pessimistic":"FIBONACCI","pert_fibonacci":"FIBONACCI from PERT formula"}},"three_point_estimate":{{"raw":"decimal","fibonacci":"nearest FIBONACCI"}},"historical_estimate":{{"matched_story":"KEY or null","fibonacci":"FIBONACCI"}},"analogous_estimate":{{"similar_story":"description of similar work","fibonacci":"FIBONACCI"}},"final_points":"WEIGHTED FIBONACCI - NOT always 3","confidence":"high/medium/low","method_used":"Which methods dominated and why","rationale":"3-4 sentences explaining the weighted decision","key_assumptions":["assumption1","assumption2"]}}}}"""
         try:
             raw = generate_ai_response(prompt, temperature=0.35, timeout=90)
             if raw:
@@ -1766,7 +1628,7 @@ def generate_pi_plan(project_key: str, payload: dict, creds: dict = Depends(get_
     if not stories: return {"error": "No stories provided"}
     total_capacity = velocity_per_sprint * num_sprints
     total_points = sum(s.get('points', 0) for s in stories)
-    stories_block = "\n".join([f"- {s['key']}: \"{s['summary']}\" | {s.get('type','')} | {s.get('priority','')} | {s['points']} pts | components: {s.get('components',[])} | labels: {s.get('labels',[])}" + (f"\n  Desc: {s['description'][:200]}" if s.get('description') else "") for s in stories[:100]])
+    stories_block = "\n".join([f"- {s['key']}: \"{s['summary'][:60]}\" | {s.get('priority','Med')} | {s['points']}pts" for s in stories[:150]])
 
     prompt = f"""You are a PI Planning Sequencer AI. Arrange stories into sprints AND detect cross-team dependencies.
 
@@ -1788,7 +1650,7 @@ Return STRICT JSON:
 {{"pi_name":"{pi_name}","total_capacity":{total_capacity},"total_committed":0,"total_spillover":0,"sprints":[{{"name":"Sprint 1","capacity":{velocity_per_sprint},"committed_points":0,"utilization_pct":0,"stories":[{{"key":"X-1","summary":"...","points":5,"type":"Story","priority":"High","team":"{teams[0]}","dependencies":[]}}]}}],"spillover":[],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["..."],"sequencing_rationale":"...","team_load":{json.dumps({t: {f"Sprint {i+1}": 0 for i in range(num_sprints)} for t in teams})}}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=90)
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=180, model="gemini-2.5-flash")
         if raw:
             cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
             return json.loads(cleaned)
@@ -1829,6 +1691,58 @@ def manage_pi_objectives(project_key: str, payload: dict, creds: dict = Depends(
                 return res.json().get("value", {"objectives": []})
         except: pass
         return {"objectives": []}
+
+# ═══════════════════════════════════════════════════════════
+#  WSJF — Weighted Shortest Job First Prioritization
+# ═══════════════════════════════════════════════════════════
+
+@app.post("/pi_planning/{project_key}/wsjf")
+def calculate_wsjf(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """AI-powered WSJF scoring for backlog prioritization.
+    WSJF = Cost of Delay / Job Size
+    Cost of Delay = Business Value + Time Criticality + Risk Reduction
+    """
+    stories = payload.get("stories", [])
+    if not stories:
+        return {"error": "No stories provided"}
+
+    stories_text = "\n".join([f"- {s.get('key','?')}: \"{s.get('summary','')}\" | {s.get('priority','Med')} | {s.get('points',0)}pts | {s.get('description','')[:150]}" for s in stories[:80]])
+
+    prompt = f"""You are a SAFe WSJF Expert. Score each story using Weighted Shortest Job First.
+
+WSJF = Cost of Delay ÷ Job Size
+Cost of Delay = User/Business Value + Time Criticality + Risk Reduction/Opportunity Enablement
+
+SCORING SCALE: Use Modified Fibonacci: 1, 2, 3, 5, 8, 13, 20
+- 1 = Minimal   - 2 = Low   - 3 = Moderate   - 5 = Significant
+- 8 = High   - 13 = Very High   - 20 = Extreme
+
+STORIES:
+{stories_text}
+
+For EACH story, assess:
+1. user_business_value (1-20): Revenue impact, user satisfaction, strategic alignment
+2. time_criticality (1-20): Deadline pressure, market window, cost of waiting
+3. risk_reduction (1-20): Enables other work, reduces technical debt, mitigates risk
+4. job_size (1-20): Implementation effort relative to team capacity (HIGHER = BIGGER job)
+5. cost_of_delay = user_business_value + time_criticality + risk_reduction
+6. wsjf_score = cost_of_delay / job_size (round to 1 decimal)
+
+CRITICAL: Score each dimension INDEPENDENTLY. High priority stories should generally score higher on value/criticality. Consider the story description and context — not just the title.
+
+Return STRICT JSON:
+{{"stories": [{{"key": "X-1", "summary": "...", "user_business_value": 8, "time_criticality": 5, "risk_reduction": 3, "job_size": 3, "cost_of_delay": 16, "wsjf_score": 5.3, "rationale": "Brief why"}}], "priority_order": ["X-1", "X-2"], "analysis": "Summary of prioritization insights"}}"""
+
+    try:
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=120, model="gemini-2.5-flash")
+        if raw:
+            cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
+            return json.loads(cleaned)
+        return {"error": "AI returned empty response"}
+    except Exception as e:
+        print(f"WSJF error: {e}", flush=True)
+        return {"error": f"WSJF calculation failed: {str(e)}"}
+
 
 @app.post("/feature_roadmap")
 def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(get_jira_creds)):

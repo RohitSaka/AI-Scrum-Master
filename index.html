@@ -854,22 +854,16 @@
         const ext = file.name.split('.').pop().toLowerCase();
         console.log('[SmartUpload] File:', file.name, 'Type:', ext, 'Size:', file.size);
         const reader = new FileReader();
-        reader.onerror = () => {
-            console.error('[SmartUpload] FileReader error:', reader.error);
-            setError('Failed to read file. Please try again.');
-            setExtracting(false);
-            e.target.value = '';
-        };
+        reader.onerror = () => { setError('Failed to read file.'); setExtracting(false); e.target.value = ''; };
         reader.onload = async (evt) => {
             try {
                 const raw = evt.target.result;
                 const content = ['csv', 'txt'].includes(ext) ? btoa(unescape(encodeURIComponent(raw))) : (raw.indexOf(',') !== -1 ? raw.substring(raw.indexOf(',') + 1) : raw);
-                console.log('[SmartUpload] Base64 length:', content.length);
                 if (!content || content.length < 50) { setError('File appears empty.'); setExtracting(false); e.target.value = ''; return; }
                 const res = await secureFetch('/feature_roadmap/extract_features', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content, file_type: ext, filename: file.name }) });
                 if (!res) { setError('Request failed — check connection.'); setExtracting(false); e.target.value = ''; return; }
                 const data = await res.json();
-                console.log('[SmartUpload] Response:', res.status, JSON.stringify(data).substring(0, 300));
+                console.log('[SmartUpload] Response:', res.status, data?.features?.length || 0, 'features');
                 if (data?.features?.length > 0) { setFeatures(data.features.map(f => ({ name: f.name || '', description: f.description || '' }))); setExtractionSummary(data.extraction_summary || `Extracted ${data.features.length} features`); setInputMode('manual'); }
                 else { setError(data?.error || 'No features extracted. Try a different file or Manual Entry.'); }
             } catch (err) { console.error('[SmartUpload]', err); setError(`Extraction failed: ${err.message || 'Unknown error'}`); }
@@ -1028,7 +1022,7 @@
                         {inputMode === 'upload' && (
                             <div className="space-y-3">
                                 <div className="border-2 border-dashed rounded-xl p-8 text-center transition-all hover:border-primary" style={{borderColor:'var(--border)'}}>
-                                    {extracting ? (<div className="flex flex-col items-center gap-3"><Icon name="Loader2" size={32} className="animate-spin text-primary" /><p className="text-sm font-bold text-text-main">AI is scanning {uploadedFileName}...</p><p className="text-xs text-text-muted">Extracting features — filtering sizing labels, metadata, headers automatically</p></div>) : (<><Icon name="Upload" size={32} className="text-text-muted mx-auto mb-3" /><p className="text-sm font-bold text-text-main mb-1">Upload any document</p><p className="text-xs text-text-muted mb-1">PDF · PPTX · DOCX · XLSX · CSV · TXT</p><p className="text-xs text-text-muted mb-4" style={{opacity:0.7}}>AI extracts features from SOWs, RFPs, estimation sheets, meeting notes — filters out sizing labels, metadata noise</p><label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm cursor-pointer transition-all text-white" style={{ background: 'var(--accent-gradient)' }}><Icon name="FileUp" size={16} /> Choose File<input type="file" accept=".pdf,.pptx,.ppt,.xlsx,.xls,.csv,.txt,.docx,.doc" onChange={handleSmartUpload} className="hidden" /></label></>)}
+                                    {extracting ? (<div className="flex flex-col items-center gap-4 py-4"><div style={{width:48,height:48,borderRadius:'50%',background:'var(--accent-gradient)',display:'flex',alignItems:'center',justifyContent:'center',animation:'pulse 1.5s ease-in-out infinite'}}><Icon name="Cpu" size={24} className="text-white" /></div><p className="text-sm font-black text-text-main">AI is analyzing {uploadedFileName}</p><div className="w-full max-w-xs space-y-2">{['Parsing document structure...','Identifying features & modules...','Filtering noise & metadata...','Generating feature list...'].map((step,i) => <div key={i} className="flex items-center gap-2 text-xs" style={{animation:`fadeIn 0.5s ease ${i*0.8}s both`}}><div style={{width:6,height:6,borderRadius:'50%',background:i<3?'#22c55e':'var(--primary)',animation:i===3?'pulse 1s infinite':'none'}} /><span className="text-text-muted">{step}</span></div>)}</div><style>{`@keyframes fadeIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}`}</style></div>) : (<><Icon name="Upload" size={32} className="text-text-muted mx-auto mb-3" /><p className="text-sm font-bold text-text-main mb-1">Upload any document</p><p className="text-xs text-text-muted mb-1">PDF · PPTX · DOCX · XLSX · CSV · TXT</p><p className="text-xs text-text-muted mb-4" style={{opacity:0.7}}>AI extracts features from SOWs, RFPs, estimation sheets, meeting notes — filters out sizing labels, metadata noise</p><label className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm cursor-pointer transition-all text-white" style={{ background: 'var(--accent-gradient)' }}><Icon name="FileUp" size={16} /> Choose File<input type="file" accept=".pdf,.pptx,.ppt,.xlsx,.xls,.csv,.txt,.docx,.doc" onChange={handleSmartUpload} className="hidden" /></label></>)}
                                 </div>
                                 {extractionSummary && (<div className="p-3 rounded-lg text-sm font-semibold flex items-center gap-2" style={{background:'rgba(34,197,94,0.1)',border:'1px solid rgba(34,197,94,0.3)',color:'#22c55e'}}><span>✅</span> {extractionSummary} — Review below, then Generate</div>)}
                             </div>
@@ -2201,6 +2195,9 @@ function RoadmapView({ project, setIsLoading }) {
     const [objectives, setObjectives] = React.useState([]);
     const [objLoading, setObjLoading] = React.useState(false);
     const [newObj, setNewObj] = React.useState({ name: '', planned_value: 5, epics: '' });
+    // WSJF state
+    const [wsjfResults, setWsjfResults] = React.useState(null);
+    const [wsjfLoading, setWsjfLoading] = React.useState(false);
 
     const tabs = [
         { id: "pi_planning", label: "PI Planning", icon: "Calendar" },
@@ -2208,6 +2205,7 @@ function RoadmapView({ project, setIsLoading }) {
         { id: "capacity", label: "Capacity Heatmap", icon: "BarChart" },
         { id: "roam", label: "ROAM Risks", icon: "AlertTriangle" },
         { id: "objectives", label: "PI Objectives", icon: "Target" },
+        { id: "wsjf", label: "WSJF", icon: "TrendingUp" },
     ];
 
     // Load backlog
@@ -2297,6 +2295,7 @@ function RoadmapView({ project, setIsLoading }) {
                             <div className="flex items-center gap-2 mt-3"><label className="text-xs font-bold text-text-muted uppercase">Teams:</label>{teams.map((t,i) => <span key={i} className="pi-chip" style={{background:'rgba(59,130,246,0.1)',color:'#3b82f6'}}>{t} <button onClick={() => setTeams(p => p.filter((_,j) => j!==i))} className="ml-1 text-danger" style={{fontSize:8,cursor:'pointer'}}>✕</button></span>)}<input type="text" value={teamInput} onChange={e => setTeamInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTeam()} placeholder="Add team..." className="pi-input" style={{width:120,textAlign:'left'}} /><button onClick={addTeam} className="text-xs font-bold text-primary" style={{cursor:'pointer'}}>+Add</button></div>
                         </div>
                         {loadingBacklog ? <div className="text-center py-12"><Icon name="Loader2" size={32} className="animate-spin text-primary mx-auto" /><p className="text-sm font-bold text-text-muted mt-3">Loading backlog...</p></div> :
+                        generating ? (<div className="pi-card p-12 text-center space-y-5"><div style={{width:64,height:64,borderRadius:'50%',background:'linear-gradient(135deg,#f59e0b,#d97706)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto',animation:'pulse 1.5s ease-in-out infinite'}}><Icon name="Cpu" size={32} className="text-white" /></div><h3 className="text-lg font-black text-text-main">AI Sequencer Working</h3><p className="text-sm text-text-muted">Arranging {selectedStories.length} stories across {numSprints} sprints</p><div className="max-w-sm mx-auto space-y-2 text-left">{['Analyzing story dependencies...','Calculating sprint capacity loads...','Optimizing priority sequencing...','Detecting cross-team dependencies...','Building program board...'].map((step,i) => <div key={i} className="flex items-center gap-2 text-xs" style={{animation:`fadeIn 0.5s ease ${i*0.6}s both`}}><div style={{width:6,height:6,borderRadius:'50%',background:i<4?'#22c55e':'#f59e0b',animation:i===4?'pulse 1s infinite':'none'}} /><span className="text-text-muted">{step}</span></div>)}</div><p className="text-xs text-text-muted mt-4" style={{opacity:0.6}}>This may take 30-60 seconds for large backlogs</p><style>{`@keyframes fadeIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}`}</style></div>) :
                         backlog?.stories?.length > 0 ? (<div className="pi-card overflow-hidden">
                             <div className="p-4 flex items-center justify-between" style={{borderBottom:'1px solid var(--border)',background:'var(--bg-body)'}}><span className="text-sm font-black text-text-main">{backlog.stories.length} Pre-Pointed Stories ({backlog.total_points} pts)</span><div className="flex gap-3"><button onClick={() => setSelectedKeys(p => p.size===backlog.stories.length ? new Set() : new Set(backlog.stories.map(s=>s.key)))} className="text-xs font-bold text-primary" style={{background:'none',border:'none',cursor:'pointer'}}>{selectedKeys.size===backlog.stories.length?'Deselect All':'Select All'}</button><button onClick={generatePlan} disabled={generating||!selectedStories.length} className="pi-btn text-sm">{generating?'⏳ Sequencing...':'🧩 Generate PI Plan'}</button></div></div>
                             <div style={{maxHeight:400,overflowY:'auto'}}>{backlog.stories.map(s => (<div key={s.key} onClick={() => toggleStory(s.key)} className="pi-story-row cursor-pointer" style={{background:selectedKeys.has(s.key)?'rgba(245,158,11,0.04)':'transparent'}}><div style={{width:18,height:18,borderRadius:4,border:selectedKeys.has(s.key)?'2px solid #f59e0b':'2px solid var(--border)',background:selectedKeys.has(s.key)?'#f59e0b':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{selectedKeys.has(s.key) && <span style={{fontSize:9,fontWeight:900,color:'#000'}}>✓</span>}</div><span className="font-bold font-mono text-xs" style={{color:'var(--primary)',minWidth:70}}>{s.key}</span><span className="flex-1 text-text-main font-medium truncate text-sm">{s.summary}</span><span className="pi-chip" style={{background:'rgba(59,130,246,0.12)',color:'#3b82f6'}}>{s.type}</span><span className="pi-chip" style={{background:s.priority==='Highest'||s.priority==='High'?'rgba(239,68,68,0.12)':'rgba(234,179,8,0.12)',color:s.priority==='Highest'||s.priority==='High'?'#ef4444':'#eab308'}}>{s.priority}</span><span className="text-sm font-black text-text-main" style={{minWidth:36,textAlign:'right'}}>{s.points}pts</span></div>))}</div>
@@ -2504,6 +2503,79 @@ function RoadmapView({ project, setIsLoading }) {
                                 <div className="text-center"><div className="text-2xl font-black" style={{color: objectives.filter(o => o.actual_value < o.planned_value * 0.5 && o.planned_value >= 5).length > 0 ? '#ef4444' : '#22c55e'}}>{objectives.filter(o => o.actual_value < o.planned_value * 0.5 && o.planned_value >= 5).length}</div><div className="text-[10px] font-bold text-text-muted uppercase">At Risk</div></div>
                             </div>
                         </div>)}
+                    </div>
+                )}
+
+                {/* ─── TAB 6: WSJF PRIORITIZATION ─── */}
+                {activeTab === "wsjf" && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div><h2 className="text-xl font-black text-text-main">WSJF — Weighted Shortest Job First</h2><p className="text-sm text-text-muted mt-1">Prioritize your backlog by economic impact: Cost of Delay ÷ Job Size</p></div>
+
+                        {!wsjfResults && !wsjfLoading && (
+                            <div className="pi-card p-6 space-y-4">
+                                <div className="flex items-center gap-3 p-4 rounded-xl" style={{background:'linear-gradient(135deg, rgba(245,158,11,0.08), rgba(217,119,6,0.04))', border:'1px solid rgba(245,158,11,0.2)'}}>
+                                    <div style={{width:40,height:40,borderRadius:'50%',background:'linear-gradient(135deg,#f59e0b,#d97706)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><Icon name="TrendingUp" size={20} className="text-white" /></div>
+                                    <div><p className="text-sm font-bold text-text-main">Maximize Business Value. Deliver on Time.</p><p className="text-xs text-text-muted">AI scores each story on Business Value, Time Criticality, Risk Reduction & Job Size to calculate WSJF priority</p></div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">{[{t:'User/Business Value',d:'Revenue, satisfaction, strategic alignment',i:'DollarSign'},{t:'Time Criticality',d:'Deadline pressure, market window, cost of waiting',i:'Clock'},{t:'Risk Reduction',d:'Enables other work, reduces tech debt',i:'Shield'},{t:'Job Size (÷)',d:'Implementation effort relative to capacity',i:'Layers'}].map((c,i) => <div key={i} className="p-3 rounded-lg flex items-start gap-2" style={{background:'var(--bg-body)',border:'1px solid var(--border)'}}><Icon name={c.i} size={16} className="text-primary mt-0.5" /><div><p className="text-xs font-bold text-text-main">{c.t}</p><p className="text-[10px] text-text-muted">{c.d}</p></div></div>)}</div>
+                                <p className="text-xs text-text-muted text-center">Select stories from PI Planning backlog, then run WSJF analysis</p>
+                                <div className="text-center">
+                                    <button onClick={async () => {
+                                        if (!selectedStories.length) { setError('Select stories in PI Planning tab first'); return; }
+                                        setWsjfLoading(true); setError(null);
+                                        try {
+                                            const res = await secureFetch(`/pi_planning/${project}/wsjf`, { method: 'POST', body: JSON.stringify({ stories: selectedStories }) });
+                                            const d = await res?.json();
+                                            if (d?.stories) setWsjfResults(d); else setError(d?.error || 'WSJF failed');
+                                        } catch { setError('WSJF calculation failed'); }
+                                        setWsjfLoading(false);
+                                    }} disabled={wsjfLoading || !selectedStories.length} className="pi-btn text-sm px-6 py-3">
+                                        {wsjfLoading ? '⏳ Calculating WSJF...' : `📊 Run WSJF Analysis (${selectedStories.length} stories)`}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {wsjfLoading && (
+                            <div className="pi-card p-12 text-center space-y-4">
+                                <div style={{width:56,height:56,borderRadius:'50%',background:'linear-gradient(135deg,#f59e0b,#d97706)',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto',animation:'pulse 1.5s ease-in-out infinite'}}><Icon name="TrendingUp" size={28} className="text-white" /></div>
+                                <h3 className="text-lg font-black text-text-main">Calculating WSJF Scores</h3>
+                                <div className="max-w-xs mx-auto space-y-2">{['Assessing business value...','Evaluating time criticality...','Analyzing risk reduction...','Computing job sizes...','Ranking by WSJF score...'].map((s,i) => <div key={i} className="flex items-center gap-2 text-xs" style={{animation:`fadeIn 0.5s ease ${i*0.5}s both`}}><div style={{width:6,height:6,borderRadius:'50%',background:i<4?'#22c55e':'#f59e0b',animation:i===4?'pulse 1s infinite':'none'}} /><span className="text-text-muted">{s}</span></div>)}</div>
+                                <style>{`@keyframes fadeIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}`}</style>
+                            </div>
+                        )}
+
+                        {wsjfResults && (
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between"><h3 className="text-sm font-black text-text-main">Priority Ranking by WSJF Score</h3><button onClick={() => setWsjfResults(null)} className="text-xs font-bold text-text-muted px-3 py-1 rounded-lg border" style={{borderColor:'var(--border)',cursor:'pointer'}}>← Recalculate</button></div>
+                                <div className="pi-card overflow-hidden">
+                                    <div className="flex p-3 text-[10px] font-black text-text-muted uppercase tracking-wider" style={{background:'var(--bg-body)',borderBottom:'1px solid var(--border)'}}>
+                                        <div style={{width:30}}>#</div><div style={{width:70}}>Key</div><div className="flex-1">Story</div><div style={{width:50,textAlign:'center'}}>BV</div><div style={{width:50,textAlign:'center'}}>TC</div><div style={{width:50,textAlign:'center'}}>RR</div><div style={{width:50,textAlign:'center'}}>CoD</div><div style={{width:50,textAlign:'center'}}>Size</div><div style={{width:70,textAlign:'center'}}>WSJF</div>
+                                    </div>
+                                    {(wsjfResults.stories || []).sort((a,b) => (b.wsjf_score||0) - (a.wsjf_score||0)).map((s, i) => {
+                                        const maxWsjf = Math.max(...(wsjfResults.stories||[]).map(x => x.wsjf_score||0));
+                                        const pct = maxWsjf > 0 ? ((s.wsjf_score||0) / maxWsjf * 100) : 0;
+                                        const barColor = pct > 70 ? '#22c55e' : pct > 40 ? '#f59e0b' : '#94a3b8';
+                                        return (
+                                        <div key={s.key} className="flex items-center p-3 text-xs" style={{borderBottom:'1px solid var(--border)',background:i<3?'rgba(34,197,94,0.03)':'transparent'}}>
+                                            <div style={{width:30}} className="font-black text-text-muted">{i+1}</div>
+                                            <div style={{width:70}} className="font-mono font-bold text-primary">{s.key}</div>
+                                            <div className="flex-1 truncate text-text-main font-medium pr-2" title={s.rationale}>{s.summary}</div>
+                                            <div style={{width:50,textAlign:'center'}} className="font-bold">{s.user_business_value}</div>
+                                            <div style={{width:50,textAlign:'center'}} className="font-bold">{s.time_criticality}</div>
+                                            <div style={{width:50,textAlign:'center'}} className="font-bold">{s.risk_reduction}</div>
+                                            <div style={{width:50,textAlign:'center'}} className="font-black text-primary">{s.cost_of_delay}</div>
+                                            <div style={{width:50,textAlign:'center'}} className="font-bold text-text-muted">{s.job_size}</div>
+                                            <div style={{width:70,textAlign:'center'}} className="font-black" title={s.rationale}>
+                                                <div className="relative" style={{height:22,background:'var(--border)',borderRadius:4,overflow:'hidden'}}><div style={{width:`${pct}%`,height:'100%',background:barColor,borderRadius:4,transition:'width 0.5s'}} /><span className="absolute inset-0 flex items-center justify-center text-[10px] font-black" style={{color:pct>50?'white':'var(--text-main)'}}>{(s.wsjf_score||0).toFixed(1)}</span></div>
+                                            </div>
+                                        </div>);
+                                    })}
+                                </div>
+                                {wsjfResults.analysis && <div className="pi-card p-4"><p className="text-xs font-black text-text-muted uppercase mb-1">📋 Analysis</p><p className="text-sm text-text-main leading-relaxed">{wsjfResults.analysis}</p></div>}
+                                <div className="flex gap-3 text-[10px] text-text-muted justify-center flex-wrap"><span><strong>BV</strong> = Business Value</span><span><strong>TC</strong> = Time Criticality</span><span><strong>RR</strong> = Risk Reduction</span><span><strong>CoD</strong> = Cost of Delay</span><span><strong>WSJF</strong> = CoD ÷ Job Size</span></div>
+                            </div>
+                        )}
                     </div>
                 )}
             </main>
