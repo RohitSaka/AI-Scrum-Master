@@ -2074,6 +2074,435 @@ const VelocitySparkline = ({ history = [], avgVelocity = 0, width = 280, height 
 // ═══════════════════════════════════════════════════════════
 //  PLANNING POKER v4 — 9 AI Agents
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+//  POKER LIVE SESSION — Immersive Agent Deliberation Theater
+// ═══════════════════════════════════════════════════════════
+function PokerLiveSession({ agents, stories, selectedCount }) {
+    const [stage, setStage] = useState(0);
+    const [activeAgent, setActiveAgent] = useState(-1);
+    const [thoughts, setThoughts] = useState({});
+    const [dealtCards, setDealtCards] = useState(new Set());
+    const [currentStoryIdx, setCurrentStoryIdx] = useState(0);
+    const [elapsedSec, setElapsedSec] = useState(0);
+    const [chatLog, setChatLog] = useState([]);
+    const [pulse, setPulse] = useState(false);
+
+    const voters = agents.filter(a => a.votes);
+    const observers = agents.filter(a => !a.votes);
+
+    const AGENT_THOUGHTS = {
+        architect: [
+            "Mapping system boundaries and integration points...",
+            "Evaluating blast radius — how many services does this touch?",
+            "Checking for hidden coupling in the dependency graph...",
+            "This needs a design review if it touches the data layer.",
+            "Assessing cognitive load — can one dev hold this in their head?",
+            "Infrastructure complexity score: calculating...",
+            "Cross-service contracts need versioning here."
+        ],
+        team_lead: [
+            "Factoring in code review cycles and deployment overhead...",
+            "Team has context on this module — that reduces ramp-up.",
+            "Need to account for coordination tax across squads.",
+            "PR review + staging + prod deploy = +1 day minimum.",
+            "Who owns this service? Knowledge transfer risk is real.",
+            "We'll need a feature flag rollout for this one.",
+            "Sprint ceremonies will eat into capacity this week."
+        ],
+        senior_dev: [
+            "I've seen this pattern before — it's cleaner than it looks.",
+            "AI tools can scaffold 60% of this. Adjusting estimate down.",
+            "The legacy code here is a minefield. Tripling my estimate.",
+            "With Copilot, the boilerplate writes itself. Focus on logic.",
+            "This is a refactor wrapped in a feature. Don't underestimate.",
+            "Test coverage is thin here — we'll be writing tests from scratch.",
+            "Clean API boundaries. This is a 'flow state' task."
+        ],
+        mid_dev: [
+            "Need to familiarize myself with this part of the codebase...",
+            "The patterns here look standard, but edge cases worry me.",
+            "I'd want to pair with someone who's touched this before.",
+            "Breaking this into smaller chunks mentally...",
+            "DB migration involved — that adds a day of careful testing.",
+            "The API contract looks clear. Frontend integration is straightforward.",
+            "I'll need to read the existing tests before I touch anything."
+        ],
+        junior_dev: [
+            "This looks straightforward! I can knock this out quickly.",
+            "The acceptance criteria are crystal clear — love it.",
+            "Wait, there might be more to this than meets the eye...",
+            "I'll use the existing component as a template.",
+            "Simple CRUD — AI can help me generate most of this!",
+            "The happy path is clear. What about error handling though?",
+            "I'd estimate low but I know I tend to be optimistic."
+        ],
+        senior_qa: [
+            "Test matrix is complex — N×M combinations minimum.",
+            "Need regression suite for all downstream consumers.",
+            "Edge cases: null states, concurrent access, race conditions...",
+            "Performance testing required — this touches a hot path.",
+            "Accessibility audit needed if UI changes are involved.",
+            "Integration test environment setup: 4 hours alone.",
+            "Historical bug rate for this module is HIGH. Extra scrutiny."
+        ],
+        junior_qa: [
+            "Creating my test checklist from the acceptance criteria...",
+            "Basic smoke tests should cover the happy path.",
+            "I'll need test data setup — who can help with that?",
+            "Manual regression for the affected screens...",
+            "The test cases are pretty linear for this one.",
+            "I should check if there's an existing automation framework.",
+            "Screenshots and evidence collection for each scenario."
+        ],
+        ba: [
+            "⚠ Questioning the scope — can we reduce this?",
+            "Does the user really need ALL these fields on day one?",
+            "MVP slice: what's the smallest valuable delivery?",
+            "Stakeholder alignment check — who approved this scope?",
+            "The requirements have ambiguity in section 3. Flagging.",
+            "Can we defer the export feature to a fast-follow?",
+            "Business value vs. effort ratio looks unfavorable."
+        ],
+        scrum_master: [
+            "📊 Pulling velocity data from last 5 sprints...",
+            "Similar story PROJ-142 took 8 points and 2 sprints.",
+            "Team velocity: 38pts avg. This eats 13% of capacity.",
+            "Historical: stories this size have 40% spillover rate.",
+            "Cycle time data suggests 5-day lead time for this type.",
+            "Comparing against analogous work from Q3...",
+            "The team consistently under-estimates integration work."
+        ]
+    };
+
+    const DISCUSSION_PHASES = [
+        { name: "Assembling the War Room", icon: "🚪", sub: "Agents taking their seats..." },
+        { name: "Dealing the Cards", icon: "🃏", sub: "Distributing story context to all agents..." },
+        { name: "Round 1 — First Impressions", icon: "💭", sub: "Each agent forming initial estimates..." },
+        { name: "Round 2 — Deep Analysis", icon: "🔬", sub: "Cross-referencing history, dependencies, complexity..." },
+        { name: "The Debate", icon: "⚔️", sub: "Agents challenging each other's assumptions..." },
+        { name: "Observers Weigh In", icon: "👁️", sub: "BA and Scrum Master providing context..." },
+        { name: "Super Agent", icon: "🏆", sub: "Synthesizing all inputs with PERT analysis..." },
+        { name: "Finalizing Scores", icon: "✨", sub: "Computing weighted judgment across all methods..." }
+    ];
+
+    const DEBATE_LINES = [
+        { from: "architect", to: "junior_dev", msg: "You're underestimating the integration complexity here." },
+        { from: "junior_dev", to: "architect", msg: "But with AI code-gen, the boilerplate is basically free." },
+        { from: "senior_qa", to: "senior_dev", msg: "Your estimate doesn't include regression testing time." },
+        { from: "senior_dev", to: "senior_qa", msg: "Fair point — but AI can generate 70% of those tests." },
+        { from: "team_lead", to: "mid_dev", msg: "Have you accounted for the deployment pipeline changes?" },
+        { from: "mid_dev", to: "team_lead", msg: "Good catch. Adding buffer for infra setup." },
+        { from: "ba", to: "architect", msg: "Can we descope the real-time sync for the first release?" },
+        { from: "scrum_master", to: "team_lead", msg: "Last time we did this, it took 40% longer than estimated." },
+        { from: "senior_dev", to: "junior_dev", msg: "The happy path is easy, but error handling doubles the work." },
+        { from: "senior_qa", to: "ba", msg: "Requirements are ambiguous on the edge cases. We need clarity." },
+        { from: "architect", to: "senior_dev", msg: "This touches 3 microservices. Contract testing is mandatory." },
+        { from: "team_lead", to: "senior_qa", msg: "Can we parallelize dev and test for the first component?" }
+    ];
+
+    // Timer
+    useEffect(() => {
+        const t = setInterval(() => setElapsedSec(p => p + 1), 1000);
+        return () => clearInterval(t);
+    }, []);
+
+    // Stage progression
+    useEffect(() => {
+        const timings = [0, 2500, 5000, 9000, 15000, 22000, 30000, 40000];
+        const timers = timings.map((t, i) => setTimeout(() => setStage(i), t));
+        return () => timers.forEach(clearTimeout);
+    }, []);
+
+    // Agent entrance (stage 0)
+    useEffect(() => {
+        if (stage === 0) {
+            agents.forEach((_, i) => setTimeout(() => setActiveAgent(i), 300 * (i + 1)));
+        }
+    }, [stage, agents.length]);
+
+    // Card dealing (stage 1)
+    useEffect(() => {
+        if (stage === 1) {
+            voters.forEach((a, i) => setTimeout(() => setDealtCards(p => new Set([...p, a.id])), 250 * (i + 1)));
+        }
+    }, [stage]);
+
+    // Thought cycling (stages 2+)
+    useEffect(() => {
+        if (stage < 2) return;
+        const interval = setInterval(() => {
+            const agentPool = stage >= 5 ? observers : voters;
+            if (!agentPool.length) return;
+            const randomAgent = agentPool[Math.floor(Math.random() * agentPool.length)];
+            const pool = AGENT_THOUGHTS[randomAgent.id] || [];
+            const thought = pool[Math.floor(Math.random() * pool.length)];
+            if (thought) setThoughts(p => ({ ...p, [randomAgent.id]: thought }));
+        }, 1800);
+        return () => clearInterval(interval);
+    }, [stage]);
+
+    // Chat log (debate stage 4+)
+    useEffect(() => {
+        if (stage < 4) return;
+        let idx = 0;
+        const interval = setInterval(() => {
+            if (idx < DEBATE_LINES.length) {
+                setChatLog(p => [...p.slice(-5), DEBATE_LINES[idx]]);
+                idx++;
+            }
+        }, 3500);
+        return () => clearInterval(interval);
+    }, [stage]);
+
+    // Story cycling
+    useEffect(() => {
+        if (stage >= 2 && selectedCount > 1) {
+            const t = setInterval(() => setCurrentStoryIdx(p => (p + 1) % selectedCount), 12000);
+            return () => clearInterval(t);
+        }
+    }, [stage, selectedCount]);
+
+    // Pulse heartbeat
+    useEffect(() => {
+        const t = setInterval(() => setPulse(p => !p), 1500);
+        return () => clearInterval(t);
+    }, []);
+
+    const agentById = {};
+    agents.forEach(a => { agentById[a.id] = a; });
+
+    const formatTime = s => `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+
+    const currentPhase = DISCUSSION_PHASES[Math.min(stage, DISCUSSION_PHASES.length - 1)];
+    const progressPct = Math.min(100, (stage / (DISCUSSION_PHASES.length - 1)) * 100);
+
+    const css = `
+    @keyframes warRoomFadeIn { from { opacity: 0; transform: translateY(30px) scale(0.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes cardDeal { 0% { opacity: 0; transform: rotateY(180deg) scale(0.3); } 50% { opacity: 1; transform: rotateY(90deg) scale(1.1); } 100% { transform: rotateY(0deg) scale(1); } }
+    @keyframes thoughtBubble { 0% { opacity: 0; transform: translateY(8px); } 15% { opacity: 1; transform: translateY(0); } 85% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-8px); } }
+    @keyframes glowPulse { 0%, 100% { box-shadow: 0 0 20px rgba(245,158,11,0.15); } 50% { box-shadow: 0 0 40px rgba(245,158,11,0.35); } }
+    @keyframes scanLine { 0% { top: -2px; } 100% { top: 100%; } }
+    @keyframes typingDot { 0%, 60%, 100% { opacity: 0.3; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-4px); } }
+    @keyframes slideInChat { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes orbitalGlow { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    @keyframes fadeInScale { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+
+    .wr-root { background: linear-gradient(170deg, #0c0f1a 0%, #141829 40%, #1a1535 100%); border-radius: 16px; position: relative; overflow: hidden; height: 100%; }
+    .wr-root::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 30%, rgba(245,158,11,0.04) 0%, transparent 60%); pointer-events: none; }
+    .wr-scanline { position: absolute; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(245,158,11,0.08), transparent); animation: scanLine 8s linear infinite; pointer-events: none; z-index: 1; }
+
+    .wr-agent-seat { animation: warRoomFadeIn 0.6s ease-out forwards; opacity: 0; }
+    .wr-agent-avatar { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; position: relative; transition: all 0.4s; border: 2px solid rgba(255,255,255,0.06); }
+    .wr-agent-avatar.active { border-color: rgba(245,158,11,0.5); animation: glowPulse 2s ease-in-out infinite; }
+    .wr-agent-avatar.dealt { background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(251,191,36,0.08)); border-color: rgba(245,158,11,0.4); }
+
+    .wr-card-chip { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, #f59e0b, #d97706); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; color: #451a03; animation: cardDeal 0.5s ease-out forwards; box-shadow: 0 2px 8px rgba(245,158,11,0.4); }
+
+    .wr-thought { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(100% + 8px); min-width: 180px; max-width: 220px; padding: 8px 12px; border-radius: 10px; background: rgba(30, 35, 60, 0.95); border: 1px solid rgba(245,158,11,0.15); font-size: 10px; line-height: 1.4; color: rgba(255,255,255,0.75); animation: thoughtBubble 4s ease-in-out forwards; backdrop-filter: blur(10px); z-index: 10; }
+    .wr-thought::after { content: ''; position: absolute; bottom: -5px; left: 50%; transform: translateX(-50%); width: 10px; height: 10px; background: rgba(30, 35, 60, 0.95); border-right: 1px solid rgba(245,158,11,0.15); border-bottom: 1px solid rgba(245,158,11,0.15); transform: translateX(-50%) rotate(45deg); }
+
+    .wr-typing { display: flex; gap: 3px; align-items: center; padding: 4px 0; }
+    .wr-typing span { width: 5px; height: 5px; border-radius: 50%; background: rgba(245,158,11,0.7); animation: typingDot 1.4s infinite; }
+    .wr-typing span:nth-child(2) { animation-delay: 0.2s; }
+    .wr-typing span:nth-child(3) { animation-delay: 0.4s; }
+
+    .wr-table { position: relative; background: radial-gradient(ellipse, rgba(20,50,30,0.3) 0%, rgba(15,20,35,0.6) 70%); border: 2px solid rgba(245,158,11,0.12); border-radius: 50%; aspect-ratio: 2/1; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .wr-table::before { content: ''; position: absolute; inset: 4px; border-radius: 50%; border: 1px solid rgba(245,158,11,0.06); }
+
+    .wr-chat-msg { animation: slideInChat 0.4s ease-out forwards; padding: 8px 12px; border-radius: 10px; background: rgba(30,35,60,0.7); border: 1px solid rgba(255,255,255,0.05); margin-bottom: 6px; }
+
+    .wr-phase-badge { background: linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05)); border: 1px solid rgba(245,158,11,0.25); border-radius: 12px; padding: 10px 20px; animation: fadeInScale 0.5s ease-out forwards; }
+
+    .wr-progress-bar { height: 3px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; }
+    .wr-progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #f59e0b, #fbbf24); transition: width 1.5s ease-out; }
+
+    .wr-timer { font-variant-numeric: tabular-nums; font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace; }
+
+    .wr-orbital { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 1px dashed rgba(245,158,11,0.06); animation: orbitalGlow 30s linear infinite; pointer-events: none; }
+
+    .wr-story-card { background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02)); border: 1px solid rgba(245,158,11,0.2); border-radius: 10px; padding: 10px 16px; animation: fadeInScale 0.4s ease-out; }
+
+    .wr-shimmer { background: linear-gradient(90deg, transparent 0%, rgba(245,158,11,0.06) 50%, transparent 100%); background-size: 200% 100%; animation: shimmer 3s infinite; }
+    `;
+
+    return (
+        <div className="wr-root" style={{padding:'24px',display:'flex',flexDirection:'column',gap:'16px'}}>
+            <style>{css}</style>
+            <div className="wr-scanline" />
+
+            {/* HEADER */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',position:'relative',zIndex:2}}>
+                <div>
+                    <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'4px'}}>
+                        <div style={{width:8,height:8,borderRadius:'50%',background:'#22c55e',boxShadow:'0 0 12px rgba(34,197,94,0.6)'}} />
+                        <span style={{fontSize:'11px',fontWeight:700,color:'rgba(34,197,94,0.9)',textTransform:'uppercase',letterSpacing:'2px'}}>LIVE SESSION</span>
+                    </div>
+                    <h2 style={{fontSize:'20px',fontWeight:900,color:'#fff',margin:0,letterSpacing:'-0.5px'}}>Agent Deliberation Room</h2>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'16px'}}>
+                    <div style={{textAlign:'right'}}>
+                        <div className="wr-timer" style={{fontSize:'22px',fontWeight:900,color:'rgba(245,158,11,0.9)'}}>{formatTime(elapsedSec)}</div>
+                        <div style={{fontSize:'10px',color:'rgba(255,255,255,0.35)',fontWeight:600}}>ELAPSED</div>
+                    </div>
+                    <div style={{width:1,height:32,background:'rgba(255,255,255,0.08)'}} />
+                    <div style={{textAlign:'right'}}>
+                        <div style={{fontSize:'16px',fontWeight:900,color:'rgba(255,255,255,0.8)'}}>{selectedCount}</div>
+                        <div style={{fontSize:'10px',color:'rgba(255,255,255,0.35)',fontWeight:600}}>STORIES</div>
+                    </div>
+                </div>
+            </div>
+
+            {/* CURRENT PHASE BADGE */}
+            <div className="wr-phase-badge" style={{display:'flex',alignItems:'center',gap:'12px',position:'relative',zIndex:2}}>
+                <span style={{fontSize:'22px'}}>{currentPhase.icon}</span>
+                <div style={{flex:1}}>
+                    <div style={{fontSize:'13px',fontWeight:800,color:'rgba(245,158,11,0.95)',letterSpacing:'0.5px'}}>{currentPhase.name}</div>
+                    <div style={{fontSize:'11px',color:'rgba(255,255,255,0.45)',marginTop:'2px'}}>{currentPhase.sub}</div>
+                </div>
+                <div className="wr-typing"><span /><span /><span /></div>
+            </div>
+
+            {/* MAIN ARENA */}
+            <div style={{flex:1,display:'flex',gap:'16px',minHeight:0,position:'relative',zIndex:2}}>
+
+                {/* LEFT: AGENT GRID */}
+                <div style={{flex:'0 0 280px',display:'flex',flexDirection:'column',gap:'6px',overflowY:'auto',paddingRight:'8px'}}>
+                    <div style={{fontSize:'9px',fontWeight:800,color:'rgba(255,255,255,0.25)',textTransform:'uppercase',letterSpacing:'2px',marginBottom:'4px'}}>Voting Agents</div>
+                    {voters.map((a, i) => (
+                        <div key={a.id} className="wr-agent-seat" style={{animationDelay:`${i*300}ms`,display:'flex',alignItems:'center',gap:'10px',padding:'8px',borderRadius:'12px',background: thoughts[a.id] ? 'rgba(245,158,11,0.04)' : 'rgba(255,255,255,0.02)',border:'1px solid',borderColor: thoughts[a.id] ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.04)',transition:'all 0.4s'}}>
+                            <div style={{position:'relative',flexShrink:0}}>
+                                <div className={`wr-agent-avatar ${thoughts[a.id] ? 'active' : ''} ${dealtCards.has(a.id) ? 'dealt' : ''}`} style={{background:'rgba(255,255,255,0.03)'}}>
+                                    {a.emoji}
+                                </div>
+                                {dealtCards.has(a.id) && <div className="wr-card-chip">🃏</div>}
+                            </div>
+                            <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:'11px',fontWeight:800,color:'rgba(255,255,255,0.85)'}}>{a.name}</div>
+                                {thoughts[a.id] ? (
+                                    <div style={{fontSize:'10px',color:'rgba(245,158,11,0.7)',marginTop:'2px',lineHeight:'1.4',overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{thoughts[a.id]}</div>
+                                ) : (
+                                    stage >= 2 ? <div className="wr-typing" style={{marginTop:'2px'}}><span /><span /><span /></div> : <div style={{fontSize:'10px',color:'rgba(255,255,255,0.2)',marginTop:'2px'}}>{i <= activeAgent ? 'Seated' : 'Joining...'}</div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                    <div style={{fontSize:'9px',fontWeight:800,color:'rgba(255,255,255,0.25)',textTransform:'uppercase',letterSpacing:'2px',marginTop:'8px',marginBottom:'4px'}}>Observers</div>
+                    {observers.map((a, i) => (
+                        <div key={a.id} className="wr-agent-seat" style={{animationDelay:`${(voters.length + i)*300}ms`,display:'flex',alignItems:'center',gap:'10px',padding:'8px',borderRadius:'12px',background:'rgba(168,85,247,0.03)',border:'1px solid rgba(168,85,247,0.08)',transition:'all 0.4s'}}>
+                            <div className="wr-agent-avatar" style={{background:'rgba(168,85,247,0.06)',borderColor: stage >= 5 ? 'rgba(168,85,247,0.4)' : 'rgba(168,85,247,0.1)'}}>{a.emoji}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                                <div style={{fontSize:'11px',fontWeight:800,color:'rgba(255,255,255,0.85)'}}>{a.name} <span style={{fontSize:'9px',fontWeight:700,color:'rgba(168,85,247,0.7)',marginLeft:'4px'}}>OBSERVER</span></div>
+                                {thoughts[a.id] ? (
+                                    <div style={{fontSize:'10px',color:'rgba(168,85,247,0.7)',marginTop:'2px',lineHeight:'1.4',overflow:'hidden',textOverflow:'ellipsis',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{thoughts[a.id]}</div>
+                                ) : (
+                                    stage >= 5 ? <div className="wr-typing"><span style={{background:'rgba(168,85,247,0.7)'}} /><span style={{background:'rgba(168,85,247,0.7)'}} /><span style={{background:'rgba(168,85,247,0.7)'}} /></div> : <div style={{fontSize:'10px',color:'rgba(255,255,255,0.2)',marginTop:'2px'}}>Observing</div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* RIGHT: LIVE FEED */}
+                <div style={{flex:1,display:'flex',flexDirection:'column',gap:'12px',minWidth:0}}>
+
+                    {/* STORY UNDER DISCUSSION */}
+                    <div className="wr-story-card">
+                        <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px'}}>
+                            <div style={{fontSize:'9px',fontWeight:800,color:'rgba(245,158,11,0.5)',textTransform:'uppercase',letterSpacing:'2px'}}>Now Analyzing</div>
+                            <div style={{fontSize:'9px',fontWeight:700,color:'rgba(255,255,255,0.25)'}}>Story {currentStoryIdx + 1} of {selectedCount}</div>
+                        </div>
+                        <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                            <span style={{fontSize:'13px',fontWeight:900,color:'rgba(245,158,11,0.9)',fontFamily:'monospace'}}>{stories[currentStoryIdx]?.key || `Story-${currentStoryIdx+1}`}</span>
+                            <span style={{fontSize:'12px',color:'rgba(255,255,255,0.7)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{stories[currentStoryIdx]?.summary || 'Processing...'}</span>
+                        </div>
+                    </div>
+
+                    {/* DEBATE FEED */}
+                    <div style={{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:'0',paddingRight:'4px'}}>
+                        <div style={{fontSize:'9px',fontWeight:800,color:'rgba(255,255,255,0.2)',textTransform:'uppercase',letterSpacing:'2px',marginBottom:'8px'}}>
+                            {stage >= 4 ? '⚡ Live Debate' : stage >= 2 ? '💭 Agent Thoughts' : '🔄 Initializing'}
+                        </div>
+
+                        {stage < 4 && stage >= 2 && (
+                            <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                                {voters.filter(a => thoughts[a.id]).map((a) => (
+                                    <div key={a.id+thoughts[a.id]} className="wr-chat-msg">
+                                        <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
+                                            <span style={{fontSize:'14px'}}>{a.emoji}</span>
+                                            <span style={{fontSize:'10px',fontWeight:800,color:'rgba(255,255,255,0.7)'}}>{a.name}</span>
+                                        </div>
+                                        <div style={{fontSize:'11px',color:'rgba(255,255,255,0.55)',lineHeight:'1.5'}}>{thoughts[a.id]}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {stage >= 4 && chatLog.map((line, i) => {
+                            const fromAgent = agentById[line.from] || {};
+                            const toAgent = agentById[line.to] || {};
+                            return (
+                                <div key={i} className="wr-chat-msg" style={{animationDelay:`${i*100}ms`}}>
+                                    <div style={{display:'flex',alignItems:'center',gap:'6px',marginBottom:'4px'}}>
+                                        <span style={{fontSize:'14px'}}>{fromAgent.emoji}</span>
+                                        <span style={{fontSize:'10px',fontWeight:800,color:'rgba(255,255,255,0.7)'}}>{fromAgent.name}</span>
+                                        <span style={{fontSize:'9px',color:'rgba(255,255,255,0.2)'}}>→</span>
+                                        <span style={{fontSize:'14px'}}>{toAgent.emoji}</span>
+                                        <span style={{fontSize:'10px',fontWeight:700,color:'rgba(255,255,255,0.45)'}}>{toAgent.name}</span>
+                                    </div>
+                                    <div style={{fontSize:'11px',color:'rgba(255,255,255,0.55)',lineHeight:'1.5',fontStyle:'italic'}}>"{line.msg}"</div>
+                                </div>
+                            );
+                        })}
+
+                        {stage < 2 && (
+                            <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,gap:'12px',opacity:0.4}}>
+                                <div className="wr-shimmer" style={{width:'100%',height:'8px',borderRadius:'4px'}} />
+                                <div className="wr-shimmer" style={{width:'80%',height:'8px',borderRadius:'4px'}} />
+                                <div className="wr-shimmer" style={{width:'60%',height:'8px',borderRadius:'4px'}} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* CEO STATUS */}
+                    {stage >= 6 && (
+                        <div style={{padding:'12px 16px',borderRadius:'12px',background:'linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02))',border:'2px solid rgba(245,158,11,0.2)',animation:'fadeInScale 0.5s ease-out'}}>
+                            <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                                <span style={{fontSize:'20px'}}>🏆</span>
+                                <div>
+                                    <div style={{fontSize:'12px',fontWeight:900,color:'rgba(245,158,11,0.95)'}}>Super Agent</div>
+                                    <div style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>
+                                        {stage >= 7 ? 'Computing PERT + 3-Point + Historical + Analogous + AI-Era...' : 'Reviewing all agent inputs and historical data...'}
+                                    </div>
+                                </div>
+                                <div className="wr-typing" style={{marginLeft:'auto'}}><span /><span /><span /></div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* BOTTOM: PROGRESS */}
+            <div style={{position:'relative',zIndex:2}}>
+                <div style={{display:'flex',justifyContent:'space-between',marginBottom:'6px'}}>
+                    {DISCUSSION_PHASES.map((p, i) => (
+                        <div key={i} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',flex:1}}>
+                            <span style={{fontSize:'14px',filter: i <= stage ? 'none' : 'grayscale(1) opacity(0.3)',transition:'all 0.5s'}}>{p.icon}</span>
+                            <span style={{fontSize:'7px',fontWeight:700,color: i <= stage ? 'rgba(245,158,11,0.7)' : 'rgba(255,255,255,0.15)',textTransform:'uppercase',letterSpacing:'0.5px',textAlign:'center',lineHeight:'1.2',maxWidth:'70px'}}>{p.name.split('—')[0].trim()}</span>
+                        </div>
+                    ))}
+                </div>
+                <div className="wr-progress-bar">
+                    <div className="wr-progress-fill" style={{width:`${progressPct}%`}} />
+                </div>
+                <div style={{textAlign:'center',marginTop:'6px',fontSize:'10px',color:'rgba(255,255,255,0.25)',fontWeight:600}}>
+                    {selectedCount > 1 ? `Processing ${selectedCount} stories — this may take a few minutes for large backlogs` : 'Analyzing story complexity across all dimensions'}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function PlanningPokerView({ project, setIsLoading }) {
     const [phase, setPhase] = useState('setup');
     const [source, setSource] = useState('sprint');
@@ -2123,7 +2552,10 @@ function PlanningPokerView({ project, setIsLoading }) {
 
     const pkrCSS = `.pkr-card{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;transition:all .3s;opacity:0;transform:translateY(20px)}.pkr-show{opacity:1;transform:translateY(0)}.pkr-row-top{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}.pkr-row-bot{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:75%;margin:0 auto}.pkr-chip{display:inline-flex;align-items:center;justify-content:center;min-width:36px;height:36px;border-radius:10px;font-weight:900;font-size:16px;background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#78350f}.pkr-chip-lg{min-width:56px;height:56px;font-size:24px;border-radius:14px}.pkr-conf{font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px}.pkr-inf{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:16px;opacity:0;transform:translateX(-20px);transition:all .4s}.pkr-inf-show{opacity:1;transform:translateX(0)}.pkr-super{background:var(--bg-card);border:2px solid #f59e0b;border-radius:16px;padding:20px;opacity:0;transform:scale(0.9);transition:all .5s}.pkr-super-show{opacity:1;transform:scale(1)}.pkr-method{background:var(--bg-body);border:1px solid var(--border);border-radius:10px;padding:10px;text-align:center}`;
 
-    if (phase === 'playing') return (<div className="animate-fade-in h-full flex items-center justify-center"><style>{pkrCSS}</style><div className="text-center"><div className="text-6xl mb-4 animate-bounce">🃏</div><p className="text-lg font-black text-text-main">Agents estimating...</p><p className="text-sm text-text-muted mt-2">9 AI agents analyzing {selected.size} stories</p></div></div>);
+    if (phase === 'playing') {
+        const selStories = stories.filter(s => selected.has(s.key));
+        return (<div className="animate-fade-in h-full"><style>{pkrCSS}</style><PokerLiveSession agents={agents} stories={selStories} selectedCount={selected.size} /></div>);
+    }
 
     if (phase === 'results' && results.length > 0) {
         const topVoters = votes.slice(0, 4); const botVoters = votes.slice(4, 7);
