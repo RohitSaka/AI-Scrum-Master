@@ -267,7 +267,7 @@ def create_adf_doc(text_content, ac_list=None):
     if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None):
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None, max_tokens=8192):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -284,7 +284,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
 
     for m in models_to_try:
         try:
-            gen_config = {"temperature": temperature, "maxOutputTokens": 8192}
+            gen_config = {"temperature": temperature, "maxOutputTokens": max_tokens}
             if json_mode: gen_config["responseMimeType"] = "application/json"
             payload = {"contents": contents, "generationConfig": gen_config}
             r = requests.post(
@@ -326,7 +326,7 @@ def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None):
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None, max_tokens=8192):
     """
     Routes AI calls. Default: Gemini. 
     force_openai=True only for endpoints that specifically need OpenAI (e.g. image analysis).
@@ -334,7 +334,45 @@ def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data
     """
     if force_openai:
         return call_openai(prompt, temperature, image_data, json_mode, timeout=timeout, model=model or "gpt-4o")
-    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout, model=model)
+    return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout, model=model, max_tokens=max_tokens)
+
+def repair_json(raw_text, context=""):
+    """Attempt to parse JSON with repair for truncated AI responses."""
+    if not raw_text:
+        return None
+    cleaned = re.sub(r',\s*([}\]])', r'\1', raw_text.replace('```json', '').replace('```', '').strip())
+    # Remove any trailing text after last } or ]
+    for end_char in ['}', ']']:
+        last_idx = cleaned.rfind(end_char)
+        if last_idx != -1 and last_idx < len(cleaned) - 1:
+            after = cleaned[last_idx+1:].strip()
+            if after and not after.startswith((',', '}', ']')):
+                cleaned = cleaned[:last_idx+1]
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Repair: close unclosed braces/brackets
+        opens_b = cleaned.count('{') - cleaned.count('}')
+        opens_a = cleaned.count('[') - cleaned.count(']')
+        # Strip any trailing partial string (unterminated string)
+        if opens_b > 0 or opens_a > 0:
+            # Find last complete value (ends with ", number, true, false, null, }, or ])
+            repaired = cleaned.rstrip(', \t\n\r')
+            # If inside a string, close it
+            in_str = repaired.count('"') % 2 == 1
+            if in_str:
+                repaired += '"'
+            repaired = repaired.rstrip(',')
+            repaired += (']' * max(0, opens_a)) + ('}' * max(0, opens_b))
+            try:
+                result = json.loads(repaired)
+                print(f"[JSON-REPAIR] {context}: Fixed truncated response ({len(cleaned)} chars)", flush=True)
+                return result
+            except json.JSONDecodeError as e2:
+                print(f"[JSON-REPAIR] {context}: Repair failed — {e2}", flush=True)
+                return None
+        print(f"[JSON-REPAIR] {context}: Parse failed — {cleaned[:100]}...", flush=True)
+        return None
 
 # ================= APP ENDPOINTS =================
 @app.get("/")
@@ -1686,10 +1724,11 @@ Return STRICT JSON:
 {{"pi_name":"{pi_name}","total_capacity":{total_capacity},"total_committed":0,"total_spillover":0,"sprints":[{{"name":"Sprint 1","capacity":{velocity_per_sprint},"committed_points":0,"utilization_pct":0,"stories":[{{"key":"X-1","summary":"...","points":5,"type":"Story","priority":"High","team":"{teams[0]}","dependencies":[]}}]}}],"spillover":[],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["..."],"sequencing_rationale":"...","team_load":{json.dumps({t: {f"Sprint {i+1}": 0 for i in range(num_sprints)} for t in teams})}}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=180)
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=180, max_tokens=32768)
         if raw:
-            cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
-            return json.loads(cleaned)
+            result = repair_json(raw, "PI-Plan")
+            if result: return result
+            return {"error": "PI Plan JSON parse failed"}
         return {"error": "AI returned empty response"}
     except Exception as e:
         return {"error": f"PI Planning failed: {str(e)}"}
@@ -1766,10 +1805,11 @@ Return STRICT JSON:
 {{"stories": [{{"key": "X-1", "summary": "...", "user_business_value": 0, "time_criticality": 0, "risk_reduction": 0, "job_size": 0, "cost_of_delay": 0, "wsjf_score": 0.0, "rationale": "Brief why"}}], "priority_order": ["X-1", "X-2"], "analysis": "Summary of prioritization insights"}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=120)
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=120, max_tokens=16384)
         if raw:
-            cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
-            return json.loads(cleaned)
+            result = repair_json(raw, "WSJF")
+            if result: return result
+            return {"error": "WSJF JSON parse failed"}
         return {"error": "AI returned empty response"}
     except Exception as e:
         print(f"WSJF error: {e}", flush=True)
@@ -1856,17 +1896,15 @@ def _roadmap_single_call(req, features_text, num_features, start_date,
     )
 
     try:
-        ai_result = generate_ai_response(prompt, temperature=0.2, timeout=timeout, model=model)
+        ai_result = generate_ai_response(prompt, temperature=0.2, timeout=timeout, model=model, max_tokens=32768)
         if not ai_result:
             raise ValueError("AI returned empty response")
 
-        raw = re.sub(r',\s*([}\]])', r'\1', ai_result.replace('```json', '').replace('```', '').strip())
-        parsed = json.loads(raw)
+        parsed = repair_json(ai_result, "SingleCallRoadmap")
+        if not parsed:
+            raise ValueError("AI response JSON could not be parsed or repaired")
         return _post_process_roadmap(parsed, req, start_date, target_working_days, target_months, target_sprints, num_features)
 
-    except json.JSONDecodeError as e:
-        print(f"Feature Roadmap JSON Error: {e}", flush=True)
-        return {"error": f"AI response was not valid JSON. Please try again.", "raw_snippet": str(e)}
     except Exception as e:
         print(f"Feature Roadmap Error: {e}", flush=True)
         return {"error": str(e)}
@@ -1938,13 +1976,24 @@ RULES:
 4. Dependencies reference feature # numbers from the FULL list (1-{num_features})"""
 
         try:
-            result = generate_ai_response(fa_prompt, temperature=0.2, timeout=timeout, model=model)
+            result = generate_ai_response(fa_prompt, temperature=0.2, timeout=timeout, model=model, max_tokens=16384)
             if result:
-                raw = re.sub(r',\s*([}\]])', r'\1', result.replace('```json', '').replace('```', '').strip())
-                parsed_batch = json.loads(raw)
-                batch_fa = parsed_batch.get("feature_analysis", [])
-                all_feature_analysis.extend(batch_fa)
-                print(f"  ✅ Phase 1A Batch {batch_idx+1}: {len(batch_fa)} features analyzed", flush=True)
+                parsed_batch = repair_json(result, f"Phase1A-Batch{batch_idx+1}")
+                if parsed_batch:
+                    batch_fa = parsed_batch.get("feature_analysis", [])
+                    all_feature_analysis.extend(batch_fa)
+                    print(f"  ✅ Phase 1A Batch {batch_idx+1}: {len(batch_fa)} features analyzed", flush=True)
+                else:
+                    print(f"  ⚠️ Phase 1A Batch {batch_idx+1}: JSON parse failed, creating defaults", flush=True)
+                    for i, f in enumerate(batch_features):
+                        all_feature_analysis.append({
+                            "id": batch_start + i + 1, "feature": f,
+                            "feature_type": "Application (UI)",
+                            "technical_scope": f"Implementation of {f} using {req.tech_stack}",
+                            "size": "MEDIUM", "story_points": 3, "days": 3,
+                            "roles_needed": "PP, QA", "est_team": "M – PP, QA",
+                            "est_conservative": "S – PP", "dependencies": "None"
+                        })
             else:
                 print(f"  ⚠️ Phase 1A Batch {batch_idx+1}: Empty response, creating defaults", flush=True)
                 for i, f in enumerate(batch_features):
@@ -2102,12 +2151,13 @@ RULES:
 7. feature_type_summary: count and points per feature type"""
 
     try:
-        structure_result = generate_ai_response(structure_prompt, temperature=0.2, timeout=timeout, model=model)
+        structure_result = generate_ai_response(structure_prompt, temperature=0.2, timeout=timeout, model=model, max_tokens=32768)
         if not structure_result:
             raise ValueError("Phase 1B AI returned empty response")
 
-        structure_raw = re.sub(r',\s*([}\]])', r'\1', structure_result.replace('```json', '').replace('```', '').strip())
-        structure = json.loads(structure_raw)
+        structure = repair_json(structure_result, "Phase1B-Structure")
+        if not structure:
+            raise ValueError("Phase 1B JSON parse/repair failed")
         print(f"  ✅ Phase 1B complete: project structure generated", flush=True)
 
     except Exception as e:
@@ -2185,13 +2235,17 @@ RULES:
 4. Priorities: High for core features, Medium for enhancements"""
 
         try:
-            epic_result = generate_ai_response(epic_prompt, temperature=0.3, timeout=timeout, model=model)
+            epic_result = generate_ai_response(epic_prompt, temperature=0.3, timeout=timeout, model=model, max_tokens=16384)
             if epic_result:
-                epic_raw = re.sub(r',\s*([}\]])', r'\1', epic_result.replace('```json', '').replace('```', '').strip())
-                epic_parsed = json.loads(epic_raw)
-                batch_epics = epic_parsed.get("epics", [])
-                all_epics.extend(batch_epics)
-                print(f"  ✅ Batch {batch_idx+1}: {len(batch_epics)} epics generated", flush=True)
+                epic_parsed = repair_json(epic_result, f"Phase2-EpicBatch{batch_idx+1}")
+                if epic_parsed:
+                    batch_epics = epic_parsed.get("epics", [])
+                    all_epics.extend(batch_epics)
+                    print(f"  ✅ Batch {batch_idx+1}: {len(batch_epics)} epics generated", flush=True)
+                else:
+                    print(f"  ⚠️ Batch {batch_idx+1}: JSON parse failed, creating placeholders", flush=True)
+                    for f in batch_features:
+                        all_epics.append(_placeholder_epic(f, req.tech_stack))
             else:
                 print(f"  ⚠️ Batch {batch_idx+1}: Empty response, creating placeholders", flush=True)
                 for f in batch_features:

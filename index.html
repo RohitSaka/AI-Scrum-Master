@@ -2181,7 +2181,7 @@ function PokerLiveSession({ agents, stories, selectedCount }) {
         { name: "Round 2 — Deep Analysis", icon: "🔬", sub: "Cross-referencing history, dependencies, complexity..." },
         { name: "The Debate", icon: "⚔️", sub: "Agents challenging each other's assumptions..." },
         { name: "Observers Weigh In", icon: "👁️", sub: "BA and Scrum Master providing context..." },
-        { name: "Super Agent", icon: "🏆", sub: "Synthesizing all inputs with PERT analysis..." },
+        { name: "Chief Estimation Officer", icon: "🏆", sub: "Synthesizing all inputs with PERT analysis..." },
         { name: "Finalizing Scores", icon: "✨", sub: "Computing weighted judgment across all methods..." }
     ];
 
@@ -2470,7 +2470,7 @@ function PokerLiveSession({ agents, stories, selectedCount }) {
                             <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
                                 <span style={{fontSize:'20px'}}>🏆</span>
                                 <div>
-                                    <div style={{fontSize:'12px',fontWeight:900,color:'rgba(245,158,11,0.95)'}}>Super Agent</div>
+                                    <div style={{fontSize:'12px',fontWeight:900,color:'rgba(245,158,11,0.95)'}}>Chief Estimation Officer</div>
                                     <div style={{fontSize:'10px',color:'rgba(255,255,255,0.4)'}}>
                                         {stage >= 7 ? 'Computing PERT + 3-Point + Historical + Analogous + AI-Era...' : 'Reviewing all agent inputs and historical data...'}
                                     </div>
@@ -2530,10 +2530,44 @@ function PlanningPokerView({ project, setIsLoading }) {
         setPhase('playing'); setError(''); setResults([]);
         try {
             const res = await secureFetch(`/planning_poker/${project}/play`, { method: 'POST', body: JSON.stringify({ stories: sel }) });
-            const d = await res?.json();
-            if (d?.results) { setResults(d.results); setPhase('results'); setCurrentIdx(0); setRevealed(0); }
-            else { setError(d?.error || 'Poker failed'); setPhase('setup'); }
-        } catch { setError('Poker failed'); setPhase('setup'); }
+            if (!res) { setError('Server connection lost — it may be restarting. Please wait 30 seconds and try again.'); setPhase('setup'); return; }
+            let d;
+            try { d = await res.json(); } catch { setError('Server returned invalid response — it may have restarted mid-request. Try again.'); setPhase('setup'); return; }
+            if (d?.results && Array.isArray(d.results) && d.results.length > 0) {
+                // Sanitize each result to prevent render crashes
+                const safeResults = d.results.map(r => ({
+                    ...r,
+                    story_key: r.story_key || '?',
+                    story_summary: r.story_summary || '',
+                    votes: Array.isArray(r.votes) ? r.votes.map(v => ({
+                        agent_id: v.agent_id || 'unknown', points: Number(v.points) || 3,
+                        confidence: v.confidence || 'medium', reasoning: v.reasoning || '',
+                        risks: v.risks || ''
+                    })) : [],
+                    influencers: Array.isArray(r.influencers) ? r.influencers.map(inf => ({
+                        agent_id: inf.agent_id || 'unknown', challenge: inf.challenge || '',
+                        suggestion: inf.suggestion || '', observation: inf.observation || '',
+                        historical_comparison: inf.historical_comparison || '', recommendation: inf.recommendation || ''
+                    })) : [],
+                    super_agent: r.super_agent ? {
+                        ...r.super_agent,
+                        final_points: Number(r.super_agent.final_points) || 3,
+                        rationale: r.super_agent.rationale || 'Estimation complete.',
+                        method_used: r.super_agent.method_used || 'Multi-method',
+                        confidence: r.super_agent.confidence || 'medium',
+                        pert_estimate: r.super_agent.pert_estimate || {},
+                        three_point_estimate: r.super_agent.three_point_estimate || {},
+                        historical_estimate: r.super_agent.historical_estimate || {},
+                        analogous_estimate: r.super_agent.analogous_estimate || {},
+                        ai_era_estimate: r.super_agent.ai_era_estimate || null
+                    } : { final_points: 3, rationale: 'AI response was incomplete', method_used: 'Fallback', confidence: 'low', pert_estimate: {}, three_point_estimate: {}, historical_estimate: {}, analogous_estimate: {}, ai_era_estimate: null }
+                }));
+                const errCount = safeResults.filter(r => r.error).length;
+                if (errCount > 0) setError(`${errCount} of ${safeResults.length} stories had estimation errors — partial results shown.`);
+                setResults(safeResults); setPhase('results'); setCurrentIdx(0); setRevealed(0);
+            }
+            else { setError(d?.error || 'Poker failed — no results returned.'); setPhase('setup'); }
+        } catch(e) { console.error('Poker error:', e); setError('Poker failed — server may have restarted. Try again.'); setPhase('setup'); }
     };
     useEffect(() => { if (phase === 'results') { const t = setInterval(() => setRevealed(p => p < 10 ? p + 1 : p), 400); return () => clearInterval(t); } }, [phase, currentIdx]);
 
