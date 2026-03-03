@@ -1112,19 +1112,31 @@ def generate_retro_link(payload: dict, creds: dict = Depends(get_jira_creds), db
     project_key = payload.get("project")
     sprint_id = payload.get("sprint")
     license_key = payload.get("license_key")
-    if not license_key: raise HTTPException(status_code=400, detail="Missing license key")
+    # In demo mode, use "DEMO" as placeholder license key
+    if not license_key:
+        if DEMO_JIRA_DOMAIN and DEMO_JIRA_EMAIL and DEMO_JIRA_TOKEN:
+            license_key = "DEMO"
+        else:
+            raise HTTPException(status_code=400, detail="Missing license key")
     token = str(uuid.uuid4())
     db.add(GuestLink(token=token, project_key=project_key, sprint_id=str(sprint_id), license_key=license_key))
     db.commit()
     return {"token": token}
 
+def _get_guest_creds(link, db):
+    """Get Jira creds for guest link - supports both OAuth and demo mode."""
+    if link.license_key == "DEMO" and DEMO_JIRA_DOMAIN and DEMO_JIRA_EMAIL and DEMO_JIRA_TOKEN:
+        return {"auth_type": "basic", "domain": DEMO_JIRA_DOMAIN.replace("https://", "").replace("http://", "").strip("/"), "email": DEMO_JIRA_EMAIL, "token": DEMO_JIRA_TOKEN}
+    user = get_valid_oauth_session(db=db, license_key=link.license_key)
+    if not user:
+        raise HTTPException(status_code=401, detail="Host session expired")
+    return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
+
 @app.get("/guest/retro/{token}")
 def get_guest_retro(token: str, db: Session = Depends(get_db)):
     link = db.query(GuestLink).filter(GuestLink.token == token).first()
     if not link: raise HTTPException(status_code=404, detail="Invalid or expired link")
-    user = get_valid_oauth_session(db=db, license_key=link.license_key)
-    if not user: raise HTTPException(status_code=401, detail="Host session expired. Please ask the Scrum Master to generate a new link.")
-    creds = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
+    creds = _get_guest_creds(link, db)
     res = jira_request("GET", f"project/{link.project_key}/properties/ig_agile_retro", creds)
     db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
     board = db_data.get(link.sprint_id, {"well": [], "improve": [], "kudos": [], "actions": []})
@@ -1134,9 +1146,7 @@ def get_guest_retro(token: str, db: Session = Depends(get_db)):
 def add_guest_retro(token: str, payload: dict, db: Session = Depends(get_db)):
     link = db.query(GuestLink).filter(GuestLink.token == token).first()
     if not link: raise HTTPException(status_code=404, detail="Invalid link")
-    user = get_valid_oauth_session(db=db, license_key=link.license_key)
-    if not user: raise HTTPException(status_code=401, detail="Host session expired")
-    creds = {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
+    creds = _get_guest_creds(link, db)
     res = jira_request("GET", f"project/{link.project_key}/properties/ig_agile_retro", creds)
     db_data = res.json().get('value', {}) if res and res.status_code == 200 else {}
     if link.sprint_id not in db_data:
