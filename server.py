@@ -113,6 +113,11 @@ CLIENT_SECRET = os.getenv("ATLASSIAN_CLIENT_SECRET", "").strip()
 APP_URL = os.getenv("APP_URL", "http://localhost:8000").strip()
 REDIRECT_URI = f"{APP_URL}/auth/callback"
 
+# ── DEMO MODE: Hardcoded Jira credentials for CEO demo ──
+DEMO_JIRA_DOMAIN = os.getenv("JIRA_DOMAIN", "").strip()
+DEMO_JIRA_EMAIL = os.getenv("JIRA_EMAIL", "").strip()
+DEMO_JIRA_TOKEN = os.getenv("JIRA_TOKEN", "").strip()
+
 @app.post("/admin/generate_license")
 def generate_license(db: Session = Depends(get_db)):
     new_key = f"IG-ENT-{str(uuid.uuid4())[:8].upper()}"
@@ -161,6 +166,9 @@ async def get_jira_creds(x_jira_domain: str = Header(None), x_jira_email: str = 
         return {"auth_type": "oauth", "cloud_id": user.cloud_id, "access_token": user.access_token}
     if x_jira_domain and x_jira_email and x_jira_token:
         return {"auth_type": "basic", "domain": x_jira_domain.replace("https://", "").replace("http://", "").strip("/"), "email": x_jira_email, "token": x_jira_token}
+    # ── DEMO MODE: Fall back to env-var Jira credentials ──
+    if DEMO_JIRA_DOMAIN and DEMO_JIRA_EMAIL and DEMO_JIRA_TOKEN:
+        return {"auth_type": "basic", "domain": DEMO_JIRA_DOMAIN, "email": DEMO_JIRA_EMAIL, "token": DEMO_JIRA_TOKEN}
     raise HTTPException(status_code=401, detail="Missing Auth")
 
 def jira_request(method, endpoint, creds, data=None):
@@ -173,9 +181,9 @@ def jira_request(method, endpoint, creds, data=None):
             url = f"https://{creds['domain']}/rest/api/3/{endpoint}"
             headers = {"Accept": "application/json", "Content-Type": "application/json"}
             auth = HTTPBasicAuth(creds['email'], creds['token'])
-        if method == "POST": return requests.post(url, json=data, headers=headers, auth=auth, timeout=60)
-        elif method == "GET": return requests.get(url, headers=headers, auth=auth, timeout=60)
-        elif method == "PUT": return requests.put(url, json=data, headers=headers, auth=auth, timeout=60)
+        if method == "POST": return requests.post(url, json=data, headers=headers, auth=auth, timeout=120)
+        elif method == "GET": return requests.get(url, headers=headers, auth=auth, timeout=120)
+        elif method == "PUT": return requests.put(url, json=data, headers=headers, auth=auth, timeout=120)
     except Exception as e:
         print(f"Jira HTTP Error ({endpoint}): {e}", flush=True)
         return None
@@ -267,7 +275,7 @@ def create_adf_doc(text_content, ac_list=None):
     if not blocks: blocks.append({"type": "paragraph", "content": [{"type": "text", "text": "AI Generated Content"}]})
     return {"type": "doc", "version": 1, "content": blocks}
 
-def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=50, model=None, max_tokens=8192):
+def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=600, model=None, max_tokens=8192):
     api_key = os.getenv("GEMINI_API_KEY")
     contents = [{"parts": [{"text": prompt}]}]
     if image_data:
@@ -310,7 +318,7 @@ def call_gemini(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
             continue
     return None
 
-def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=20, model="gpt-4o"):
+def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeout=600, model="gpt-4o"):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key: return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
     sys_msg = "You are an elite Enterprise Strategy Consultant. Return strictly valid JSON." if json_mode else "You are an Expert Agile Coach assisting a Scrum Master."
@@ -326,7 +334,7 @@ def call_openai(prompt, temperature=0.3, image_data=None, json_mode=True, timeou
     return call_gemini(prompt, temperature, image_data, json_mode, timeout=timeout)
 
 
-def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=20, model=None, max_tokens=8192):
+def generate_ai_response(prompt, temperature=0.3, force_openai=False, image_data=None, json_mode=True, timeout=600, model=None, max_tokens=8192):
     """
     Routes AI calls. Default: Gemini. 
     force_openai=True only for endpoints that specifically need OpenAI (e.g. image analysis).
@@ -375,6 +383,12 @@ def repair_json(raw_text, context=""):
         return None
 
 # ================= APP ENDPOINTS =================
+
+@app.get("/auth/check")
+def check_auth():
+    """Check if demo mode is active (env-var Jira credentials available)."""
+    demo = bool(DEMO_JIRA_DOMAIN and DEMO_JIRA_EMAIL and DEMO_JIRA_TOKEN)
+    return {"demo_mode": demo, "domain": DEMO_JIRA_DOMAIN if demo else None}
 @app.get("/")
 def home():
     if os.path.exists("index.html"): return FileResponse("index.html")
@@ -1483,7 +1497,7 @@ Return STRICT JSON — no markdown, no backticks:
 {{"features": [{{"name": "Feature Name", "description": "What needs to be built..."}}], "extraction_summary": "Extracted N features from [doc type]. Covers [domain]."}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.1, timeout=180)
+        raw = generate_ai_response(prompt, temperature=0.1, timeout=600)
         if raw:
             cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
             result = json.loads(cleaned)
@@ -1616,7 +1630,7 @@ Return STRICT JSON (no markdown):
 
 IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter must have a DIFFERENT point value where reasonable."""
         try:
-            raw = generate_ai_response(prompt, temperature=0.4, timeout=90)
+            raw = generate_ai_response(prompt, temperature=0.4, timeout=600)
             if raw:
                 cleaned = re.sub(r',\s*([}\]])', r'\1', raw.replace('```json', '').replace('```', '').strip())
                 # Repair truncated JSON — close any open braces/brackets
@@ -1643,6 +1657,74 @@ IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter
             print(f"[POKER] Error for {story.get('key')}: {e}", flush=True)
             results.append({"story_key": story.get("key"), "error": str(e)})
     return {"results": results}
+
+@app.post("/planning_poker/{project_key}/play_one")
+def run_poker_single_story(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+    """Process ONE story for live poker - returns real AI reasoning."""
+    story = payload.get("story", {})
+    history = payload.get("history", [])
+    if not story: return {"error": "No story provided"}
+    
+    history_block = "No historical data." if not history else "COMPLETED STORIES:\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) -> {h['points']} pts" for h in history[:20]])
+    voting = [a for a in POKER_AGENTS if a["votes"]]
+    nonvoting = [a for a in POKER_AGENTS if not a["votes"]]
+    
+    story_ctx = f"STORY: {story.get('key')} -- {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:600]}"
+    voter_block = "\n".join([f"VOTER {a['id']}: {a['behavior']}" for a in voting])
+    observers_block = ' | '.join([f"{a['id']}: {a['behavior']}" for a in nonvoting])
+    
+    prompt = f"""You are running a Planning Poker session. Estimate this story using FIBONACCI SCALE: 1, 2, 3, 5, 8, 13, 21.
+
+{story_ctx}
+
+{history_block}
+
+TEAM VOTERS (each must estimate INDEPENDENTLY based on their role):
+{voter_block}
+
+NON-VOTING OBSERVERS:
+{observers_block}
+
+ESTIMATION PHILOSOPHY:
+
+THINK ABOUT WHAT THIS STORY ACTUALLY REQUIRES:
+- Is it a simple field change or config update? -> 1-2 points
+- Is it a standard CRUD screen with basic validation? -> 2-3 points
+- Does it involve moderate business logic, multiple screens, or API integration? -> 3-5 points
+- Does it require complex architecture, data migration, or cross-system integration? -> 5-8 points
+- Is it a massive epic-level effort with unknowns and multiple dependencies? -> 8-13+ points
+
+AI-ERA ESTIMATION - THE CHIEF ESTIMATION OFFICER MUST ANALYZE:
+- "With AI Assistance" (Copilot, code generation, test generation): How many dev-days would this realistically take?
+- "Without AI Assistance" (traditional coding): How many dev-days?
+- Simple CRUD/boilerplate -> AI saves 40-60%. Complex architecture/legacy -> AI saves only 10-20%.
+
+CRITICAL RULES:
+1. Each voter estimates INDEPENDENTLY. The Architect sees risk (tends higher). Junior Dev sees simplicity (tends lower). Senior QA sees test complexity.
+2. Votes should VARY - a spread of 2-3 Fibonacci values across voters is NORMAL. If all voters give the same number, you are doing it wrong.
+3. The Chief Estimation Officer computes PERT, 3-Point, Historical, Analogous, then makes a WEIGHTED JUDGMENT.
+4. final_points should reflect GENUINE complexity. Do NOT default to any single number.
+
+Return STRICT JSON (no markdown):
+{{"votes":[{{"agent_id":"architect","points":0,"confidence":"high/medium/low","reasoning":"2-3 sentences about architectural concerns","risks":"specific risks"}},{{"agent_id":"team_lead","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"question the estimate","suggestion":"actionable suggestion"}},{{"agent_id":"scrum_master","observation":"spread analysis","historical_comparison":"compare to past stories","recommendation":"what to do"}}],"super_agent":{{"pert_estimate":{{"optimistic":"lowest reasonable Fibonacci","most_likely":"most probable Fibonacci","pessimistic":"highest reasonable Fibonacci","pert_fibonacci":"PERT result as Fibonacci"}},"three_point_estimate":{{"raw":"decimal average","fibonacci":"nearest Fibonacci"}},"historical_estimate":{{"matched_story":"KEY from history or null","fibonacci":"that story points or estimate"}},"analogous_estimate":{{"similar_story":"description of similar work","fibonacci":"estimated Fibonacci"}},"ai_era_estimate":{{"with_ai_days":"realistic dev-days using AI tools","without_ai_days":"realistic dev-days without AI","ai_savings_pct":"percentage saved","recommendation":"how AI changes the estimate"}},"final_points":"YOUR WEIGHTED JUDGMENT as Fibonacci","confidence":"high/medium/low","method_used":"which methods and weights you applied","rationale":"3-4 sentences explaining your reasoning and the key factors","key_assumptions":["assumption1","assumption2"]}}}}
+
+IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter must have a DIFFERENT point value where reasonable."""
+
+    try:
+        raw = generate_ai_response(prompt, temperature=0.4, timeout=600, max_tokens=16384)
+        if raw:
+            result = repair_json(raw, f"PokerSingle-{story.get('key')}")
+            if result:
+                result["story_key"] = story.get("key")
+                result["story_summary"] = story.get("summary")
+                result["current_points"] = story.get("current_points", 0)
+                return result
+            else:
+                return {"story_key": story.get("key"), "error": "JSON parse failed", "votes": [], "influencers": [], "super_agent": {"final_points": 3, "rationale": "Response was malformed"}}
+        return {"story_key": story.get("key"), "error": "AI returned empty"}
+    except Exception as e:
+        print(f"[POKER-SINGLE] Error for {story.get('key')}: {e}", flush=True)
+        return {"story_key": story.get("key"), "error": str(e)}
 
 @app.post("/planning_poker/{project_key}/push_jira")
 def push_poker_to_jira(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
@@ -1857,7 +1939,7 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
     # ── CHOOSE MODEL: Premium for roadmap accuracy ──
     # o3-mini for deep reasoning, gpt-4o as fallback
     ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-2.5-pro")
-    ROADMAP_TIMEOUT = 300  # seconds per AI call
+    ROADMAP_TIMEOUT = 600  # seconds per AI call
     FEATURE_BATCH_SIZE = 20
 
     # ── CHUNKING STRATEGY ──
