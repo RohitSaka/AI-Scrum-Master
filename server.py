@@ -113,7 +113,7 @@ CLIENT_SECRET = os.getenv("ATLASSIAN_CLIENT_SECRET", "").strip()
 APP_URL = os.getenv("APP_URL", "http://localhost:8000").strip()
 REDIRECT_URI = f"{APP_URL}/auth/callback"
 
-# ── DEMO MODE: Hardcoded Jira credentials for CEO demo ──
+# ── DEMO MODE: Set these 3 env vars on Render for license-free access ──
 DEMO_JIRA_DOMAIN = os.getenv("JIRA_DOMAIN", "").strip()
 DEMO_JIRA_EMAIL = os.getenv("JIRA_EMAIL", "").strip()
 DEMO_JIRA_TOKEN = os.getenv("JIRA_TOKEN", "").strip()
@@ -168,7 +168,7 @@ async def get_jira_creds(x_jira_domain: str = Header(None), x_jira_email: str = 
         return {"auth_type": "basic", "domain": x_jira_domain.replace("https://", "").replace("http://", "").strip("/"), "email": x_jira_email, "token": x_jira_token}
     # ── DEMO MODE: Fall back to env-var Jira credentials ──
     if DEMO_JIRA_DOMAIN and DEMO_JIRA_EMAIL and DEMO_JIRA_TOKEN:
-        return {"auth_type": "basic", "domain": DEMO_JIRA_DOMAIN, "email": DEMO_JIRA_EMAIL, "token": DEMO_JIRA_TOKEN}
+        return {"auth_type": "basic", "domain": DEMO_JIRA_DOMAIN.replace("https://", "").replace("http://", "").strip("/"), "email": DEMO_JIRA_EMAIL, "token": DEMO_JIRA_TOKEN}
     raise HTTPException(status_code=401, detail="Missing Auth")
 
 def jira_request(method, endpoint, creds, data=None):
@@ -181,9 +181,9 @@ def jira_request(method, endpoint, creds, data=None):
             url = f"https://{creds['domain']}/rest/api/3/{endpoint}"
             headers = {"Accept": "application/json", "Content-Type": "application/json"}
             auth = HTTPBasicAuth(creds['email'], creds['token'])
-        if method == "POST": return requests.post(url, json=data, headers=headers, auth=auth, timeout=120)
-        elif method == "GET": return requests.get(url, headers=headers, auth=auth, timeout=120)
-        elif method == "PUT": return requests.put(url, json=data, headers=headers, auth=auth, timeout=120)
+        if method == "POST": return requests.post(url, json=data, headers=headers, auth=auth, timeout=60)
+        elif method == "GET": return requests.get(url, headers=headers, auth=auth, timeout=60)
+        elif method == "PUT": return requests.put(url, json=data, headers=headers, auth=auth, timeout=60)
     except Exception as e:
         print(f"Jira HTTP Error ({endpoint}): {e}", flush=True)
         return None
@@ -383,16 +383,17 @@ def repair_json(raw_text, context=""):
         return None
 
 # ================= APP ENDPOINTS =================
-
-@app.get("/auth/check")
-def check_auth():
-    """Check if demo mode is active (env-var Jira credentials available)."""
-    demo = bool(DEMO_JIRA_DOMAIN and DEMO_JIRA_EMAIL and DEMO_JIRA_TOKEN)
-    return {"demo_mode": demo, "domain": DEMO_JIRA_DOMAIN if demo else None}
 @app.get("/")
 def home():
     if os.path.exists("index.html"): return FileResponse("index.html")
     return {"status": "Backend running — V48 PPTX Engine v5 + Roles & Team"}
+
+@app.get("/auth/check")
+def check_auth():
+    """Check if demo mode is active (env-var Jira credentials)."""
+    demo = bool(DEMO_JIRA_DOMAIN and DEMO_JIRA_EMAIL and DEMO_JIRA_TOKEN)
+    return {"demo_mode": demo, "domain": DEMO_JIRA_DOMAIN if demo else None}
+
 
 @app.get("/projects")
 def list_projects(creds: dict = Depends(get_jira_creds)):
@@ -1659,20 +1660,19 @@ IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter
     return {"results": results}
 
 @app.post("/planning_poker/{project_key}/play_one")
-def run_poker_single_story(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
+def run_poker_single(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
     """Process ONE story for live poker - returns real AI reasoning."""
     story = payload.get("story", {})
-    history = payload.get("history", [])
-    if not story: return {"error": "No story provided"}
-    
-    history_block = "No historical data." if not history else "COMPLETED STORIES:\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) -> {h['points']} pts" for h in history[:20]])
+    if not story: return {"error": "No story"}
+    sp_field = get_story_point_field(creds)
+    historical = _fetch_historical_data(project_key, creds, sp_field)
+    history_block = "No historical data." if not historical else "COMPLETED STORIES:\n" + "\n".join([f"  {h['key']}: \"{h['summary']}\" ({h['type']}, {h['priority']}) = {h['points']} pts" for h in historical[:20]])
     voting = [a for a in POKER_AGENTS if a["votes"]]
     nonvoting = [a for a in POKER_AGENTS if not a["votes"]]
-    
-    story_ctx = f"STORY: {story.get('key')} -- {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:600]}"
+    story_ctx = f"STORY: {story.get('key')} - {story.get('summary')}\nTYPE: {story.get('issue_type')} | PRIORITY: {story.get('priority')}\nDESCRIPTION: {story.get('description', 'No description')[:600]}"
     voter_block = "\n".join([f"VOTER {a['id']}: {a['behavior']}" for a in voting])
     observers_block = ' | '.join([f"{a['id']}: {a['behavior']}" for a in nonvoting])
-    
+
     prompt = f"""You are running a Planning Poker session. Estimate this story using FIBONACCI SCALE: 1, 2, 3, 5, 8, 13, 21.
 
 {story_ctx}
@@ -1685,30 +1685,27 @@ TEAM VOTERS (each must estimate INDEPENDENTLY based on their role):
 NON-VOTING OBSERVERS:
 {observers_block}
 
-ESTIMATION PHILOSOPHY:
-
 THINK ABOUT WHAT THIS STORY ACTUALLY REQUIRES:
-- Is it a simple field change or config update? -> 1-2 points
-- Is it a standard CRUD screen with basic validation? -> 2-3 points
-- Does it involve moderate business logic, multiple screens, or API integration? -> 3-5 points
-- Does it require complex architecture, data migration, or cross-system integration? -> 5-8 points
-- Is it a massive epic-level effort with unknowns and multiple dependencies? -> 8-13+ points
+- Simple field change or config update? = 1-2 points
+- Standard CRUD screen with basic validation? = 2-3 points
+- Moderate business logic, multiple screens, or API integration? = 3-5 points
+- Complex architecture, data migration, or cross-system integration? = 5-8 points
+- Massive epic-level effort with unknowns and multiple dependencies? = 8-13+ points
 
-AI-ERA ESTIMATION - THE CHIEF ESTIMATION OFFICER MUST ANALYZE:
-- "With AI Assistance" (Copilot, code generation, test generation): How many dev-days would this realistically take?
+AI-ERA ESTIMATION:
+- "With AI Assistance" (Copilot, code gen, test gen): How many dev-days?
 - "Without AI Assistance" (traditional coding): How many dev-days?
-- Simple CRUD/boilerplate -> AI saves 40-60%. Complex architecture/legacy -> AI saves only 10-20%.
 
 CRITICAL RULES:
-1. Each voter estimates INDEPENDENTLY. The Architect sees risk (tends higher). Junior Dev sees simplicity (tends lower). Senior QA sees test complexity.
-2. Votes should VARY - a spread of 2-3 Fibonacci values across voters is NORMAL. If all voters give the same number, you are doing it wrong.
-3. The Chief Estimation Officer computes PERT, 3-Point, Historical, Analogous, then makes a WEIGHTED JUDGMENT.
-4. final_points should reflect GENUINE complexity. Do NOT default to any single number.
+1. Each voter estimates INDEPENDENTLY. Architect sees risk (higher). Junior Dev sees simplicity (lower).
+2. Votes should VARY - spread of 2-3 Fibonacci values is NORMAL.
+3. Chief Estimation Officer computes PERT, 3-Point, Historical, Analogous, then WEIGHTED JUDGMENT.
+4. final_points = GENUINE complexity.
 
 Return STRICT JSON (no markdown):
-{{"votes":[{{"agent_id":"architect","points":0,"confidence":"high/medium/low","reasoning":"2-3 sentences about architectural concerns","risks":"specific risks"}},{{"agent_id":"team_lead","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"question the estimate","suggestion":"actionable suggestion"}},{{"agent_id":"scrum_master","observation":"spread analysis","historical_comparison":"compare to past stories","recommendation":"what to do"}}],"super_agent":{{"pert_estimate":{{"optimistic":"lowest reasonable Fibonacci","most_likely":"most probable Fibonacci","pessimistic":"highest reasonable Fibonacci","pert_fibonacci":"PERT result as Fibonacci"}},"three_point_estimate":{{"raw":"decimal average","fibonacci":"nearest Fibonacci"}},"historical_estimate":{{"matched_story":"KEY from history or null","fibonacci":"that story points or estimate"}},"analogous_estimate":{{"similar_story":"description of similar work","fibonacci":"estimated Fibonacci"}},"ai_era_estimate":{{"with_ai_days":"realistic dev-days using AI tools","without_ai_days":"realistic dev-days without AI","ai_savings_pct":"percentage saved","recommendation":"how AI changes the estimate"}},"final_points":"YOUR WEIGHTED JUDGMENT as Fibonacci","confidence":"high/medium/low","method_used":"which methods and weights you applied","rationale":"3-4 sentences explaining your reasoning and the key factors","key_assumptions":["assumption1","assumption2"]}}}}
+{{"votes":[{{"agent_id":"architect","points":0,"confidence":"high/medium/low","reasoning":"2-3 sentences","risks":"specific risks"}},{{"agent_id":"team_lead","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"mid_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_dev","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"senior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}},{{"agent_id":"junior_qa","points":0,"confidence":"...","reasoning":"...","risks":"..."}}],"influencers":[{{"agent_id":"ba","challenge":"question","suggestion":"suggestion"}},{{"agent_id":"scrum_master","observation":"spread","historical_comparison":"compare","recommendation":"rec"}}],"super_agent":{{"pert_estimate":{{"optimistic":"F","most_likely":"F","pessimistic":"F","pert_fibonacci":"F"}},"three_point_estimate":{{"raw":"decimal","fibonacci":"F"}},"historical_estimate":{{"matched_story":"KEY","fibonacci":"pts"}},"analogous_estimate":{{"similar_story":"desc","fibonacci":"F"}},"ai_era_estimate":{{"with_ai_days":"N","without_ai_days":"N","ai_savings_pct":"N","recommendation":"text"}},"final_points":"F","confidence":"high/medium/low","method_used":"methods","rationale":"3-4 sentences","key_assumptions":["a1","a2"]}}}}
 
-IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter must have a DIFFERENT point value where reasonable."""
+Replace all 0/placeholder values with REAL estimates. Every voter must give DIFFERENT points."""
 
     try:
         raw = generate_ai_response(prompt, temperature=0.4, timeout=600, max_tokens=16384)
@@ -1719,8 +1716,7 @@ IMPORTANT: Replace all 0 and placeholder values with REAL estimates. Every voter
                 result["story_summary"] = story.get("summary")
                 result["current_points"] = story.get("current_points", 0)
                 return result
-            else:
-                return {"story_key": story.get("key"), "error": "JSON parse failed", "votes": [], "influencers": [], "super_agent": {"final_points": 3, "rationale": "Response was malformed"}}
+            return {"story_key": story.get("key"), "error": "JSON parse failed", "votes": [], "influencers": [], "super_agent": {"final_points": 3, "rationale": "Response was malformed"}}
         return {"story_key": story.get("key"), "error": "AI returned empty"}
     except Exception as e:
         print(f"[POKER-SINGLE] Error for {story.get('key')}: {e}", flush=True)
@@ -1806,7 +1802,7 @@ Return STRICT JSON:
 {{"pi_name":"{pi_name}","total_capacity":{total_capacity},"total_committed":0,"total_spillover":0,"sprints":[{{"name":"Sprint 1","capacity":{velocity_per_sprint},"committed_points":0,"utilization_pct":0,"stories":[{{"key":"X-1","summary":"...","points":5,"type":"Story","priority":"High","team":"{teams[0]}","dependencies":[]}}]}}],"spillover":[],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["..."],"sequencing_rationale":"...","team_load":{json.dumps({t: {f"Sprint {i+1}": 0 for i in range(num_sprints)} for t in teams})}}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=180, max_tokens=32768)
+        raw = generate_ai_response(prompt, temperature=0.2, timeout=600, max_tokens=32768)
         if raw:
             result = repair_json(raw, "PI-Plan")
             if result: return result
@@ -1851,51 +1847,67 @@ def manage_pi_objectives(project_key: str, payload: dict, creds: dict = Depends(
 
 
 # ═══════════════════════════════════════════════════════════
-#  WSJF — Weighted Shortest Job First Prioritization
+#  WSJF — Weighted Shortest Job First Prioritization (Batched)
 # ═══════════════════════════════════════════════════════════
 
 @app.post("/pi_planning/{project_key}/wsjf")
 def calculate_wsjf(project_key: str, payload: dict, creds: dict = Depends(get_jira_creds)):
-    """AI-powered WSJF scoring: WSJF = Cost of Delay / Job Size"""
+    """AI-powered WSJF scoring — batched for large backlogs (93+ stories)."""
     stories = payload.get("stories", [])
     if not stories:
         return {"error": "No stories provided"}
 
-    stories_text = "\n".join([f"- {s.get('key','?')}: \"{s.get('summary','')}\" | {s.get('priority','Med')} | {s.get('points',0)}pts | {s.get('description','')[:100]}" for s in stories[:80]])
+    BATCH_SIZE = 20
+    all_scored = []
+    num_batches = math.ceil(len(stories) / BATCH_SIZE)
+    print(f"[WSJF] Scoring {len(stories)} stories in {num_batches} batches", flush=True)
 
-    prompt = f"""You are a SAFe WSJF Expert. Score each story using Weighted Shortest Job First.
+    for batch_idx in range(num_batches):
+        batch = stories[batch_idx * BATCH_SIZE : (batch_idx + 1) * BATCH_SIZE]
+        stories_text = "\n".join([f"- {s.get('key','?')}: \"{s.get('summary','')}\" | {s.get('priority','Med')} | {s.get('points',0)}pts" for s in batch])
 
-WSJF = Cost of Delay ÷ Job Size
-Cost of Delay = User/Business Value + Time Criticality + Risk Reduction/Opportunity Enablement
+        prompt = f"""You are a SAFe WSJF Expert. Score each story using Weighted Shortest Job First.
+
+WSJF = Cost of Delay / Job Size
+Cost of Delay = User/Business Value + Time Criticality + Risk Reduction
 
 SCORING SCALE: Modified Fibonacci: 1, 2, 3, 5, 8, 13, 20
-- 1 = Minimal   - 2 = Low   - 3 = Moderate   - 5 = Significant
-- 8 = High   - 13 = Very High   - 20 = Extreme
 
 STORIES:
 {stories_text}
 
-For EACH story, assess:
-1. user_business_value (1-20): Revenue impact, user satisfaction, strategic alignment
+For EACH story assess:
+1. user_business_value (1-20): Revenue, satisfaction, strategic alignment
 2. time_criticality (1-20): Deadline pressure, market window, cost of waiting
-3. risk_reduction (1-20): Enables other work, reduces technical debt, mitigates risk
-4. job_size (1-20): Implementation effort (HIGHER = BIGGER job)
+3. risk_reduction (1-20): Enables other work, reduces tech debt
+4. job_size (1-20): Implementation effort (HIGHER = BIGGER)
 5. cost_of_delay = user_business_value + time_criticality + risk_reduction
 6. wsjf_score = cost_of_delay / job_size (round to 1 decimal)
 
 Return STRICT JSON:
-{{"stories": [{{"key": "X-1", "summary": "...", "user_business_value": 0, "time_criticality": 0, "risk_reduction": 0, "job_size": 0, "cost_of_delay": 0, "wsjf_score": 0.0, "rationale": "Brief why"}}], "priority_order": ["X-1", "X-2"], "analysis": "Summary of prioritization insights"}}"""
+{{{{"stories": [{{{{"key": "X-1", "summary": "...", "user_business_value": 0, "time_criticality": 0, "risk_reduction": 0, "job_size": 0, "cost_of_delay": 0, "wsjf_score": 0.0, "rationale": "Brief why"}}}}]}}}}"""
 
-    try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=120, max_tokens=16384)
-        if raw:
-            result = repair_json(raw, "WSJF")
-            if result: return result
-            return {"error": "WSJF JSON parse failed"}
-        return {"error": "AI returned empty response"}
-    except Exception as e:
-        print(f"WSJF error: {e}", flush=True)
-        return {"error": f"WSJF calculation failed: {str(e)}"}
+        try:
+            raw = generate_ai_response(prompt, temperature=0.2, timeout=600, max_tokens=16384)
+            if raw:
+                result = repair_json(raw, f"WSJF-Batch{batch_idx+1}")
+                if result and "stories" in result:
+                    all_scored.extend(result["stories"])
+                    print(f"[WSJF] Batch {batch_idx+1}/{num_batches}: {len(result['stories'])} scored", flush=True)
+                else:
+                    print(f"[WSJF] Batch {batch_idx+1} parse failed, defaults", flush=True)
+                    for st in batch:
+                        all_scored.append({"key": st.get("key","?"), "summary": st.get("summary",""), "user_business_value": 3, "time_criticality": 3, "risk_reduction": 3, "job_size": 5, "cost_of_delay": 9, "wsjf_score": 1.8, "rationale": "Default score"})
+        except Exception as e:
+            print(f"[WSJF] Batch {batch_idx+1} error: {e}", flush=True)
+            for st in batch:
+                all_scored.append({"key": st.get("key","?"), "summary": st.get("summary",""), "user_business_value": 3, "time_criticality": 3, "risk_reduction": 3, "job_size": 5, "cost_of_delay": 9, "wsjf_score": 1.8, "rationale": "Default score"})
+
+    all_scored.sort(key=lambda x: float(x.get("wsjf_score", 0)), reverse=True)
+    priority_order = [st.get("key") for st in all_scored]
+    analysis = f"WSJF complete: {len(all_scored)} stories scored in {num_batches} batches. Top: {priority_order[0] if priority_order else 'N/A'}"
+    print(f"[WSJF] Done: {len(all_scored)} stories", flush=True)
+    return {"stories": all_scored, "priority_order": priority_order, "analysis": analysis}
 
 
 @app.post("/feature_roadmap")
@@ -1939,7 +1951,7 @@ def generate_feature_roadmap(req: FeatureRoadmapRequest, creds: dict = Depends(g
     # ── CHOOSE MODEL: Premium for roadmap accuracy ──
     # o3-mini for deep reasoning, gpt-4o as fallback
     ROADMAP_MODEL = os.getenv("ROADMAP_AI_MODEL", "gemini-2.5-pro")
-    ROADMAP_TIMEOUT = 600  # seconds per AI call
+    ROADMAP_TIMEOUT = 300  # seconds per AI call
     FEATURE_BATCH_SIZE = 20
 
     # ── CHUNKING STRATEGY ──

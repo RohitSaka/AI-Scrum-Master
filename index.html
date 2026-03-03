@@ -531,7 +531,7 @@
                 } else { setDemoChecked(true); }
             }, []);
             if (!demoChecked) return <div className="h-screen flex items-center justify-center" style={{background:'var(--bg-body)'}}><div className="text-center"><div className="loader w-8 h-8 border-3 mb-4 mx-auto"></div><p style={{color:'var(--text-muted)'}}>Connecting...</p></div></div>;
-            if (!config || (!config.token && !config.license_key)) return <LoginScreen onLogin={setConfig} theme={theme} setTheme={setTheme} />;
+            if (!config || (!config.token && !config.license_key && !config.demo)) return <LoginScreen onLogin={setConfig} theme={theme} setTheme={setTheme} />;
             return <DashboardLayout userRole={config.role || 'scrum_master'} theme={theme} setTheme={setTheme} />;
         }
 
