@@ -1790,35 +1790,118 @@ def generate_pi_plan(project_key: str, payload: dict, creds: dict = Depends(get_
     if not stories: return {"error": "No stories provided"}
     total_capacity = velocity_per_sprint * num_sprints
     total_points = sum(s.get('points', 0) for s in stories)
-    stories_block = "\n".join([f"- {s['key']}: \"{s['summary'][:60]}\" | {s.get('priority','Med')} | {s['points']}pts" for s in stories[:150]])
 
-    prompt = f"""You are a PI Planning Sequencer AI. Arrange stories into sprints AND detect cross-team dependencies.
+    BATCH_SIZE = 40
 
-STRICT RULES:
-1. DO NOT change story points — immutable
-2. DO NOT invent stories
-3. Each sprint ≤ {velocity_per_sprint} pts. Total capacity: {total_capacity}. Overflow → spillover.
+    def _make_pi_prompt(batch_stories, remaining_cap=None):
+        stories_block = "\n".join([f"- {st['key']}: \"{st['summary'][:60]}\" | {st.get('priority','Med')} | {st['points']}pts" for st in batch_stories])
+        if remaining_cap:
+            cap_block = "\n".join([f"  {sn}: {rc} pts remaining" for sn, rc in remaining_cap.items()])
+            return f"""You are a PI Planning Sequencer AI. Assign stories to sprints.
 
-PI: {pi_name} | Sprints: {num_sprints} | Velocity: {velocity_per_sprint}/sprint | Backlog: {total_points} pts
-Teams: {json.dumps(teams)}
-{"⚠️ OVER CAPACITY by " + str(total_points - total_capacity) + " pts — some stories MUST go to spillover" if total_points > total_capacity else "✅ Within capacity"}
+RULES: DO NOT change points. DO NOT invent stories. Respect remaining capacities.
+PI: {pi_name} | Teams: {json.dumps(teams)}
+
+REMAINING SPRINT CAPACITY:
+{cap_block}
 
 STORIES:
 {stories_block}
 
-ANALYZE: Dependencies from descriptions/components, priority ordering, balanced sprint loading, team assignment from components/labels.
+Assign each story to best sprint by priority and capacity. If no room, put in spillover.
+
+Return STRICT JSON:
+{{"assigned":[{{"key":"X-1","summary":"...","points":5,"sprint":"Sprint 1","team":"{teams[0]}","type":"Story","priority":"High","dependencies":[]}}],"spillover":[{{"key":"X-9","summary":"...","points":8}}],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["risk"]}}"""
+        else:
+            over_msg = "OVER CAPACITY by " + str(total_points - total_capacity) + " pts" if total_points > total_capacity else "Within capacity"
+            return f"""You are a PI Planning Sequencer AI. Arrange stories into sprints.
+
+RULES: DO NOT change points. DO NOT invent stories. Each sprint <= {velocity_per_sprint} pts.
+PI: {pi_name} | Sprints: {num_sprints} | Velocity: {velocity_per_sprint}/sprint | Backlog: {total_points} pts
+Teams: {json.dumps(teams)} | {over_msg}
+
+STORIES:
+{stories_block}
 
 Return STRICT JSON:
 {{"pi_name":"{pi_name}","total_capacity":{total_capacity},"total_committed":0,"total_spillover":0,"sprints":[{{"name":"Sprint 1","capacity":{velocity_per_sprint},"committed_points":0,"utilization_pct":0,"stories":[{{"key":"X-1","summary":"...","points":5,"type":"Story","priority":"High","team":"{teams[0]}","dependencies":[]}}]}}],"spillover":[],"dependencies":[{{"from":"X-5","to":"X-2","type":"blocks","reason":"..."}}],"risks":["..."],"sequencing_rationale":"...","team_load":{json.dumps({t: {f"Sprint {i+1}": 0 for i in range(num_sprints)} for t in teams})}}}"""
 
     try:
-        raw = generate_ai_response(prompt, temperature=0.2, timeout=600, max_tokens=32768)
-        if raw:
-            result = repair_json(raw, "PI-Plan")
-            if result: return result
-            return {"error": "PI Plan JSON parse failed"}
-        return {"error": "AI returned empty response"}
+        if len(stories) <= BATCH_SIZE:
+            raw = generate_ai_response(_make_pi_prompt(stories), temperature=0.2, timeout=600, max_tokens=32768)
+            if raw:
+                result = repair_json(raw, "PI-Plan")
+                if result: return result
+                return {"error": "PI Plan JSON parse failed - try with fewer stories"}
+            return {"error": "AI returned empty response"}
+        else:
+            print(f"[PI-PLAN] Large backlog: {len(stories)} stories, batching", flush=True)
+            prio_order = {"Highest": 0, "High": 1, "Medium": 2, "Low": 3, "Lowest": 4}
+            sorted_stories = sorted(stories, key=lambda st: prio_order.get(st.get("priority", "Medium"), 2))
+            all_sprint_stories = {f"Sprint {i+1}": [] for i in range(num_sprints)}
+            spillover_list = []
+            all_deps = []
+            all_risks = []
+            sprint_loads = {f"Sprint {i+1}": 0 for i in range(num_sprints)}
+            num_batches = math.ceil(len(sorted_stories) / BATCH_SIZE)
+
+            for batch_idx in range(num_batches):
+                batch = sorted_stories[batch_idx * BATCH_SIZE : (batch_idx + 1) * BATCH_SIZE]
+                remaining_cap = {sn: velocity_per_sprint - sprint_loads[sn] for sn in sprint_loads}
+                try:
+                    raw = generate_ai_response(_make_pi_prompt(batch, remaining_cap), temperature=0.2, timeout=600, max_tokens=16384)
+                    if raw:
+                        result = repair_json(raw, f"PI-Batch{batch_idx+1}")
+                        if result:
+                            for a in result.get("assigned", []):
+                                sn = a.get("sprint", "Sprint 1")
+                                if sn not in all_sprint_stories: sn = "Sprint 1"
+                                all_sprint_stories[sn].append(a)
+                                sprint_loads[sn] = sprint_loads.get(sn, 0) + (a.get("points", 0) or 0)
+                            spillover_list.extend(result.get("spillover", []))
+                            all_deps.extend(result.get("dependencies", []))
+                            all_risks.extend(result.get("risks", []))
+                            print(f"[PI-PLAN] Batch {batch_idx+1}/{num_batches}: {len(result.get('assigned',[]))} assigned", flush=True)
+                            continue
+                    print(f"[PI-PLAN] Batch {batch_idx+1} failed, adding to spillover", flush=True)
+                    for st in batch:
+                        spillover_list.append({"key": st["key"], "summary": st.get("summary",""), "points": st.get("points",0)})
+                except Exception as e:
+                    print(f"[PI-PLAN] Batch {batch_idx+1} error: {e}", flush=True)
+                    for st in batch:
+                        spillover_list.append({"key": st["key"], "summary": st.get("summary",""), "points": st.get("points",0)})
+
+            sprints = []
+            for i in range(num_sprints):
+                sn = f"Sprint {i+1}"
+                st_list = all_sprint_stories.get(sn, [])
+                committed = sum(st.get("points", 0) or 0 for st in st_list)
+                sprints.append({
+                    "name": sn, "capacity": velocity_per_sprint,
+                    "committed_points": committed,
+                    "utilization_pct": round((committed / velocity_per_sprint) * 100) if velocity_per_sprint > 0 else 0,
+                    "stories": [{"key": st.get("key","?"), "summary": st.get("summary",""), "points": st.get("points",0) or 0,
+                                 "type": st.get("type","Story"), "priority": st.get("priority","Medium"),
+                                 "team": st.get("team", teams[0] if teams else "Core Team"),
+                                 "dependencies": st.get("dependencies",[])} for st in st_list]
+                })
+            total_committed = sum(sp["committed_points"] for sp in sprints)
+            total_spill = sum(st.get("points", 0) or 0 for st in spillover_list)
+            team_load = {t: {f"Sprint {i+1}": 0 for i in range(num_sprints)} for t in teams}
+            for sp in sprints:
+                for st in sp["stories"]:
+                    tm = st.get("team", teams[0] if teams else "Core Team")
+                    if tm in team_load and sp["name"] in team_load[tm]:
+                        team_load[tm][sp["name"]] += st.get("points", 0) or 0
+            print(f"[PI-PLAN] Done: {total_committed}pts committed, {total_spill}pts spillover", flush=True)
+            return {"pi_name": pi_name, "total_capacity": total_capacity,
+                    "total_committed": total_committed, "total_spillover": total_spill,
+                    "sprints": sprints, "spillover": spillover_list,
+                    "dependencies": all_deps[:50], "risks": list(set(all_risks))[:20],
+                    "sequencing_rationale": f"Batched: {len(stories)} stories in {num_batches} batches. {total_committed}pts committed, {total_spill}pts spillover.",
+                    "team_load": team_load}
     except Exception as e:
+        print(f"[PI-PLAN] Error: {e}", flush=True)
         return {"error": f"PI Planning failed: {str(e)}"}
 
 @app.post("/pi_planning/{project_key}/roam")
@@ -1895,7 +1978,7 @@ For EACH story assess:
 6. wsjf_score = cost_of_delay / job_size (round to 1 decimal)
 
 Return STRICT JSON:
-{{{{"stories": [{{{{"key": "X-1", "summary": "...", "user_business_value": 0, "time_criticality": 0, "risk_reduction": 0, "job_size": 0, "cost_of_delay": 0, "wsjf_score": 0.0, "rationale": "Brief why"}}}}]}}}}"""
+{{"stories": [{{"key": "X-1", "summary": "...", "user_business_value": 0, "time_criticality": 0, "risk_reduction": 0, "job_size": 0, "cost_of_delay": 0, "wsjf_score": 0.0, "rationale": "Brief why"}}]}}"""
 
         try:
             raw = generate_ai_response(prompt, temperature=0.2, timeout=600, max_tokens=16384)
